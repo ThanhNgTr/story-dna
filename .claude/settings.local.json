@@ -17,7 +17,13 @@
       "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('frames_analyzed:', d.get\\('frames_analyzed'\\)\\); print\\('videos_analyzed count:', len\\(d.get\\('videos_analyzed', []\\)\\)\\); v=d.get\\('videos_analyzed', [{}]\\)[0]; print\\('duration:', v.get\\('duration_sec'\\)\\); print\\('frames_extracted:', v.get\\('frames_extracted'\\)\\)\")",
       "Bash(python3 -c \"import anthropic; print\\('anthropic ok'\\)\")",
       "Bash(python3 -c \"import subprocess; r=subprocess.run\\(['ffmpeg','-version'],capture_output=True\\); print\\('ffmpeg ok' if r.returncode==0 else 'ffmpeg missing'\\)\")",
-      "Bash(python3 .claude/skills/analyze-videos/_analyze.py --input data/analyses/ep1.mp4 --max-frames 30 --fps 1.0 --output-dir data/analyses)"
+      "Bash(python3 .claude/skills/analyze-videos/_analyze.py --input data/analyses/ep1.mp4 --max-frames 30 --fps 1.0 --output-dir data/analyses)",
+      "Bash(rm -rf /home/ctld030/Project/story-dna/.claude/skills/write-story-hollow-pine/)",
+      "Bash(git commit -m ' *)",
+      "Bash(git checkout *)"
+    ],
+    "additionalDirectories": [
+      "/home/ctld030/Project/story-dna/.claude/skills/write-story-hollow-pine/"
     ]
   }
 }
