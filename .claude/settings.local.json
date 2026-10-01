@@ -22,7 +22,8 @@
       "Bash(git commit -m ' *)",
       "Bash(git checkout *)",
       "Bash(python3 .claude/skills/analyze-videos/_analyze.py --input data/analyses --max-frames 45 --fps 1.0)",
-      "Bash(python3 .claude/skills/analyze-videos/_analyze.py --input data/analyses/ep2.mp4 --max-frames 30 --fps 1.0 --output-dir data/analyses)"
+      "Bash(python3 .claude/skills/analyze-videos/_analyze.py --input data/analyses/ep2.mp4 --max-frames 30 --fps 1.0 --output-dir data/analyses)",
+      "Bash(git commit -m 'feat: add complete production suite \\(4 skills\\) *)"
     ],
     "additionalDirectories": [
       "/home/ctld030/Project/story-dna/.claude/skills/write-story-hollow-pine/"
