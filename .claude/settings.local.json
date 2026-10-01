@@ -20,7 +20,9 @@
       "Bash(python3 .claude/skills/analyze-videos/_analyze.py --input data/analyses/ep1.mp4 --max-frames 30 --fps 1.0 --output-dir data/analyses)",
       "Bash(rm -rf /home/ctld030/Project/story-dna/.claude/skills/write-story-hollow-pine/)",
       "Bash(git commit -m ' *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(python3 .claude/skills/analyze-videos/_analyze.py --input data/analyses --max-frames 45 --fps 1.0)",
+      "Bash(python3 .claude/skills/analyze-videos/_analyze.py --input data/analyses/ep2.mp4 --max-frames 30 --fps 1.0 --output-dir data/analyses)"
     ],
     "additionalDirectories": [
       "/home/ctld030/Project/story-dna/.claude/skills/write-story-hollow-pine/"
