@@ -6,7 +6,14 @@
       "Bash(find /home/ctld030 -maxdepth 3 -type d -name \"*peeker*\" -o -type d -name \"*matts*\" 2>/dev/null | head -10)",
       "Read(//home/ctld030/**)",
       "Bash(git init *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'feat: initialize story-dna POC with 4 core skills *)",
+      "Bash(ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1:nokey=1 /home/ctld030/Project/story-dna/data/analyses/ep1.mp4)",
+      "Bash(python .claude/skills/analyze-videos/_analyze.py --input data/analyses/ep1.mp4 --max-frames 15 --output-dir data/analyses)",
+      "Bash(pip3 install *)",
+      "Bash(python3 -m pip install anthropic)",
+      "Bash(git commit -m 'test: end-to-end pipeline test with mock DNA + generated outputs *)"
     ]
   }
 }
