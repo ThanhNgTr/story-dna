@@ -1,0 +1,206 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Narrative DNA Schema",
+  "description": "Structured narrative rules extracted from video analysis",
+  "type": "object",
+  "required": [
+    "analysis_timestamp",
+    "videos_analyzed",
+    "narrative_structure",
+    "pacing",
+    "characters",
+    "tone"
+  ],
+  "properties": {
+    "analysis_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of analysis"
+    },
+    "videos_analyzed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["filename"],
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "duration_sec": {
+            "type": "number"
+          },
+          "frame_count": {
+            "type": "integer"
+          },
+          "fps": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "narrative_structure": {
+      "type": "object",
+      "description": "Story structure timing and elements",
+      "properties": {
+        "setup_duration_sec": {
+          "type": "number",
+          "description": "Duration of opening/setup in seconds"
+        },
+        "setup_pct": {
+          "type": "integer",
+          "description": "Setup as % of total video (0-100)"
+        },
+        "climax_timing_pct": {
+          "type": "integer",
+          "description": "Climax/peak tension occurs at this % of video"
+        },
+        "resolution_pct": {
+          "type": "integer",
+          "description": "Resolution/conclusion begins at this % of video"
+        },
+        "ending_hook": {
+          "type": "string",
+          "description": "Type of ending (CTA, teaser, cliffhanger, conclusion)"
+        }
+      }
+    },
+    "pacing": {
+      "type": "object",
+      "description": "Rhythm and timing of cuts/transitions",
+      "properties": {
+        "avg_shot_duration_sec": {
+          "type": "number",
+          "description": "Average length of each shot in seconds"
+        },
+        "cut_rhythm": {
+          "type": "string",
+          "enum": ["slow", "medium", "fast"],
+          "description": "Overall cutting pace"
+        },
+        "transition_style": {
+          "type": "string",
+          "description": "Primary transition type (cuts, dissolves, wipes, etc.)"
+        },
+        "fastest_shot_sec": {
+          "type": "number",
+          "description": "Duration of shortest shot"
+        },
+        "slowest_shot_sec": {
+          "type": "number",
+          "description": "Duration of longest shot"
+        }
+      }
+    },
+    "characters": {
+      "type": "array",
+      "description": "Character archetypes and patterns",
+      "items": {
+        "type": "object",
+        "properties": {
+          "archetype": {
+            "type": "string",
+            "description": "Hero, Mentor, Antagonist, Sidekick, etc."
+          },
+          "count": {
+            "type": "integer",
+            "description": "How many characters of this type"
+          },
+          "screen_time_pct": {
+            "type": "number",
+            "description": "Percentage of total screen time"
+          },
+          "dialogue_style": {
+            "type": "string",
+            "description": "How they speak (formal, casual, technical, poetic, etc.)"
+          }
+        }
+      }
+    },
+    "tone": {
+      "type": "object",
+      "description": "Overall mood and voice",
+      "properties": {
+        "overall": {
+          "type": "string",
+          "description": "Primary tone (conversational, formal, comedic, dramatic, etc.)"
+        },
+        "formality": {
+          "type": "string",
+          "enum": ["very formal", "formal", "neutral", "casual", "very casual"],
+          "description": "Language register"
+        },
+        "energy": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Overall energy/intensity level"
+        },
+        "emotion": {
+          "type": "string",
+          "description": "Primary emotional tone (inspiring, funny, sad, tense, etc.)"
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "description": "Key attention-grabbing moments",
+      "properties": {
+        "opening_0_3s": {
+          "type": "string",
+          "description": "What happens in first 3 seconds to hook viewer"
+        },
+        "midpoint": {
+          "type": "string",
+          "description": "Major plot point or tension spike around 50%"
+        },
+        "closing": {
+          "type": "string",
+          "description": "Final message or call-to-action"
+        }
+      }
+    },
+    "visual_style": {
+      "type": "object",
+      "description": "Visual design elements",
+      "properties": {
+        "color_palette": {
+          "type": "string",
+          "description": "Color scheme (vibrant, pastel, dark, monochrome, etc.)"
+        },
+        "camera_movement": {
+          "type": "string",
+          "description": "Static, pans, tilts, zooms, tracking shots"
+        },
+        "aspect_ratio": {
+          "type": "string",
+          "description": "Video format (16:9, 9:16, 4:3, 1:1, etc.)"
+        },
+        "lighting": {
+          "type": "string",
+          "description": "Lighting style (bright, dark, dramatic, natural, etc.)"
+        }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "description": "Audio design elements",
+      "properties": {
+        "music_presence": {
+          "type": "boolean"
+        },
+        "music_style": {
+          "type": "string",
+          "description": "Genre or mood of music"
+        },
+        "voiceover": {
+          "type": "boolean"
+        },
+        "dialogue": {
+          "type": "boolean"
+        },
+        "sound_effects": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

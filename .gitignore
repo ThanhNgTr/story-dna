@@ -1,0 +1,14 @@
+data/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.flv
+*.webm
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.log
+.env
+.env.local
