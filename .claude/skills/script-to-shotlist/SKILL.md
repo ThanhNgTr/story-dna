@@ -6,8 +6,9 @@ description: |
   (machine-readable) and shotlist.md (human-readable). Output ready 
   for video generation (image/video AI prompts). Triggers on: "break 
   into shots", "create shotlist", "shot breakdown", "shot list", 
-  "scene breakdown", "storyboard script". Input: Script Markdown. 
-  Output: JSON shotlist + Markdown storyboard.
+  "scene breakdown", "storyboard script", "prompt list", "video prompts".
+  Input: approved script Markdown. Output: shotlist.json/.md + prompts.json/.md
+  (one self-contained video-gen prompt per 1-5s shot: who says what, does what).
 ---
 
 # Script → Shot Breakdown
@@ -61,6 +62,7 @@ Or paste script Markdown and it will output:
 ### Step 4: Generate Output Files
 - `shotlist.json` - Structured for video gen tools
 - `shotlist.md` - Storyboard for human review
+- `prompts.json` + `prompts.md` - Prompt list, see Step 5
 
 ## Output Format
 
@@ -174,13 +176,80 @@ Direct address to camera builds connection
 [... more shots ...]
 ```
 
-## Prompt Suggestions for Video Generation
+## Step 5: Prompt List (final output of the pipeline)
 
-Each shot in `shotlist.md` can be converted to a video generation prompt:
+Input should be the APPROVED script (`data/scripts/<slug>/<session-id>/final.md` from
+`/refine-skill --approve`). Draft script -> warn user, continue only if they confirm.
 
-**Shot 1**: "Wide shot of bright modern office with large windows, morning light, camera pulls back slowly. Upbeat instrumental music. Professional atmosphere."
+Write next to the script:
+- `prompts.json` - one entry per shot, for video gen tools / agents
+- `prompts.md` - numbered list for humans
 
-**Shot 2**: "Close-up of woman in professional attire at desk looking at camera, smiling, natural light on face. She says 'Good morning, team.' Confident, welcoming mood."
+### Character anchors
+Before writing prompts, build `characters` block once from the skill's Character Bible
+(`visual_signature`). Every prompt that shows a character repeats its anchor text
+word-for-word. Same character must look identical in every shot.
+
+### `prompts.json`
+```json
+{
+  "source_script": "data/scripts/hollow-pine/20261001-143000/final.md",
+  "skill": "write-story-hollow-pine",
+  "skill_version": "v3",
+  "aspect_ratio": "9:16",
+  "total_duration_sec": 90,
+  "characters": {
+    "char_01": "teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant"
+  },
+  "shots": [
+    {
+      "shot_number": 1,
+      "start_sec": 0,
+      "end_sec": 3,
+      "duration_sec": 3,
+      "characters": ["char_01"],
+      "action": "char_01 runs through foggy forest, glances back over shoulder",
+      "dialogue": [],
+      "sfx": "heavy breathing, snapping branches",
+      "camera": "handheld tracking MS, push-in",
+      "video_prompt": "Night, dense foggy pine forest. teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant, runs toward camera in panic, glances back over her shoulder. Handheld tracking medium shot, slow push-in. Torch light from behind, desaturated teal, volumetric fog. Sound: heavy breathing, snapping branches. 3 seconds, 9:16."
+    },
+    {
+      "shot_number": 2,
+      "start_sec": 3,
+      "end_sec": 5,
+      "duration_sec": 2,
+      "characters": ["char_01"],
+      "action": "char_01 stops, whispers",
+      "dialogue": [{"character": "char_01", "line": "He's still here.", "delivery": "whisper, terrified"}],
+      "sfx": "wind",
+      "camera": "static CU",
+      "video_prompt": "Close-up, teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant, stops, out of breath, whispers \"He's still here.\" terrified. Static close-up, shallow depth of field, cold moonlight on face, fog behind. Sound: wind. 2 seconds, 9:16."
+    }
+  ]
+}
+```
+
+### `prompts.md`
+```markdown
+# <Title> - Prompt List (90s, 32 shots, skill hollow-pine v3)
+
+## Characters
+- char_01: teen girl, 16, dark wavy shoulder-length hair, navy blazer, ...
+
+## Shots
+1. [00:00-00:03] (3s) char_01 runs, glances back. No dialogue.
+   PROMPT: Night, dense foggy pine forest. teen girl, 16, ... 3 seconds, 9:16.
+2. [00:03-00:05] (2s) char_01: "He's still here." (whisper)
+   PROMPT: Close-up, teen girl, 16, ... 2 seconds, 9:16.
+```
+
+### Prompt rules
+- Each shot 1-5s. Longer beat -> split into several shots.
+- `video_prompt` is self-contained: setting + character anchor + action + dialogue in quotes + camera + light/color + sound + duration + aspect ratio. No "same as before".
+- Dialogue: max ~2.5 words/sec of shot. Line too long -> split across shots.
+- Shots contiguous: `end_sec` of shot N = `start_sec` of shot N+1. Last `end_sec` = script length.
+- Language: prompts in English (video models), dialogue kept in the script's language.
 
 ## Integration with Video Tools
 

@@ -28,12 +28,12 @@ POC system for:
   - Pulls examples from analyzed videos
 
 - **Feedback loop**: User → script → feedback → skill patch → new script
-  - Version skills as `write-story-<slug>_v1`, `v2`, etc.
+  - Live `write-story-<slug>/SKILL.md` = latest; snapshots in `versions/SKILL_v1.md`, `v2`, etc.
   - Never overwrite — keep iteration history
 
 ## FOOTGUNS
 
-1. **Frame extraction is slow**: 1 fps = 60 frames/min. Cap at `--max-frames` (default 30).
+1. **Frame budget**: keyframes per detected shot, capped at `--max-frames` (default 30). Fast-cut videos have more shots than frames — raise to 40+ or shots get skipped (pacing still measured on all).
 2. **Claude Vision context limits**: Batch frames in chunks (e.g., 10 frames per call).
 3. **SKILL.md YAML must be valid**: Bad frontmatter → `/skill load` fails silently.
 4. **Video codec issues**: fallback to `ffmpeg -c:v copy` if extraction stalls.
@@ -41,33 +41,48 @@ POC system for:
 
 ## WORKFLOW
 
+Core flow. Steps 1–2 run rarely (project start, or learning a new viral idea).
+Steps 3–6 run per script.
+
+```
+video list ─▶ [1] analyze ─▶ dna.json ─▶ [2] skill-creator ─▶ write-story-<slug> (CORE)
+                                                                  │
+user topic + sample script ─▶ [3] write-story-<slug> ─▶ script vK  │
+                                   ▲                         │     │
+                                   └── [4] refine-skill ◀── feedback (loop until approve)
+                                                             │
+                                          approve ─▶ [5] final.md ─▶ [6] script-to-shotlist
+                                                                          └▶ prompts.json/.md (OUTPUT)
+```
+
 1. **Analyze videos** (`/analyze-videos --input <dir>`)
-   - Extracts frames @ 1 fps (configurable)
-   - Calls Claude Vision on batches → summarizes key shots
-   - Extracts audio (assumes MP4/MOV with audio track)
-   - Produces: `dna.json`, `dna.md`, `videos_analyzed.json`, `frames/`
+   - Detects real cuts (ffmpeg scene score), measures pacing in code, extracts keyframes per shot; one `video-analyst` agent per video, `series-merger` merges
+   - Learns series: context/world, characters, plot patterns, pacing, tone, hooks
+   - Produces: `dna.json`, `dna.md`, `manifest.json`, `frames/`
 
 2. **Generate skill** (`/skill-creator-from-dna --dna data/.../dna.json --name <slug>`)
-   - Reads `dna.json`
-   - Creates `.claude/skills/write-story-<slug>/SKILL.md`
-   - Embeds DNA rules into skill prompt
-   - Saves metadata to `data/skills-generated/write-story-<slug>_v1.json`
+   - Creates `.claude/skills/write-story-<slug>/SKILL.md` with Story Bible + Character Bible + DNA rules
+   - New viral idea for an existing skill: `--update <slug>` → merges DNA, version bump
+   - Saves metadata to `data/skills-generated/write-story-<slug>_vN.json`
 
-3. **Create script** (`/write-story-<slug> --topic X --characters Y`)
-   - Auto-generated skill from step 2
-   - User provides topic, characters, plot points
-   - Returns script v1 (Markdown)
+3. **Create script** (`/write-story-<slug> --topic X --characters Y --sample <file>`)
+   - User provides topic, characters, optional sample script to follow
+   - Returns `data/scripts/<slug>/<session-id>/script_v1.md` + `.json`
 
-4. **Refine skill** (`/refine-skill <slug> --feedback "..."`)
-   - Parse user feedback (tone, pacing, characters, etc.)
-   - Patch SKILL.md of `write-story-<slug>`
-   - Save as `write-story-<slug>_v2.md`
-   - Re-run user input through updated skill
+4. **Feedback loop** (`/refine-skill <slug> --feedback "..."`)
+   - Human in the loop. Feedback split into `rule` (patch skill) vs `script` (one-off edit)
+   - Live SKILL.md bumped to vN+1, old one snapshot in `versions/SKILL_vN.md`
+   - Re-generates script on same input → script vK+1. Repeat.
 
-5. **Break into shots** (`/script-to-shotlist <script.md>`)
-   - Parse script into scenes/dialogue
-   - Break into 1–5s shots based on DNA pacing rules
-   - Output: `shotlist.json` + `shotlist.md`
+5. **Finalize** (`/refine-skill <slug> --approve`)
+   - Marks skill version stable, writes `final.md` + `final.json`
+
+6. **Prompt list** (`/script-to-shotlist <final.md>`)
+   - Breaks final script into 1–5s shots based on DNA pacing rules
+   - Output: `shotlist.json/.md` + `prompts.json/.md` (per shot: who says what, does what, camera, self-contained video prompt)
+
+Optional after step 6: `/direct-video`, `/cinematographer-brief`, `/sound-design-brief`, `/production-design-brief`.
+`/write-compelling-short-form` = hand-written generic framework (Hollow Pine DNA), use only when no generated skill fits.
 
 ## OUTPUT STYLE
 
@@ -80,8 +95,8 @@ POC system for:
 ## CRITICAL RULES
 
 1. **Reproducibility**: Always save DNA output to `data/<run-id>/` with timestamp
-2. **Versioning**: Skills as `write-story-<slug>_v1`, `v2`, etc. (don't overwrite)
-3. **Transcripts**: Keep iteration history in `data/<run-id>/iterations.json`
+2. **Versioning**: Live SKILL.md + immutable `versions/SKILL_vN.md` snapshots, metadata `write-story-<slug>_vN.json` (don't overwrite)
+3. **Transcripts**: Keep iteration history in `data/scripts/<slug>/<session-id>/iterations.json`
 4. **Frame caching**: Reuse frames if video unchanged (check file hash)
 5. **Error recovery**: Graceful fallbacks (missing audio → text-only, frame extract fails → use keyframes)
 

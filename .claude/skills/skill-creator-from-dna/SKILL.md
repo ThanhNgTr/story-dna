@@ -35,6 +35,26 @@ This will:
 3. Register it at `.claude/skills/write-story-demo-promo/`
 4. Make `/write-story-demo-promo` immediately available
 
+## Modes
+
+| Mode | When | Result |
+|---|---|---|
+| `create` (default) | First run, or slug not in `.claude/skills/` | New `write-story-<slug>` v1 |
+| `update` | New viral idea / new episodes for an EXISTING skill (`--update <slug>`) | Same skill, version vN+1, DNA merged |
+
+Slug already exists and no `--update` -> stop, ask user: new slug or update existing. Never overwrite silently.
+
+```bash
+# Learn a new viral idea into an existing skill
+/skill-creator-from-dna --dna data/analyses/20261015-090000/dna.json --update hollow-pine
+```
+
+`update` mode:
+1. Snapshot live SKILL.md -> `versions/SKILL_vN.md`.
+2. Merge new DNA: keep stable rules both DNAs agree on; add new hooks/patterns/characters; on conflict prefer new DNA and log it.
+3. Keep rules added by `/refine-skill` (see `## Changelog`) unless new DNA directly contradicts them -> ask user.
+4. Bump version, add changelog line, write `write-story-<slug>_vN+1.json` with `dna_sources: [old, new]`.
+
 ## How It Works
 
 ### Step 1: Parse DNA
@@ -67,6 +87,7 @@ This will:
 ```yaml
 ---
 name: write-story-<slug>
+version: v1
 description: |
   Generate scripts matching the <source> video style. 
   Follows structure: <setup duration>s setup → <climax %> climax → resolution. 
@@ -80,13 +101,32 @@ description: |
 [Description matching the DNA style]
 
 ## Quick Start
-`/write-story-<slug> --topic "Your topic" --characters "Names (roles)"`
+`/write-story-<slug> --topic "Your topic" --characters "Names (roles)" --sample path/to/sample.md`
+
+## Input
+| Field | Required | Meaning |
+|---|---|---|
+| `--topic` | yes | Story idea / plot for this episode |
+| `--characters` | no | Names + roles. Missing -> use Character Bible defaults |
+| `--sample` | no | User's sample script/outline. Follow its beats + content; apply DNA style on top |
+| `--length` | no | Default = DNA median duration |
+| `--continue` | no | Path to previous final script -> keep world, characters, open threads |
+
+Save input to `data/scripts/<slug>/<session-id>/input.json`, script to `script_v1.md` + `.json`
+(same session dir `/refine-skill` uses).
+
+## Story Bible
+[World / setting rules from DNA: where, when, what is possible, recurring locations]
+[Recurring motifs + props]
+[Plot patterns: what kind of conflict, what stays unresolved, cliffhanger style]
+
+## Character Bible
+[One block per DNA character: role, archetype, visual_signature (for shot prompts),
+dialogue style + sample lines, screen-time share, relationships]
+[Rule: user characters map onto these roles; keep visual_signature stable across shots]
 
 ## How It Works
 [DNA-derived rules for structure, pacing, tone]
-
-## Character Templates
-[Archetypes from DNA with examples]
 
 ## Narrative Structure Template
 [Setup/conflict/resolution timing from DNA]
@@ -105,7 +145,21 @@ description: |
 
 ## Examples
 [Sample scripts from training videos]
+
+## Output Format
+[Script Markdown: timecodes, scene headings, per-beat action + dialogue + camera note.
+Script JSON: same content, keys scenes[].beats[] with start_sec, end_sec, characters,
+action, dialogue, camera. /script-to-shotlist reads this JSON.]
+
+## Changelog
+- v1 (<ISO timestamp>): generated from <dna path>
 ```
+
+Story Bible + Character Bible come from `dna.json` fields `series_logline`, `genre`,
+`motifs`, `open_questions`, `series_strategy`, `narrative_structure.recurring_devices`,
+`characters[]` (`role`, `archetype`, `visual_signature`, `avg_screen_time_pct`,
+`emotional_arc_by_episode`), `viral_hooks`. If a field is missing in DNA,
+write the section from what IS there and mark gaps `TODO (not in DNA)` - do not invent.
 
 ### Metadata JSON (`data/skills-generated/write-story-<slug>_v1.json`)
 ```json
@@ -157,7 +211,8 @@ After generating scripts and getting feedback, use `/refine-skill`:
 /refine-skill demo-promo --feedback "tone too formal, need more energy"
 ```
 
-This patches the SKILL.md and creates `write-story-demo-promo_v2.md`
+This patches the live SKILL.md (version v2) and snapshots v1 to
+`.claude/skills/write-story-demo-promo/versions/SKILL_v1.md`. Loop until user approves.
 
 ## Notes
 

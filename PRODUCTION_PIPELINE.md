@@ -4,6 +4,26 @@
 
 ---
 
+## Core Flow (main feature)
+
+Generated skill = core. Everything else is optional.
+
+| # | Step | Command | Frequency | Output |
+|---|---|---|---|---|
+| 1 | Analyze video list | `/analyze-videos --input <dir>` | Rare: project start / new viral idea | `dna.json` + `dna.md` |
+| 2 | Create skill from DNA | `/skill-creator-from-dna --dna <dna.json> --name <slug>` (or `--update <slug>`) | Rare | `.claude/skills/write-story-<slug>/SKILL.md` |
+| 3 | Write script | `/write-story-<slug> --topic ... --characters ... --sample <file>` | Per script | `script_v1.md` |
+| 4 | Feedback, skill auto-updates | `/refine-skill <slug> --feedback "..."` | Loop | skill vN+1 + `script_vK+1.md` |
+| 5 | Approve | `/refine-skill <slug> --approve` | Once | `final.md` |
+| 6 | Prompt list (1-5s shots) | `/script-to-shotlist <final.md>` | Once | `prompts.json` + `prompts.md` |
+
+Script session files: `data/scripts/<slug>/<session-id>/` (input, script_vK, iterations.json, final, prompts).
+
+The 7-skill pipeline below starts from a script. In the core flow, feed it `final.md`
+from step 5 instead of `/write-compelling-short-form` output.
+
+---
+
 ## 📊 The Pipeline (7 Skills + Workflow)
 
 ```
@@ -341,25 +361,19 @@ All briefs are **self-contained** — no need for script re-reads or meetings.
 
 ---
 
-## 🔧 Optional: Refine & Iterate
+## 🔧 Refine & Iterate (human in the loop)
 
-Not happy with the script? Refine it using feedback.
+Works on generated `write-story-<slug>` skills (see Core Flow).
 
 ```
-/refine-skill --name write-compelling-short-form \
-  --feedback "tone too formal, need more dread"
-  
-  Output: updated SKILL.md (v2)
-  Result: Run /write-compelling-short-form again with new rules
+/refine-skill <slug> --feedback "tone too formal, need more dread"
+  -> skill v2 (v1 kept in versions/SKILL_v1.md), script v2 on same input
+/refine-skill <slug> --feedback "..."      # repeat
+/refine-skill <slug> --approve             # final.md, skill marked stable
 ```
 
-Each refinement creates a new version:
-- v1 (initial)
-- v2 (first feedback)
-- v3 (second iteration)
-- etc.
-
-**Versioning keeps iteration history** — no overwrites.
+Feedback for one story only (e.g. "rename the dog") edits the script, not the skill.
+History: `data/scripts/<slug>/<session-id>/iterations.json`.
 
 ---
 

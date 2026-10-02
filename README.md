@@ -18,23 +18,30 @@ Analyze local videos to extract narrative DNA, auto-generate reusable Claude ski
    ```
    Creates: `.claude/skills/write-story-demo-promo/SKILL.md`
 
-3. **Create scripts using that skill**:
+3. **Create a script using that skill** (optional sample script to follow):
    ```bash
-   /write-story-demo-promo --topic "Launch a new app" --characters "Alex (CEO), Jordan (Developer)"
+   /write-story-demo-promo --topic "Launch a new app" --characters "Alex (CEO), Jordan (Developer)" --sample my_outline.md
    ```
-   Returns: Markdown script v1
+   Returns: `data/scripts/demo-promo/<session-id>/script_v1.md`
 
-4. **Refine the skill based on feedback**:
+4. **Feedback loop** (repeat until happy):
    ```bash
    /refine-skill demo-promo --feedback "tone too formal, make it conversational and energetic"
    ```
-   Updates skill, returns new script version
+   Skill auto-patches (v2, v3...), script re-generated on same input
 
-5. **Break into shots**:
+5. **Approve** -> final script:
    ```bash
-   /script-to-shotlist "# Script v3..."
+   /refine-skill demo-promo --approve
    ```
-   Returns: `shotlist.json` + `shotlist.md` with 1–5s shot breakdown
+
+6. **Prompt list** (final output):
+   ```bash
+   /script-to-shotlist data/scripts/demo-promo/<session-id>/final.md
+   ```
+   Returns: `prompts.json` + `prompts.md` - one video prompt per 1-5s shot (who says what, does what)
+
+New viral idea later? Analyze the new videos, then `/skill-creator-from-dna --dna <new dna.json> --update demo-promo`.
 
 ## Directory Structure
 
