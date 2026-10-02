@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Viết series mới</h1>
+<p class="lead">Đưa ý tưởng của bạn, rời rạc cũng được. Claude ghép nó vào khung cốt truyện của video mẫu, viết bible và outline, rồi dừng để bạn duyệt trước khi viết từng tập.</p>
+{% if not skills %}<div class="card banner">Chưa có phong cách (skill) nào. <a href="/">Học một video mẫu</a> rồi bấm <b>Tạo skill</b>.</div>{% else %}
+<form class="card" method="post" action="/series" enctype="multipart/form-data">
+  <label>1. Chọn phong cách</label>
+  {% for s in skills %}<label class="item" style="display:block;font-weight:400;cursor:pointer">
+    <input type="radio" name="slug" value="{{ s.slug }}" {{ 'checked' if s.slug == slug or (not slug and loop.first) }} required>
+    <b>{{ s.slug }}</b> <span class="muted">{{ s.version or '' }}</span>
+    <div class="meta" style="margin-left:22px">{{ s.description[:260] }}{% if s.description|length > 260 %}…{% endif %}</div></label>{% endfor %}
+
+  <label>2. Tên tạm của series <span class="muted" style="font-weight:400">(không bắt buộc)</span></label>
+  <input type="text" name="title" placeholder="Ví dụ: Ngôi làng bão">
+
+  <label>3. Ý tưởng của bạn</label>
+  <textarea name="idea" placeholder="Bối cảnh: làng chài miền Trung, mùa bão.&#10;Nhân vật: Mai (17 tuổi, con gái người gác hải đăng), Tuấn (bạn thân), ông Bảy (trưởng làng).&#10;Cảnh muốn có: Mai tìm thấy thư của mẹ trong căn phòng bị niêm phong.&#10;Kết: chưa nghĩ ra, muốn có twist."></textarea>
+  <p class="hint">Hoặc tải file .md / .txt lên (nội dung được gộp với ô trên):</p>
+  <input type="file" name="idea_file" accept=".md,.txt">
+
+  <div class="row">
+    <div><label>4. Số tập</label><input type="number" name="episodes" value="12" min="10" max="20"><p class="hint">10–20 tập</p></div>
+    <div><label>Độ dài mỗi tập (giây)</label><input type="number" name="episode_sec" value="90" min="60" max="120"><p class="hint">60–120 giây</p></div>
+  </div>
+  <p style="margin-top:16px"><button>Viết outline</button> <span class="hint">Khoảng 5–10 phút. Chưa viết tập nào cho đến khi bạn duyệt outline.</span></p>
+</form>{% endif %}
+{% endblock %}

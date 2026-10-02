@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import re
 import statistics
+import unicodedata
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -191,12 +192,16 @@ def allocate_frames(shots: list[dict], max_frames: int) -> list[tuple[dict, floa
     return picks
 
 
-def grab_frame(video_path: str, t: float, out: Path):
-    cmd = ["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", str(video_path),
-           "-frames:v", "1", "-q:v", "2", "-y", str(out)]
-    result = subprocess.run(cmd, capture_output=True, timeout=60)
-    if result.returncode != 0 or not out.exists():
-        raise RuntimeError(f"frame grab failed at {t}s: {result.stderr.decode()[:300]}")
+def grab_frame(video_path: str, t: float, out: Path) -> bool:
+    # Retry slightly earlier: timestamps at the very end of a file can land past the last frame
+    for attempt_t in (t, max(0.0, t - 0.5), max(0.0, t - 1.5)):
+        cmd = ["ffmpeg", "-v", "error", "-ss", f"{attempt_t:.3f}", "-i", str(video_path),
+               "-frames:v", "1", "-q:v", "2", "-y", str(out)]
+        result = subprocess.run(cmd, capture_output=True, timeout=60)
+        if result.returncode == 0 and out.exists() and out.stat().st_size > 0:
+            return True
+    print(f"  Frame grab failed at {t}s, skipped: {result.stderr.decode()[-200:]}", file=sys.stderr)
+    return False
 
 
 def extract_frames(video_path: str, output_dir: Path, picks: list[tuple[dict | None, float]]) -> list[dict]:
@@ -210,8 +215,8 @@ def extract_frames(video_path: str, output_dir: Path, picks: list[tuple[dict | N
         path = output_dir / f"frame_{n:04d}_t{t:07.2f}_{shot_id or 'u'}.jpg"
         frame_info.append({"path": str(path), "t_sec": t, "shot_id": shot_id})
     with ThreadPoolExecutor(max_workers=4) as pool:
-        list(pool.map(lambda f: grab_frame(video_path, f["t_sec"], Path(f["path"])), frame_info))
-    return frame_info
+        ok = list(pool.map(lambda f: grab_frame(video_path, f["t_sec"], Path(f["path"])), frame_info))
+    return [f for f, good in zip(frame_info, ok) if good]
 
 
 def write_json(path: Path, data: dict) -> str:
@@ -220,10 +225,23 @@ def write_json(path: Path, data: dict) -> str:
     return str(path.resolve())
 
 
+def safe_id(name: str) -> str:
+    """ASCII id for folders/agents ("Tập 1" -> "Tap_1"): spaces and odd chars break globs and shell commands."""
+    name = name.replace("đ", "d").replace("Đ", "D")
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_") or "video"
+
+
+def natural_key(path: str) -> list:
+    """Episode order: "Tap 2" before "Tap 10"."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", path)]
+
+
 def process_source(video_file: str, run_dir: Path, args) -> tuple[dict, list[dict]]:
-    stem = Path(video_file).stem
+    stem = safe_id(Path(video_file).stem)
     duration = get_video_duration(video_file)
     source = {
+        "source_id": stem,
         "filename": Path(video_file).name,
         "path": str(Path(video_file).resolve()),
         "duration_sec": round(duration, 1),
@@ -333,7 +351,8 @@ def main():
     if input_path.is_file():
         video_files = [str(input_path)]
     elif input_path.is_dir():
-        video_files = sorted(str(f) for f in input_path.rglob("*") if f.suffix.lower() in VIDEO_EXTS)
+        video_files = sorted((str(f) for f in input_path.rglob("*") if f.suffix.lower() in VIDEO_EXTS),
+                             key=natural_key)
     else:
         print(f"Error: {input_path} not found", file=sys.stderr)
         sys.exit(1)

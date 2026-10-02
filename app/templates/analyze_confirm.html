@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+{% if partial %}
+<h1>Lần trước mới học một phần</h1>
+<div class="card">
+  <p>Bạn chọn <b>{{ video_path }}</b> ({{ n_videos }} video). Các lần học trước chỉ có:</p>
+  {% for r in existing %}<p><a href="/runs/{{ r.id }}">{{ r.title or r.id }}</a> — {{ r.sources|join(', ') }}</p>{% endfor %}
+  <p>Nên <b>học lại cả {{ n_videos }} video</b> để Claude thấy toàn bộ mạch truyện. Học xong, ở trang kết quả bấm <b>Tạo skill</b>
+    và tick <b>cập nhật skill có sẵn</b> nếu muốn nâng cấp skill cũ thay vì tạo skill mới.</p>
+  <form method="post" action="/analyze" class="row">
+    <input type="hidden" name="video_path" value="{{ video_path }}"><input type="hidden" name="language" value="{{ language }}">
+    <input type="hidden" name="chunk_sec" value="{{ chunk_sec }}"><input type="hidden" name="max_frames" value="{{ max_frames }}">
+    <input type="hidden" name="force" value="1">
+    <div style="flex:0 0 auto"><button>Học cả {{ n_videos }} video</button></div>
+    <div style="flex:0 0 auto"><a class="btn secondary" href="/runs/{{ existing[0].id }}">Xem kết quả cũ</a></div>
+  </form>
+</div>
+{% else %}
+<h1>Đã học những video này rồi</h1>
+<div class="card">
+  <p><b>{{ video_path }}</b></p>
+  {% for r in existing %}<p><a href="/runs/{{ r.id }}">{{ r.title or r.id }}</a> — {{ r.sources|join(', ') }} · {{ r.analyzed }}/{{ r.units }} đoạn
+    {% if r.done %}<span class="pill ok">đã xong</span>{% else %}<span class="pill warn">chưa xong</span>{% endif %}</p>{% endfor %}
+  <p>Nên dùng kết quả cũ: mở ra và bấm <b>Tạo skill</b> (hoặc <b>Chạy tiếp</b> nếu chưa xong). Học lại từ đầu sẽ chạy lại toàn bộ.</p>
+  <form method="post" action="/analyze" class="row">
+    <input type="hidden" name="video_path" value="{{ video_path }}"><input type="hidden" name="language" value="{{ language }}">
+    <input type="hidden" name="chunk_sec" value="{{ chunk_sec }}"><input type="hidden" name="max_frames" value="{{ max_frames }}">
+    <input type="hidden" name="force" value="1">
+    <div style="flex:0 0 auto"><a class="btn" href="/runs/{{ existing[0].id }}">Mở kết quả cũ</a></div>
+    <div style="flex:0 0 auto"><button class="secondary">Vẫn học lại từ đầu</button></div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ (dna or {}).get('title') or sources[0].filename }}</h1>
+<p class="lead">{% for s in sources %}{{ s.filename }} · {{ (s.duration_sec/60)|round(1) }} phút{% if s.audio %} · thoại {{ s.audio.language }}{% endif %}{% if s.pacing_measured %} · {{ s.pacing_measured.shot_count }} shot{% endif %} {% endfor %}· {{ run_id }}</p>
+{% if job %}<div class="card banner">Đang chạy: <a href="/jobs/{{ job.id }}">{{ job.data.title }}</a></div>{% endif %}
+
+{% if not dna %}
+<div class="card"><p>Đã phân tích {{ units|selectattr('done')|list|length }}/{{ units|length }} đoạn. Chưa gộp thành cốt truyện.</p>
+{% if not job %}<form method="post" action="/runs/{{ run_id }}/resume"><button>Chạy tiếp</button>
+<span class="hint">Những đoạn đã xong được giữ lại.</span></form>{% endif %}</div>
+{% else %}
+<div class="card" id="skill">
+  {% if run.skills %}
+    <h2 style="margin-top:0">Đã có skill từ video này</h2>
+    {% for s in run.skills %}<p><b>{{ s }}</b> <a class="btn small" href="/series/new?slug={{ s }}">Viết series với phong cách này</a></p>{% endfor %}
+    <details class="adv"><summary>Tạo thêm skill khác / cập nhật skill</summary>{% endif %}
+  {% if not run.skills %}<h2 style="margin-top:0">Bước tiếp theo: tạo skill viết series</h2>
+    <p class="hint">Skill = "phong cách viết" học từ video này, dùng lại cho nhiều ý tưởng khác nhau. Mất khoảng 5–10 phút.</p>{% endif %}
+  <form method="post" action="/skills" class="row">
+    <input type="hidden" name="run_id" value="{{ run_id }}">
+    <div><label>Tên skill (ngắn, không dấu, gạch ngang)</label><input type="text" name="slug" value="{{ suggested_slug }}" pattern="[A-Za-z0-9-]+" required></div>
+    <div><label style="font-weight:400"><input type="checkbox" name="update" value="1"> cập nhật skill có sẵn cùng tên</label></div>
+    <div><button>Tạo skill</button></div>
+  </form>
+  {% if run.skills %}</details>{% endif %}
+</div>
+{% endif %}
+
+<p class="tabs"><a href="?tab=story" class="{{ 'active' if tab=='story' }}">Cốt truyện</a><a href="?tab=dna" class="{{ 'active' if tab=='dna' }}">Nhân vật &amp; kỹ thuật</a><a href="?tab=units" class="{{ 'active' if tab=='units' }}">Các đoạn ({{ units|length }})</a></p>
+<div class="card doc">
+{% if tab == 'units' %}
+  <table>{% for u in units %}<tr><td>{{ u.id }}</td><td>{{ u.t }}</td><td><span class="pill {{ 'ok' if u.done else 'muted' }}">{{ 'đã phân tích' if u.done else 'chưa' }}</span></td></tr>{% endfor %}</table>
+{% elif text %}{{ text|md|safe }}{% else %}<p class="empty">Chưa có nội dung.</p>{% endif %}
+</div>
+{% endblock %}

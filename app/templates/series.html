@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block mainclass %}main-wide{% endblock %}
+{% block content %}
+<h1>{{ st.input.title or sid }}</h1>
+<p class="lead">Phong cách {{ slug }} · {{ st.input.episodes }} tập × {{ st.input.episode_sec }} giây · <span class="pill {{ stage[1] }}">{{ stage[0] }}</span></p>
+
+{% set has_eps = st.episodes|length > 0 %}
+<div class="stepper">
+  <div class="{{ 'done' if st.outline else 'now' }}">1 · Outline</div>
+  <div class="{{ 'done' if has_eps else ('now' if st.outline else '') }}">2 · Duyệt outline</div>
+  <div class="{{ 'done' if st.final else ('now' if has_eps else '') }}">3 · Viết &amp; góp ý từng tập</div>
+  <div class="{{ 'done' if st.final else '' }}">4 · Chốt &amp; tải biên kịch</div>
+</div>
+
+{% if job %}<div class="card banner" hx-get="/jobs/{{ job.id }}/watch" hx-trigger="every 10s" hx-swap="none">
+  <b>Claude đang làm:</b> {{ job.data.title }} — <a href="/jobs/{{ job.id }}">xem tiến độ</a>. Trang sẽ tự tải lại khi xong.</div>{% endif %}
+
+<div class="series-layout">
+<nav class="side card sticky">
+  <div class="group">Tài liệu</div>
+  {% for key, label in [('adaptation','Ghép ý tưởng'),('bible','Series bible'),('outline','Outline')] %}{% if st[key] %}
+    <a href="?view={{ key }}" class="{{ 'active' if view==key }}">{{ label }}</a>
+    {% if key in st.versions and st.versions[key]|length > 1 %}<div class="ver" style="padding-left:8px">phiên bản:
+      {% for p in st.versions[key] %}{% set n = p.name.split('_v')[1][:-3] %}<a style="display:inline;padding:0 3px" href="?view={{ key }}&v={{ n }}">v{{ n }}</a>{% endfor %}</div>{% endif %}
+  {% endif %}{% endfor %}
+  <div class="group">Các tập</div>
+  {% for n, p in st.episodes.items() %}<a href="?view=ep{{ n }}" class="{{ 'active' if view=='ep'~n }}">Tập {{ n }} <span class="ver">{{ p.name.split('_')[-1][:-3] }}</span></a>
+  {% else %}<span class="empty" style="padding:0 8px;display:block">Chưa viết — duyệt outline trước</span>{% endfor %}
+  <div class="group">Tải về</div>
+  <a href="/series/{{ slug }}/{{ sid }}/export">File biên kịch .md</a>
+  <span class="ver" style="padding:0 8px;display:block">{{ 'Bản đã chốt' if st.final else 'Bản nháp mới nhất' }}</span>
+</nav>
+
+<div>
+  <div class="card doc">{% if current %}<p class="muted" style="margin-top:0">{{ current }}</p>{% endif %}
+    {% if text %}{{ text|md|safe }}{% else %}<p class="empty">Chưa có nội dung.</p>{% endif %}
+    {% if nav.prev or nav.next %}<div class="eps-nav">
+      {% if nav.prev %}<a href="?view=ep{{ nav.prev }}">← Tập {{ nav.prev }}</a>{% else %}<span></span>{% endif %}
+      {% if nav.next %}<a href="?view=ep{{ nav.next }}">Tập {{ nav.next }} →</a>{% endif %}</div>{% endif %}
+  </div>
+  {% if st.iterations %}<details class="card"><summary>Lịch sử góp ý ({{ st.iterations|length }})</summary>
+    {% for it in st.iterations %}<p><b>Vòng {{ it.round }}</b> <span class="muted">{{ it.timestamp }} · {{ it.status }}</span><br>{{ it.feedback_raw }}</p>{% endfor %}</details>{% endif %}
+</div>
+
+<aside class="panel card sticky">
+  {% if job %}<p class="muted" style="margin-top:0">Đang có việc chạy cho series này. Góp ý tiếp khi nó xong.</p>
+  {% else %}
+  <h2 style="margin-top:0">Góp ý <span class="muted" style="font-size:13px;font-weight:400">(không bắt buộc)</span></h2>
+  <form method="post" action="/series/{{ slug }}/{{ sid }}/refine">
+    <label>Áp dụng cho</label>
+    {% set preset = 'outline' if view == 'outline' else ('bible' if view == 'bible' else ('ep%02d'|format(view[2:]|int) if view.startswith('ep') else '')) %}
+    <select name="target">
+      <option value="">Để Claude tự xác định</option>
+      <option value="outline" {{ 'selected' if preset=='outline' }}>Outline</option>
+      <option value="bible" {{ 'selected' if preset=='bible' }}>Bible (thế giới, nhân vật)</option>
+      {% if has_eps %}<option value="all_episodes">Tất cả các tập</option>{% endif %}
+      {% for n in st.episodes %}<option value="ep{{ '%02d'|format(n) }}" {{ 'selected' if preset=='ep%02d'|format(n) }}>Tập {{ n }}</option>{% endfor %}
+    </select>
+    <label>Cần sửa gì?</label>
+    <textarea name="feedback" placeholder="Ví dụ: twist anh trai nên lộ ở tập 7; bớt lời dẫn ở đầu tập; cho ông Thụ xuất hiện sớm hơn…" required></textarea>
+    <p class="hint">Viết tự nhiên bằng tiếng Việt. Góp ý chung (vd: cliffhanger tập nào cũng giống nhau) sẽ cập nhật luôn phong cách cho các series sau. Mất khoảng 3–10 phút.</p>
+    <button>Gửi góp ý</button>
+  </form>
+
+  {% if st.outline and not has_eps %}<div class="action">
+    <h2 style="margin-top:0">Outline ổn rồi?</h2>
+    <form method="post" action="/series/{{ slug }}/{{ sid }}/refine" onsubmit="return confirm('Duyệt outline và để Claude viết toàn bộ {{ st.input.episodes }} tập?')">
+      <input type="hidden" name="approve" value="outline"><button class="good">Duyệt outline → viết các tập</button></form>
+    <p class="hint">Claude viết {{ st.input.episodes }} tập theo outline này (khoảng 15–30 phút). Sau đó vẫn góp ý từng tập được.</p></div>{% endif %}
+  {% if has_eps and not st.final %}<div class="action">
+    <h2 style="margin-top:0">Các tập ổn rồi?</h2>
+    <form method="post" action="/series/{{ slug }}/{{ sid }}/refine" onsubmit="return confirm('Chốt season này? Bản mới nhất của mọi tập sẽ được lưu thành bản cuối.')">
+      <input type="hidden" name="approve" value="final"><button class="good">Chốt season</button></form>
+    <p class="hint">Lưu bản mới nhất thành bản cuối, rồi tải file biên kịch .md ở cột trái.</p></div>{% endif %}
+  {% if st.final %}<div class="action"><a class="btn" href="/series/{{ slug }}/{{ sid }}/export">Tải file biên kịch</a></div>{% endif %}
+  {% endif %}
+</aside>
+</div>
+{% endblock %}

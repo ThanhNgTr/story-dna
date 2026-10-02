@@ -1,0 +1,10 @@
+<div class="browse">
+  <div class="muted" style="cursor:default">Thư mục: {{ cwd }}</div>
+  {% if parent %}<div hx-get="/browse?path={{ parent|urlencode }}" hx-target="#browser">.. (lên một cấp)</div>{% endif %}
+  {% if n_videos > 1 %}<div data-path="{{ cwd }}" onclick="pickVideo(this)" style="font-weight:600;color:var(--accent)">
+    <span class="pill run">cả thư mục</span> Chọn tất cả {{ n_videos }} video trong thư mục này (các tập của một series)</div>{% endif %}
+  {% for e in entries %}
+    {% if e.dir %}<div hx-get="/browse?path={{ e.path|urlencode }}" hx-target="#browser"><span class="pill">thư mục</span> {{ e.name }}/ <span class="muted">— bấm để mở</span></div>
+    {% else %}<div data-path="{{ e.path }}" onclick="pickVideo(this)"><span class="pill">video</span> {{ e.name }} <span class="muted">{{ e.size_mb }} MB</span></div>{% endif %}
+  {% else %}<div class="muted" style="cursor:default">Không có thư mục hay video nào ở đây. Chép video vào data/input/ rồi tải lại trang.</div>{% endfor %}
+</div>

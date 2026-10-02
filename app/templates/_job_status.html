@@ -1,0 +1,24 @@
+<div {% if live %}hx-get="/jobs/{{ job.id }}/status" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+<div class="card">
+  <p style="margin-top:0"><span class="pill {{ STATUS.get(job.status, ('',''))[1] }}">{{ STATUS.get(job.status, (job.status,''))[0] }}</span>
+    {% if elapsed %} · {{ 'đã chạy' if live else 'mất' }} {{ elapsed }}{% endif %}
+    {% if live %}<span class="hint"> · có thể đóng tab, việc vẫn chạy nền</span>{% endif %}</p>
+  {% if job.error %}<p class="bad">{{ job.error }}</p>{% endif %}
+  <table>{% for name, s in job.steps.items() %}<tr>
+    <td>{{ STEPS.get(name, name) }}</td>
+    <td><span class="pill {{ STATUS.get(s.status, ('',''))[1] }}">{{ STATUS.get(s.status, (s.status,''))[0] }}</span></td>
+    <td class="muted">{% if name == 'units' and s.total %}<div class="progress"><i style="width:{{ (100 * (s.done or 0) / s.total)|round }}%"></i></div>{{ s.done or 0 }}/{{ s.total }} đoạn
+      {% else %}{% for k, v in s.items() if k not in ('status','at') and v not in (None, [], '') %}{{ STEP_FIELDS.get(k, k) }}: {{ v }} {% endfor %}{% endif %}</td></tr>{% endfor %}</table>
+  {% if live and log %}<p class="hint">Đang làm: {{ log[-1][9:160] }}</p>{% endif %}
+  <div class="row" style="margin-top:12px">
+  {% for label, href, primary in links %}<div style="flex:0 0 auto"><a class="btn {{ '' if primary else 'secondary' }}" href="{{ href }}">{{ label }}</a></div>{% endfor %}
+  {% if live %}<form style="flex:0 0 auto" method="post" action="/jobs/{{ job.id }}/cancel" onsubmit="return confirm('Dừng việc này? Phần đã xong được giữ lại, có thể chạy tiếp sau.')"><button class="secondary">Dừng</button></form>{% endif %}
+  {% if job.status in ('failed','interrupted','cancelled') %}<form style="flex:0 0 auto" method="post" action="/jobs/{{ job.id }}/resume"><button>Chạy tiếp</button></form>
+    <span class="hint" style="flex:1">Bước và đoạn đã xong sẽ được bỏ qua.</span>{% endif %}
+  </div>
+  {% if job.result.last_reply and not live %}<details style="margin-top:12px"><summary>Lời nhắn cuối của Claude</summary><div class="doc">{{ job.result.last_reply|md|safe }}</div></details>{% endif %}
+</div>
+<details {{ 'open' if live }}><summary class="muted">Nhật ký chi tiết</summary>
+<div class="log">{% for l in log %}{{ l }}
+{% endfor %}</div></details>
+</div>

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Tổng quan</h1>
+<div class="flow">
+  <div><b><span class="num">1</span>Học video mẫu</b><span>Claude xem và nghe video dài, rút ra cốt truyện, nhân vật, cách quay, âm thanh, màu.</span></div>
+  <div><b><span class="num">2</span>Tạo skill</b><span>Biến những gì học được thành "phong cách viết" dùng lại nhiều lần.</span></div>
+  <div><b><span class="num">3</span>Viết series</b><span>Đưa ý tưởng (rời rạc cũng được) → outline 10–20 tập để bạn duyệt.</span></div>
+  <div><b><span class="num">4</span>Góp ý &amp; chốt</b><span>Sửa từng tập theo góp ý, chốt và tải file biên kịch .md.</span></div>
+</div>
+
+{% if not env.claude_bin or not env.ffmpeg %}
+<div class="card banner"><b class="bad">Thiếu công cụ:</b>
+  {% if not env.ffmpeg %} ffmpeg (cài: <code>sudo apt install ffmpeg</code>).{% endif %}
+  {% if not env.claude_bin %} Claude CLI (đặt biến <code>CLAUDE_BIN</code>).{% endif %}</div>
+{% endif %}
+
+<div class="grid">
+<div class="card"><h2 style="margin-top:0">Video mẫu đã học</h2>
+  {% for r in runs %}<div class="item">
+    <div class="title">{{ r.title or (r.genre|capitalize if r.genre) or r.sources|join(', ') }}</div>
+    <div class="meta">{{ r.sources|join(', ') }} · {{ r.minutes }} phút{% if r.language %} · thoại {{ r.language }}{% endif %} · {{ r.id }}</div>
+    {% if r.logline %}<p class="muted" style="margin:6px 0">{{ r.logline }}</p>{% endif %}
+    <div class="actions">
+      {% if r.job %}<span class="pill run">Đang chạy</span> <a class="btn small secondary" href="/jobs/{{ r.job.id }}">Xem tiến độ</a>
+      {% elif not r.done %}<span class="pill warn">Chưa xong ({{ r.analyzed }}/{{ r.units }} đoạn)</span> <a class="btn small secondary" href="/runs/{{ r.id }}">Mở &amp; chạy tiếp</a>
+      {% else %}<a class="btn small secondary" href="/runs/{{ r.id }}">Xem cốt truyện</a>
+        {% if r.skills %}{% for s in r.skills %}<a class="btn small" href="/series/new?slug={{ s }}">Viết series ({{ s }})</a>{% endfor %}
+        {% else %}<a class="btn small" href="/runs/{{ r.id }}#skill">Tạo skill</a>{% endif %}{% endif %}
+    </div></div>
+  {% else %}<p class="empty">Chưa có. <a href="/analyze/new">Chọn video mẫu để bắt đầu</a>.</p>{% endfor %}
+</div>
+
+<div class="card"><h2 style="margin-top:0">Series của bạn</h2>
+  {% for s in sessions %}<div class="item">
+    <div class="title"><a href="/series/{{ s.slug }}/{{ s.session_id }}">{{ s.title }}</a></div>
+    <div class="meta">phong cách {{ s.slug }} · {{ s.planned or '?' }} tập · {{ s.session_id }}</div>
+    <div class="actions"><span class="pill {{ s.stage[1] }}">{{ s.stage[0] }}</span></div></div>
+  {% else %}<p class="empty">Chưa có series nào.{% if skills %} <a href="/series/new">Viết series đầu tiên</a>.{% endif %}</p>{% endfor %}
+  <h2>Phong cách (skill) sẵn có</h2>
+  {% for s in skills %}<div class="item">
+    <div class="title">{{ s.slug }} <span class="muted" style="font-weight:400">{{ s.version or '' }}</span></div>
+    <div class="meta">{{ s.description[:160] }}{% if s.description|length > 160 %}…{% endif %}</div>
+    <div class="actions"><a class="btn small" href="/series/new?slug={{ s.slug }}">Viết series</a></div></div>
+  {% else %}<p class="empty">Chưa có. Skill không tự tạo: học xong video, bấm <b>Tạo skill</b>.</p>{% endfor %}
+</div>
+</div>
+
+<div class="card"><h2 style="margin-top:0">Việc gần đây</h2>
+<table>{% for j in jobs %}<tr><td><a href="/jobs/{{ j.id }}">{{ j.title }}</a></td>
+<td><span class="pill {{ STATUS.get(j.status, ('',''))[1] }}">{{ STATUS.get(j.status, (j.status,''))[0] }}</span></td>
+<td class="muted">{{ j.elapsed or '' }}</td><td class="muted">{{ (j.created_at or '')[:16]|replace('T',' ') }} UTC</td></tr>
+{% else %}<tr><td class="muted">Chưa có.</td></tr>{% endfor %}</table>
+<p class="hint">Công cụ: <span class="{{ 'ok' if env.ffmpeg else 'bad' }}">ffmpeg</span> ·
+  <span class="{{ 'ok' if env.whisperx_venv else 'warn' }}">WhisperX</span> ·
+  <span class="{{ 'ok' if env.claude_bin else 'bad' }}">Claude CLI</span> ·
+  <span class="{{ 'ok' if env.hf_token else 'muted' }}">HF_TOKEN (tách người nói, tùy chọn)</span></p>
+</div>
+{% endblock %}

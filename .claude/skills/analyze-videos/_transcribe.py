@@ -191,7 +191,7 @@ def main():
 
     transcriber = None
     for source in manifest["sources"]:
-        stem = Path(source["filename"]).stem
+        stem = source.get("source_id") or Path(source["filename"]).stem
         duration = source["duration_sec"]
         units = [units_by_id[uid] for uid in source["units"]]
         print(f"Processing {source['filename']}...", file=sys.stderr)

@@ -38,7 +38,8 @@ POC system for:
 5. **Speaker labels** need `HF_TOKEN` + pyannote terms; without them agents assign speakers from frames (`speaker_unsure`).
 6. **SKILL.md YAML must be valid**: parse the frontmatter after every write; bad YAML -> skill fails silently.
 7. **Skill name conflicts**: check `.claude/skills/` before generating.
-8. **Scene detection limits**: fades/dissolves merge into one shot; flashes can add false cuts (`--scene-threshold`).
+8. **Headless Claude cannot write inside `.claude/`** (protected even with allow rules). The web app stages skill edits in `data/skills-staging/write-series-<slug>/`, then validates + installs them into `.claude/skills/`.
+9. **Scene detection limits**: fades/dissolves merge into one shot; flashes can add false cuts (`--scene-threshold`).
 
 ## WORKFLOW
 

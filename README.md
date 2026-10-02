@@ -45,10 +45,33 @@ series bible + season outline + episode screenplays of 1-2 minutes each.
 5. **Optional production**: `/script-to-shotlist data/series/<slug>/<session-id>/final/ep01.md`,
    then the briefs in [PRODUCTION_PIPELINE.md](PRODUCTION_PIPELINE.md).
 
+## Web App (local POC)
+
+The same pipeline with a browser UI, for one user or an internal team, running on your own machine.
+
+```bash
+./run_app.sh            # http://127.0.0.1:8765
+```
+
+| Screen | What you do |
+|---|---|
+| Dashboard | Environment check (ffmpeg, WhisperX, Claude CLI, HF_TOKEN), analyses, skills, series, recent jobs |
+| 1 Analyze video | Pick the long video with the folder browser, set dialogue language, start. Live progress per step and per unit |
+| Analysis result | Read `story.md` / `dna.md`, unit status, resume an unfinished run, generate the `write-series-<slug>` skill |
+| 2 Write series | Pick a skill, paste or upload your idea, episodes (10-20) and length (60-120 s) -> adaptation + bible + outline |
+| Series session | Read every document and episode, send feedback (per episode / outline / all), approve outline -> episodes, approve season, download the screenplay `.md` |
+
+How it works:
+- Backend: FastAPI (`app/`), background jobs in `data/jobs/<id>.json` + `.log`; a failed or interrupted job can be resumed and skips finished steps and units.
+- Claude: the app runs the Claude Code CLI headless (`claude -p`) with the account logged in on this machine, in the project dir, so the project skills and agents are used as-is (`app/claude_runner.py` is the only place that calls Claude). The CLI is found via `CLAUDE_BIN`, `PATH`, or the VS Code extension.
+- Analysis is orchestrated by the backend (`app/pipeline/analyze.py`): scripts, then up to `STORY_DNA_PARALLEL` (default 4) `video-analyst` runs at once, then `story-merger`. Also runnable without the UI: `.venv/bin/python -m app.pipeline.analyze --run data/analyses/<run-id>`.
+- The folder browser only shows paths under `STORY_DNA_BROWSE_ROOTS` (default: your home dir). The server binds to 127.0.0.1 only.
+- The cost shown per job is what the Claude CLI reports; on a subscription it reflects usage, not a bill.
+
 ## User Guide
 
 Run every `/...` command inside Claude Code (terminal or VS Code), opened at the project folder.
-Run `bash` commands in a normal terminal.
+Run `bash` commands in a normal terminal. Prefer a UI? See [Web App](#web-app-local-poc).
 
 ### 1. Setup (one time)
 

@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ job.title }}</h1>
+<div hx-get="/jobs/{{ job.id }}/status" hx-trigger="load" hx-swap="innerHTML"></div>
+{% endblock %}
