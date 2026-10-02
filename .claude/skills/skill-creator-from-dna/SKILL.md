@@ -211,9 +211,16 @@ Logline: ... | Story beats: <template beats> | Cliffhanger: <type>
 
 ## Steps
 
-1. Read `dna.json`, `dna.md`, `story.md` (same run dir). Check `.claude/skills/` for the slug.
+1. Read `dna.json`, `dna.md`, `story.md` (same run dir), and `film_analysis.json` / `.md` when present
+   (film-analyst pass). Check `.claude/skills/` for the slug.
+   - `audit` items with `severity: high` override the DNA (use the correction, cite it).
+   - `retention`, `episode_template` -> Episode Template and Hook Patterns (use its seconds and cut rules).
+   - `viral_formula` -> Storytelling Rules + the "Why it works" column of the Story Template.
+   - `character_engine` -> Character Bible; `dialogue_craft` -> Tone & Voice Guidelines.
+   - `weaknesses` -> an "Avoid" list in Storytelling Rules. `top_rules_for_writers` -> Self-check.
 2. Write `references/reference-story.md` (story.md + act table + plot timeline + mystery ledger +
-   arcs + episode break candidates) and `references/reference-characters.md`.
+   arcs + episode break candidates) and `references/reference-characters.md`. When film_analysis
+   exists, also copy it to `references/film-analysis.md`.
 3. Write SKILL.md from the template. Keep it under 500 lines; push long tables to references/.
 4. Validate YAML frontmatter (`name`, `version`, `description`) by parsing it. Bad YAML -> skill
    silently fails to load.

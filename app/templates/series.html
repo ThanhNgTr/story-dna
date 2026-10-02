@@ -4,12 +4,12 @@
 <h1>{{ st.input.title or sid }}</h1>
 <p class="lead">Phong cách {{ slug }} · {{ st.input.episodes }} tập × {{ st.input.episode_sec }} giây · <span class="pill {{ stage[1] }}">{{ stage[0] }}</span></p>
 
-{% set has_eps = st.episodes|length > 0 %}
+{% set has_eps = st.episodes|length > 0 or st.produced_upto > 0 %}
 <div class="stepper">
   <div class="{{ 'done' if st.outline else 'now' }}">1 · Outline</div>
-  <div class="{{ 'done' if has_eps else ('now' if st.outline else '') }}">2 · Duyệt outline</div>
-  <div class="{{ 'done' if st.final else ('now' if has_eps else '') }}">3 · Viết &amp; góp ý từng tập</div>
-  <div class="{{ 'done' if st.final else '' }}">4 · Chốt &amp; tải biên kịch</div>
+  <div class="{{ 'done' if has_eps and not st.missing else ('now' if st.outline else '') }}">2 · Duyệt outline</div>
+  <div class="{{ 'done' if st.final_complete else ('now' if has_eps and not st.missing else '') }}">3 · Viết &amp; góp ý từng tập</div>
+  <div class="{{ 'done' if st.final_complete else '' }}">4 · Chốt &amp; tải biên kịch</div>
 </div>
 
 {% if skill_archived %}<div class="card banner"><b class="warn">Skill {{ slug }} đang bị ẩn</b> nên chưa góp ý / viết tiếp được.
@@ -20,17 +20,20 @@
 <div class="series-layout">
 <nav class="side card sticky">
   <div class="group">Tài liệu</div>
-  {% for key, label in [('adaptation','Ghép ý tưởng'),('bible','Series bible'),('outline','Outline')] %}{% if st[key] %}
+  {% for key, label in [('adaptation','Ghép ý tưởng'),('canon','Đối chiếu video'),('bible','Series bible'),('outline','Outline')] %}{% if st[key] %}
     <a href="?view={{ key }}" class="{{ 'active' if view==key }}">{{ label }}</a>
     {% if key in st.versions and st.versions[key]|length > 1 %}<div class="ver" style="padding-left:8px">phiên bản:
       {% for p in st.versions[key] %}{% set n = p.name.split('_v')[1][:-3] %}<a style="display:inline;padding:0 3px" href="?view={{ key }}&v={{ n }}">v{{ n }}</a>{% endfor %}</div>{% endif %}
   {% endif %}{% endfor %}
   <div class="group">Các tập</div>
-  {% for n, p in st.episodes.items() %}<a href="?view=ep{{ n }}" class="{{ 'active' if view=='ep'~n }}">Tập {{ n }} <span class="ver">{{ p.name.split('_')[-1][:-3] }}</span></a>
+  {% if st.produced_upto %}<span class="ver" style="padding:0 8px;display:block">Tập 1–{{ st.produced_upto }}: đã quay thành video</span>{% endif %}
+  {% for n, p in st.episodes.items() %}<a href="?view=ep{{ n }}" class="{{ 'active' if view=='ep'~n }}">Tập {{ n }} <span class="ver">{{ p.name.split('_')[-1][:-3] }}{{ ' · đã quay' if n <= st.produced_upto }}</span></a>
   {% else %}<span class="empty" style="padding:0 8px;display:block">Chưa viết — duyệt outline trước</span>{% endfor %}
   <div class="group">Tải về</div>
   <a href="/series/{{ slug }}/{{ sid }}/export">File biên kịch .md</a>
-  <span class="ver" style="padding:0 8px;display:block">{{ 'Bản đã chốt' if st.final else 'Bản nháp mới nhất' }}</span>
+  <span class="ver" style="padding:0 8px;display:block">{{ 'Bản đã chốt' if st.final_complete else 'Bản nháp mới nhất' }}</span>
+  {% if st.episodes or st.produced_upto %}<div class="group">Phần tiếp</div>
+  <a href="/series/continue?slug={{ slug }}&sid={{ sid }}">Viết tiếp từ video đã làm</a>{% endif %}
 </nav>
 
 <div>
@@ -65,17 +68,20 @@
     <button>Gửi góp ý</button>
   </form>
 
-  {% if st.outline and not has_eps %}<div class="action">
+  {% if st.outline and st.missing %}<div class="action">
     <h2 style="margin-top:0">Outline ổn rồi?</h2>
-    <form method="post" action="/series/{{ slug }}/{{ sid }}/refine" onsubmit="return confirm('Duyệt outline và để Claude viết toàn bộ {{ st.input.episodes }} tập?')">
-      <input type="hidden" name="approve" value="outline"><button class="good">Duyệt outline → viết các tập</button></form>
-    <p class="hint">Claude viết {{ st.input.episodes }} tập theo outline này (khoảng 15–30 phút). Sau đó vẫn góp ý từng tập được.</p></div>{% endif %}
-  {% if has_eps and not st.final %}<div class="action">
+    <form method="post" action="/series/{{ slug }}/{{ sid }}/refine" onsubmit="return confirm('Duyệt outline và để Claude viết {{ missing_label }}?')">
+      <input type="hidden" name="approve" value="outline"><button class="good">Duyệt outline → viết {{ missing_label }}</button></form>
+    <p class="hint">Claude viết {{ st.missing|length }} tập theo outline này (khoảng {{ (st.missing|length * 2)|round|int }}–{{ (st.missing|length * 3)|round|int }} phút). Tập đã có không bị viết lại. Sau đó vẫn góp ý từng tập được.</p></div>{% endif %}
+  {% if has_eps and not st.missing and not st.final_complete %}<div class="action">
     <h2 style="margin-top:0">Các tập ổn rồi?</h2>
     <form method="post" action="/series/{{ slug }}/{{ sid }}/refine" onsubmit="return confirm('Chốt season này? Bản mới nhất của mọi tập sẽ được lưu thành bản cuối.')">
       <input type="hidden" name="approve" value="final"><button class="good">Chốt season</button></form>
     <p class="hint">Lưu bản mới nhất thành bản cuối, rồi tải file biên kịch .md ở cột trái.</p></div>{% endif %}
-  {% if st.final %}<div class="action"><a class="btn" href="/series/{{ slug }}/{{ sid }}/export">Tải file biên kịch</a></div>{% endif %}
+  {% if st.final_complete %}<div class="action"><a class="btn" href="/series/{{ slug }}/{{ sid }}/export">Tải file biên kịch</a></div>{% endif %}
+  {% if st.episodes or st.produced_upto %}<div class="action"><h2 style="margin-top:0">Đã quay vài tập?</h2>
+    <a class="btn secondary" href="/series/continue?slug={{ slug }}&sid={{ sid }}">Viết tiếp từ video đã làm</a>
+    <p class="hint">Claude học các tập đã thành video, đối chiếu với kịch bản, rồi viết outline cho các tập tiếp theo.</p></div>{% endif %}
   {% endif %}
 </aside>
 </div>

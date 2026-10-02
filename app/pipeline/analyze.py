@@ -2,6 +2,7 @@
 
 1 shots + units + frames (_analyze.py)  2 transcript (_transcribe.py)
 3 video-analyst per unit (parallel)       4 story-merger (parts if > 8 units, then final)
+5 film-analyst: text-only audit + why it works (film_analysis.md/.json)
 
 Every step skips work whose output already exists, so a failed or interrupted job can resume.
 Also runnable from the CLI:  .venv/bin/python -m app.pipeline.analyze --run data/analyses/<run-id>
@@ -57,7 +58,8 @@ async def step_extract(job: Job) -> Path:
     job.step("extract", "running")
     lines = await run_script(job, ["python3", str(config.SCRIPTS / "_analyze.py"), "--input", p["video_path"],
                                    "--chunk-sec", str(p.get("chunk_sec", 120)),
-                                   "--max-frames", str(p.get("max_frames", 40))])
+                                   "--max-frames", str(p.get("max_frames", 40))]
+                       + (["--audio-only"] if p.get("audio_only") else []))
     manifest = Path(lines[-1].strip())
     run_dir = (config.ROOT / manifest).parent if not manifest.is_absolute() else manifest.parent
     p["run_dir"] = str(run_dir)
@@ -172,6 +174,21 @@ async def step_merge(job: Job, run_dir: Path):
     job.step("merge", "done")
 
 
+async def step_review(job: Job, run_dir: Path):
+    """film-analyst: text-only audit of the DNA + why the reference holds viewers (no frames, cheap)."""
+    if valid_json(run_dir / "film_analysis.json") and (run_dir / "film_analysis.md").exists():
+        job.step("review", "skipped")
+        return
+    job.step("review", "running")
+    prompt = (f"run_dir: {run_dir}\noutput: {run_dir}\n"
+              "Follow your agent instructions. Write film_analysis.json and film_analysis.md.")
+    res = await run_claude(prompt, agent="film-analyst", log=lambda s: job.log(f"[review] {s}"))
+    job.add_cost(res.cost_usd)
+    if not (res.ok and valid_json(run_dir / "film_analysis.json")):
+        raise RuntimeError(f"film analysis failed: {res.error or 'no film_analysis.json'}")
+    job.step("review", "done")
+
+
 async def run_analysis(job: Job) -> dict:
     run_dir = await step_extract(job)
     job.data["result"]["run_dir"] = str(run_dir)
@@ -179,6 +196,7 @@ async def run_analysis(job: Job) -> dict:
     await step_transcribe(job, run_dir)
     await step_units(job, run_dir)
     await step_merge(job, run_dir)
+    await step_review(job, run_dir)
     return {"run_dir": str(run_dir)}
 
 

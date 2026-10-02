@@ -31,7 +31,7 @@ templates.env.filters["md"] = lambda text: md.render(text or "")
 jobs = JobManager()
 
 JOB_FUNCS = {"analysis": analyze.run_analysis, "skill": series.create_skill,
-             "outline": series.write_outline, "refine": series.refine}
+             "outline": series.write_outline, "refine": series.refine, "continue": series.continue_series}
 
 LANGUAGES = [("", "Tự nhận diện"), ("vi", "Tiếng Việt"), ("en", "Tiếng Anh"), ("zh", "Tiếng Trung"),
              ("ko", "Tiếng Hàn"), ("ja", "Tiếng Nhật"), ("th", "Tiếng Thái")]
@@ -41,8 +41,11 @@ STATUS = {"queued": ("Đang chờ", ""), "running": ("Đang chạy", "run"), "do
           "skipped": ("Bỏ qua (đã có)", "muted")}
 STEPS = {"extract": "Dò cắt cảnh, chia đoạn, lấy khung hình", "transcribe": "Chép lời thoại (WhisperX)",
          "units": "Claude phân tích từng đoạn", "merge": "Gộp thành cốt truyện + DNA",
+         "review": "Nhà phân tích phim: soát lỗi + vì sao video cuốn",
          "skill": "Tạo skill viết series", "outline": "Viết ghép ý tưởng, bible và outline",
-         "episodes": "Viết các tập", "feedback": "Sửa theo góp ý", "final": "Chốt season"}
+         "episodes": "Viết các tập", "feedback": "Sửa theo góp ý", "final": "Chốt season",
+         "canon_source": "Video đã làm (canon)", "continue": "Đối chiếu video + outline phần tiếp",
+         "diff": "So lời thoại kịch bản với video (trên máy, không tốn Claude)"}
 STEP_FIELDS = {"units": "đoạn", "total": "tổng", "shots": "shot", "done": "xong", "language": "ngôn ngữ",
                "segments": "câu thoại", "phase": "giai đoạn", "skill": "skill", "version": "phiên bản",
                "failed": "lỗi", "note": "ghi chú"}
@@ -152,17 +155,22 @@ def running_job_for(key: str, value: str):
     return None
 
 
+def ep_range(nums: list[int]) -> str:
+    return f"tập {nums[0]}" if len(nums) == 1 else f"tập {nums[0]}–{nums[-1]}"
+
+
 def series_stage(s: dict) -> tuple[str, str]:
     """(label, css) for where a series session is in the flow."""
     if running_job_for("session_id", s["session_id"]):
         return "Đang xử lý", "run"
+    missing = s.get("missing") or []
     if s["final"]:
         return "Đã chốt", "ok"
-    if s["episodes"]:
-        return f"Đang góp ý ({s['episodes']}/{s['planned'] or '?'} tập)", "warn"
-    if s["has_outline"]:
-        return "Chờ duyệt outline", "warn"
-    return "Chưa có outline", "muted"
+    if missing and not s["episodes"] and not s.get("produced"):
+        return ("Chờ duyệt outline", "warn") if s["has_outline"] else ("Chưa có outline", "muted")
+    if missing:
+        return f"Chờ duyệt phần tiếp ({ep_range(missing)})", "warn"
+    return f"Đang góp ý ({s['episodes']} tập)", "warn"
 
 
 # ---------- dashboard ----------
@@ -296,7 +304,7 @@ def run_view(request: Request, run_id: str, tab: str = "story"):
     d = config.ANALYSES / run_id
     if not (d / "manifest.json").exists():
         raise HTTPException(404)
-    files = {"story": d / "story.md", "dna": d / "dna.md"}
+    files = {"story": d / "story.md", "dna": d / "dna.md", "analysis": d / "film_analysis.md"}
     text = files[tab].read_text() if tab in files and files[tab].exists() else ""
     m = json.loads((d / "manifest.json").read_text())
     dna = json.loads((d / "dna.json").read_text()) if (d / "dna.json").exists() else None
@@ -306,6 +314,7 @@ def run_view(request: Request, run_id: str, tab: str = "story"):
     # Prefer the on-screen title, then the genre; a run id makes a poor command name
     suggested = "-".join(series.slugify((dna or {}).get("title") or (dna or {}).get("genre") or "series").split("-")[:3])
     return page(request, "run.html", run_id=run_id, run=run, tab=tab, text=text, dna=dna, units=units,
+                has_analysis=(d / "film_analysis.md").exists(),
                 sources=m["sources"], suggested_slug=suggested, job=running_job_for("run_dir", str(d)))
 
 
@@ -329,9 +338,13 @@ async def skill_create(run_id: str = Form(...), slug: str = Form(...), update: s
 
 # ---------- series ----------
 
+def series_tabs(active: str) -> list[tuple[str, str, bool]]:
+    return [("Series mới", "/series/new", active == "new"), ("Viết tiếp series", "/series/continue", active == "continue")]
+
+
 @app.get("/series/new", response_class=HTMLResponse)
 def series_new(request: Request, slug: str = ""):
-    return page(request, "series_new.html", skills=all_skills(), slug=slug)
+    return page(request, "series_new.html", skills=all_skills(), slug=slug, tabs=series_tabs("new"))
 
 
 @app.post("/series")
@@ -360,7 +373,7 @@ def series_view(request: Request, slug: str, sid: str, view: str = "", v: int = 
     if not view:
         view = "outline" if st["outline"] else "adaptation"
     path = None
-    if view in ("bible", "outline"):
+    if view in ("bible", "outline", "canon"):
         versions = st["versions"][view]
         path = next((p for p in versions if p.name == f"{view}_v{v}.md"), None) if v else st[view]
     elif view == "adaptation":
@@ -372,12 +385,13 @@ def series_view(request: Request, slug: str, sid: str, view: str = "", v: int = 
     cur_ep = int(view[2:]) if view.startswith("ep") and view[2:].isdigit() else None
     nav = {"prev": next((e for e in reversed(eps) if cur_ep and e < cur_ep), None),
            "next": next((e for e in eps if cur_ep and e > cur_ep), None)}
-    info = {"session_id": sid, "episodes": len(eps), "planned": st["input"].get("episodes"), "final": st["final"],
-            "has_outline": st["outline"] is not None}
+    info = {"session_id": sid, "episodes": len(eps), "planned": st["planned"], "final": st["final_complete"],
+            "has_outline": st["outline"] is not None, "missing": st["missing"], "produced": st["produced_upto"]}
     job = running_job_for("session_id", sid)
     return page(request, "series.html", slug=slug, sid=sid, st=st, view=view, text=text, nav=nav,
                 current=path.name if path else None, job=job, stage=series_stage(info),
-                skill=series.skill_info(slug), skill_archived=slug in hidden.hidden("skills"))
+                skill=series.skill_info(slug), skill_archived=slug in hidden.hidden("skills"),
+                missing_label=ep_range(st["missing"]) if st["missing"] else "")
 
 
 @app.post("/series/{slug}/{sid}/refine")
@@ -389,6 +403,67 @@ async def series_refine(slug: str, sid: str, feedback: str = Form(""), target: s
     job = jobs.start("refine", f"{title} ({slug})",
                      {"slug": slug, "session_id": sid, "feedback": feedback.strip(), "target": target,
                       "approve": approve or None}, series.refine)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
+
+@app.get("/series/continue", response_class=HTMLResponse)
+def continue_form(request: Request, slug: str = "", sid: str = "", target: str = ""):
+    """Continue a series from produced videos: an existing session (slug+sid) or one produced elsewhere."""
+    if target and "/" in target:
+        slug, sid = target.split("/", 1)
+    if not target and not (slug and sid):
+        # Step 1: which series? (sessions written here, or one produced outside the app)
+        hid = hidden.hidden("series")
+        sessions = [x for x in series.list_sessions() if f"{x['slug']}/{x['session_id']}" not in hid]
+        return page(request, "series_continue_pick.html", sessions=sessions, skills=all_skills(),
+                    tabs=series_tabs("continue"))
+    if target == "external":
+        slug, sid = "", ""
+    st = series.session_state(slug, sid) if slug and sid else None
+    if st and not st["dir"].exists():
+        raise HTTPException(404)
+    written = max(list(st["episodes"]) + [st["produced_upto"]]) if st else 0
+    planned = st["planned"] if st else 0
+    return page(request, "series_continue.html", st=st, slug=slug, sid=sid, skills=all_skills(),
+                tabs=series_tabs("continue"),
+                runs=[r for r in list_runs() if r["done"]], languages=LANGUAGES, start=str(config.INPUT),
+                default_produced=written or 1, default_new=(planned - written) if planned > written else 6)
+
+
+@app.post("/series/continue")
+async def continue_start(slug: str = Form(...), sid: str = Form(""), title: str = Form(""),
+                         episode_sec: int = Form(90), source: str = Form("videos"), video_path: str = Form(""),
+                         run_id: str = Form(""), language: str = Form(""), produced_upto: int = Form(...),
+                         direction: str = Form("follow"), new_episodes: int = Form(6), idea: str = Form(""),
+                         update_skill: str = Form(""), canon_mode: str = Form("transcript"), notes: str = Form("")):
+    canon_mode = canon_mode if canon_mode in ("none", "transcript", "full") else "transcript"
+    if canon_mode == "none":
+        if not sid:
+            raise HTTPException(400, "Series làm ngoài app không có kịch bản: cần chọn video (mức Nhanh hoặc Kỹ).")
+        source = "none"
+    elif source == "videos":
+        vp = Path(video_path).expanduser()
+        if not video_path or not videos_in(vp):
+            raise HTTPException(400, "Chưa chọn video đã làm.")
+    elif source == "run" and not run_id:
+        raise HTTPException(400, "Chưa chọn bản phân tích.")
+    if not series.skill_dir(slug).exists():
+        raise HTTPException(400, f"Không có skill write-series-{slug} (có thể đang bị ẩn).")
+    if not sid:  # produced elsewhere: a new session holds the canon, bible and the next episodes
+        sid = series.new_session(slug, "(Series produced outside this app; continue from the produced videos.)",
+                                 produced_upto + new_episodes, max(60, min(120, episode_sec)),
+                                 title.strip() or "Series viết tiếp")
+        direction = "new-arc"
+    elif running_job_for("session_id", sid):
+        raise HTTPException(400, "Series này đang có việc chạy.")
+    job = jobs.start("continue", f"Viết tiếp từ video đã làm ({slug})",
+                     {"slug": slug, "session_id": sid, "video_path": video_path if source == "videos" else None,
+                      "run_id": run_id if source == "run" else None, "language": language or None,
+                      "chunk_sec": 120, "max_frames": 40, "produced_upto": max(1, produced_upto),
+                      "new_episodes": max(1, min(20, new_episodes)),
+                      "direction": direction if direction in ("follow", "new-arc") else "follow",
+                      "idea": idea, "notes": notes, "canon_mode": canon_mode,
+                      "update_skill": bool(update_skill) and canon_mode == "full"}, series.continue_series)
     return RedirectResponse(f"/jobs/{job.id}", status_code=303)
 
 

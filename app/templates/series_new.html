@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Viết series mới</h1>
+<h1>Viết series</h1>
+{% include "_tabs.html" %}
 <p class="lead">Đưa ý tưởng của bạn, rời rạc cũng được. Claude ghép nó vào khung cốt truyện của video mẫu, viết bible và outline, rồi dừng để bạn duyệt trước khi viết từng tập.</p>
 {% if not skills %}<div class="card banner">Chưa có phong cách (skill) nào. <a href="/">Học một video mẫu</a> rồi bấm <b>Tạo skill</b>.</div>{% else %}
 <form class="card" method="post" action="/series" enctype="multipart/form-data">

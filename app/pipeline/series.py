@@ -168,13 +168,25 @@ def session_state(slug: str, session_id: str) -> dict:
             pass
     outline_approved = any("outline" in json.dumps(it).lower() and "approved" in json.dumps(it).lower()
                            for it in (iterations if isinstance(iterations, list) else []))
+    inp = json.loads((d / "input.json").read_text()) if (d / "input.json").exists() else {}
+    produced = int(inp.get("produced_upto") or 0)
+    planned = int(inp.get("episodes") or 0)
+    # Episodes the outline plans that have neither a script nor a produced video yet
+    missing = [n for n in range(produced + 1, planned + 1) if n not in episodes]
+    final_dir = d / "final"
+    final_eps = {int(m.group(1)) for f in final_dir.glob("ep*.md") if (m := re.match(r"ep(\d+)\.md$", f.name))}
     return {
         "dir": d,
-        "input": json.loads((d / "input.json").read_text()) if (d / "input.json").exists() else {},
+        "input": inp,
+        "produced_upto": produced,
+        "planned": planned,
+        "missing": missing,
+        "canon": latest(d.glob("canon_v*.md")),
+        "final_complete": final_dir.exists() and not missing and set(episodes) <= final_eps,
         "adaptation": d / "adaptation.md" if (d / "adaptation.md").exists() else None,
         "bible": latest(d.glob("bible_v*.md")),
         "outline": latest(d.glob("outline_v*.md")),
-        "versions": {k: sorted(d.glob(f"{k}_v*.md"), key=_version) for k in ("bible", "outline")},
+        "versions": {k: sorted(d.glob(f"{k}_v*.md"), key=_version) for k in ("bible", "outline", "canon")},
         "episodes": dict(sorted(episodes.items())),
         "final": (d / "final").exists(),
         "outline_approved": outline_approved or bool(episodes),
@@ -188,8 +200,9 @@ def list_sessions() -> list[dict]:
         if d.is_dir():
             st = session_state(d.parent.name, d.name)
             out.append({"slug": d.parent.name, "session_id": d.name, "episodes": len(st["episodes"]),
-                        "planned": st["input"].get("episodes"), "final": st["final"],
-                        "has_outline": st["outline"] is not None,
+                        "planned": st["input"].get("episodes"), "final": st["final_complete"],
+                        "has_outline": st["outline"] is not None, "missing": st["missing"],
+                        "produced": st["produced_upto"],
                         "title": st["input"].get("title") or d.name})
     return out
 
@@ -259,7 +272,13 @@ async def refine(job: Job) -> dict:
     p = job.data["params"]
     slug, sid = p["slug"], p["session_id"]
     if p.get("approve") == "outline":
-        step, prompt, timeout = "episodes", f"/refine-skill {slug} --session {sid} --approve outline", 7200
+        missing = session_state(slug, sid)["missing"]
+        _check(bool(missing), "no episodes left to write (all planned episodes exist)")
+        p["writing"] = missing
+        step, timeout = "episodes", 7200
+        prompt = (f"/refine-skill {slug} --session {sid} --approve outline\n\n"
+                  f"Write ONLY these episodes: {', '.join(str(n) for n in missing)}. Episodes already written or "
+                  "marked PRODUCED (canon) must not be rewritten.")
     elif p.get("approve") == "final":
         step, prompt, timeout = "final", f"/refine-skill {slug} --session {sid} --approve", 1800
     else:
@@ -276,10 +295,89 @@ async def refine(job: Job) -> dict:
     if version:
         job.log(f"[{step}] skill updated -> {version}")
     if step == "episodes":
-        _check(len(session_state(slug, sid)["episodes"]) > 0, "no episodes were written")
+        left = session_state(slug, sid)["missing"]
+        _check(len(left) < len(p["writing"]), "no episodes were written")
+        if left:
+            job.log(f"[episodes] still missing: {left} (approve the outline again to write them)")
     if step == "final":
         _check(session_state(slug, sid)["final"], "final/ was not created")
     job.step(step, "done")
+    return {"slug": slug, "session_id": sid}
+
+
+async def continue_series(job: Job) -> dict:
+    """Check the produced episodes (canon) as cheaply as the chosen mode allows, then /continue-series.
+
+    canon_mode: none (no video), transcript (local WhisperX + local script diff, no frames), full (frames).
+    """
+    from . import analyze
+    p = job.data["params"]
+    slug, sid = p["slug"], p["session_id"]
+    mode = p.get("canon_mode") or "transcript"
+    d = session_dir(slug, sid)
+    k, m = int(p["produced_upto"]), int(p["new_episodes"])
+    canon_args = f"--canon-mode {mode}"
+    run_dir = None
+
+    if mode != "none":
+        if p.get("run_id"):
+            run_dir = config.ANALYSES / p["run_id"]
+            p["run_dir"] = str(run_dir)
+            job.step("canon_source", "skipped", note=f"dùng bản phân tích {p['run_id']}")
+        elif mode == "full":
+            run_dir = Path((await analyze.run_analysis(job))["run_dir"])
+        else:  # transcript: audio only, no frames, no Claude
+            p["audio_only"] = True
+            run_dir = await analyze.step_extract(job)
+            await analyze.step_transcribe(job, run_dir)
+        job.data["result"]["run_dir"] = str(run_dir)
+        job.save()
+        if mode == "full":
+            _check((run_dir / "dna.json").exists(), "analysis has no dna.json")
+            canon_args += f" --canon {run_dir / 'dna.json'}"
+        else:
+            canon_args += f" --transcripts {run_dir / 'manifest.json'}"
+            has_scripts = any((d / "episodes").glob("ep*_v*.*")) or (d / "final").exists()
+            if has_scripts:
+                job.step("diff", "running")
+                out = run_dir / "script_diff.json"
+                await analyze.run_script(job, ["python3", str(config.SKILLS / "continue-series" / "_script_diff.py"),
+                                              "--session", str(d), "--manifest", str(run_dir / "manifest.json"),
+                                              "--produced", str(k), "--out", str(out)])
+                canon_args += f" --diff {out}"
+                job.step("diff", "done")
+
+    if p.get("update_skill") and run_dir and (run_dir / "dna.json").exists():
+        p["update"] = True
+        await create_skill(job)
+
+    inp = json.loads((d / "input.json").read_text()) if (d / "input.json").exists() else {}
+    inp.update({"produced_upto": k, "episodes": k + m})
+    inp.setdefault("continuations", []).append({
+        "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "canon_mode": mode,
+        "canon_run": str(run_dir) if run_dir else None, "produced_upto": k, "new_episodes": m,
+        "direction": p["direction"]})
+    n = len(inp["continuations"])
+    extra = ""
+    if p.get("idea", "").strip():
+        (d / f"continue_idea_{n}.md").write_text(p["idea"].strip())
+        extra += f" --idea-file {d / f'continue_idea_{n}.md'}"
+    if p.get("notes", "").strip():
+        (d / f"production_notes_{n}.md").write_text(p["notes"].strip())
+        extra += f" --notes {d / f'production_notes_{n}.md'}"
+    (d / "input.json").write_text(json.dumps(inp, indent=2, ensure_ascii=False))
+
+    before = {k_: len(list(d.glob(f"{k_}_v*.md"))) for k_ in ("canon", "outline")}
+    job.step("continue", "running")
+    await _claude(job, (
+        f"/continue-series --session {d} {canon_args} --style write-series-{slug} "
+        f"--produced {k} --direction {p['direction']} --new-episodes {m}{extra}\n\n"
+        "Run non-interactively: do not ask questions; state assumptions in canon_vN.json." + UI_NOTE),
+        "continue", 5400)
+    after = {k_: len(list(d.glob(f"{k_}_v*.md"))) for k_ in ("canon", "outline")}
+    _check(after["canon"] > before["canon"], "canon report was not written")
+    _check(after["outline"] > before["outline"], "continuation outline was not written")
+    job.step("continue", "done")
     return {"slug": slug, "session_id": sid}
 
 
@@ -288,7 +386,7 @@ def export_screenplay(slug: str, session_id: str) -> Path:
     st = session_state(slug, session_id)
     d = st["dir"]
     final = d / "final"
-    if st["final"]:
+    if st["final_complete"]:
         bible = final / "bible.md" if (final / "bible.md").exists() else st["bible"]
         outline = final / "outline.md" if (final / "outline.md").exists() else st["outline"]
         episodes = sorted(final.glob("ep[0-9]*.md"), key=lambda p: int(re.match(r"ep(\d+)", p.name).group(1)))
@@ -302,10 +400,15 @@ def export_screenplay(slug: str, session_id: str) -> Path:
     for heading, path in (("Series Bible", bible), ("Season Outline", outline)):
         if path and path.exists():
             parts.append(f"\n---\n\n## {heading}\n\n" + _demote(path.read_text()))
+    if st["produced_upto"]:
+        parts.append(f"\n---\n\n_Episodes 1–{st['produced_upto']} are produced videos (canon); "
+                     "their on-screen version is summarized in the canon report._\n")
     if episodes:
         parts.append("\n---\n\n## Episodes\n")
         for ep in episodes:
             parts.append("\n" + _demote(ep.read_text(), 2) + "\n")
+    if st["canon"]:
+        parts.append("\n---\n\n## Appendix: produced episodes vs scripts (canon)\n\n" + _demote(st["canon"].read_text()))
     out = d / f"screenplay_{status.lower()}.md"
     out.write_text("".join(parts))
     return out

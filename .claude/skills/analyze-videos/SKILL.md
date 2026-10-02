@@ -31,6 +31,7 @@ video ─▶ [1] _analyze.py  shots on whole video ─▶ units of ~120s (cut bo
       ─▶ [2] _transcribe.py  WhisperX once per source ─▶ split per unit
       ─▶ [3] video-analyst × N units (parallel) ─▶ dna/<unit_id>.dna.json
       ─▶ [4] story-merger  (parts of ≤8 units if N > 8, then final) ─▶ dna.json + dna.md + story.md
+      ─▶ [4b] film-analyst (text only) ─▶ film_analysis.md + film_analysis.json
 ```
 
 All times are absolute seconds in the source video, so units stitch back into one timeline.
@@ -101,6 +102,14 @@ that unit only. More than ~12 units: launch in waves of 8-12.
 
 Produces `dna.json` (story + characters + craft, schema in `.claude/agents/story-merger.md`),
 `dna.md`, `story.md`.
+
+### Step 4b — Film analyst (`film-analyst`, text only)
+
+One call after the merge: `run_dir: <run_dir>`, `output: <run_dir>`. Reads dna.json, story.md,
+transcripts and unit files (no frames, cheap) and writes `film_analysis.md` + `film_analysis.json`:
+DNA audit (corrections with evidence), retention anatomy, reusable viral mechanisms, 1-2 min
+episode template, character engine, dialogue/VO craft, weaknesses not to copy.
+`/skill-creator-from-dna` uses it.
 
 ### Step 5 — Review + hand off
 

@@ -39,6 +39,7 @@
     <div class="actions"><span class="pill {{ s.stage[1] }}">{{ s.stage[0] }}</span>
       {% if s.stage[1] != 'run' %}{{ hide_btn('series', s.key, 'series này') }}{% endif %}</div></div>
   {% else %}<p class="empty">Chưa có series nào.{% if skills %} <a href="/series/new">Viết series đầu tiên</a>.{% endif %}</p>{% endfor %}
+  {% if skills %}<p class="hint">Đã quay vài tập? <a href="/series/continue">Viết tiếp series</a>.</p>{% endif %}
   <h2>Phong cách (skill) sẵn có</h2>
   {% for s in skills %}<div class="item">
     <div class="title">{{ s.slug }} <span class="muted" style="font-weight:400">{{ s.version or '' }}</span></div>

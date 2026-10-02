@@ -56,19 +56,23 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
    - `_analyze.py`: shots on the whole video, units of ~120s on cut boundaries, keyframes per unit
    - `_transcribe.py` (`.venv`): WhisperX once per source, split per unit
    - `video-analyst` × N units (parallel) -> `story-merger` -> `dna.json`, `dna.md`, `story.md`
+   - `film-analyst` (text only, no frames): audits the DNA + why it hooks -> `film_analysis.md/.json`
 2. **Generate skill** (`/skill-creator-from-dna --dna <run>/dna.json --name <slug>`) — rare
    - `.claude/skills/write-series-<slug>/` (SKILL.md + references/reference-story.md + versions/)
    - More reference later: `--update <slug>`
 3. **Write series** (`/write-series-<slug> --idea-file notes.md --episodes 12 --episode-sec 90`)
    - Stage 1 adaptation map -> Stage 2 bible + outline (stop for approval) -> Stage 3 episodes
 4. **Refine** (`/refine-skill <slug> --feedback "..."`, `--approve outline`, `--approve`)
-5. **Optional production**: `/script-to-shotlist final/epNN.md`, then `/direct-video`,
+5. **Continue after production** (`/continue-series --session <dir> --canon <run>/dna.json --style write-series-<slug> --produced <k> --direction follow|new-arc --new-episodes <m>`)
+   - Produced videos are analyzed with step 1, then reconciled with the scripts as CANON (video wins) -> `canon_vN`, bible/outline next version; approve -> only missing episodes are written
+   - Works for series produced outside the app (no scripts: bible built from the videos)
+6. **Optional production**: `/script-to-shotlist final/epNN.md`, then `/direct-video`,
    `/cinematographer-brief`, `/sound-design-brief`, `/production-design-brief`
 
 ## PROJECT RESET (new reference video)
 
-Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `script-to-shotlist`, the 4 brief
-skills, agents `video-analyst` + `story-merger`. Remove: generated `.claude/skills/write-series-*`,
+Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `script-to-shotlist`, the 4 brief
+skills, agents `video-analyst` + `story-merger` + `film-analyst`. Remove: generated `.claude/skills/write-series-*`,
 `data/analyses/*`, `data/series/*`, `data/skills-generated/*`.
 
 ## OUTPUT STYLE

@@ -248,6 +248,15 @@ def process_source(video_file: str, run_dir: Path, args) -> tuple[dict, list[dic
     }
     long_video = duration >= args.chunk_min_video
 
+    if args.audio_only:
+        # Transcript-only runs (e.g. checking produced episodes against their scripts): no shots, no frames
+        unit = {"unit_id": stem, "filename": source["filename"], "path": source["path"],
+                "source_duration_sec": source["duration_sec"], "chunk": None, "t_start": 0.0,
+                "t_end": round(duration, 2), "duration_sec": source["duration_sec"], "sampling": "none",
+                "frames_extracted": 0, "frames": [], "frame_paths": []}
+        source.update({"sampling": "none", "units": [stem]})
+        return source, [unit]
+
     sampling = args.sampling
     if sampling == "shot" and duration <= 0:
         print("  Unknown duration, falling back to uniform sampling", file=sys.stderr)
@@ -336,6 +345,8 @@ def main():
                         help="Target unit length for long videos (boundaries snap to cuts)")
     parser.add_argument("--chunk-min-video", type=float, default=240,
                         help="Videos at least this long get split into units")
+    parser.add_argument("--audio-only", action="store_true",
+                        help="No shot detection or frames: one unit per video, for _transcribe.py only")
     parser.add_argument("--sampling", choices=["shot", "uniform"], default="shot",
                         help="shot = keyframes per detected shot (default); uniform = evenly spaced")
     parser.add_argument("--fps", type=float, default=1.0, help="Frames per second (uniform mode only)")

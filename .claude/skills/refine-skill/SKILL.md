@@ -39,6 +39,7 @@ data/series/<slug>/<session-id>/
 ├── adaptation.md
 ├── bible_vK.md / .json
 ├── outline_vK.md / .json
+├── canon_vK.md / .json           # /continue-series: produced videos reconciled with scripts
 ├── episodes/epNN_vK.md / .json   # each episode versioned on its own
 ├── series.md                     # index of latest episode versions
 ├── iterations.json               # full feedback history
@@ -118,7 +119,10 @@ Next: more feedback, `/refine-skill <slug> --approve outline` (stage outline), o
 ## Approve
 
 - `--approve outline`: mark the latest outline approved in `iterations.json`; then run Stage 3 of
-  `/write-series-<slug>` on this session (episodes).
+  `/write-series-<slug>` on this session (episodes). Write ONLY the episodes that have no file yet:
+  episodes marked `PRODUCED (canon)` in the outline (series continued with `/continue-series`) and
+  episodes already written are never rewritten. New episodes must match the latest `canon_vN.json`
+  when one exists (characters as seen on screen, revealed facts, open threads).
 - `--approve` (all episodes exist): copy latest bible, outline, every episode (md + json) and
   series.md into `final/`; set `stable_version: vN` in SKILL.md frontmatter and `"stable": true` in
   the metadata JSON; log `{"status": "approved"}`. Next step (optional):

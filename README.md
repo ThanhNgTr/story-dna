@@ -59,6 +59,7 @@ The same pipeline with a browser UI, for one user or an internal team, running o
 | 1 Analyze video | Pick the long video with the folder browser, set dialogue language, start. Live progress per step and per unit |
 | Analysis result | Read `story.md` / `dna.md`, unit status, resume an unfinished run, generate the `write-series-<slug>` skill |
 | 2 Write series | Pick a skill, paste or upload your idea, episodes (10-20) and length (60-120 s) -> adaptation + bible + outline |
+| Continue from produced videos | On a series page (or "continue a series produced elsewhere" on the dashboard): pick the episodes already made as videos (or an existing analysis), how many are produced, how many new episodes, and the direction (follow the old outline adapted to what is on screen, or a new arc). Three ways to check the produced episodes, cheapest first: **skip** (videos follow the scripts; add notes on changes, ~1 Claude call), **quick** (local WhisperX transcript + local line-by-line script diff via `.claude/skills/continue-series/_script_diff.py`; Claude reads only the diff, no frames), **full** (frames analyzed like a reference video, ~$0.45 per video minute). Claude then writes a canon report (script vs screen, video wins), updates the bible and writes the outline for the next episodes; approve -> only the missing episodes are written. Optionally also updates the style skill from the real videos |
 | Hide / restore | Every analysis, skill, series and job has a **Hide** button; hidden items are listed under "Hidden" at the bottom of the dashboard with **Restore**. Nothing is deleted: analyses/series/jobs are only flagged (`data/ui_state.json`); a hidden skill moves to `data/archive/skills/` so Claude stops loading it until restored |
 | Series session | Read every document and episode, send feedback (per episode / outline / all), approve outline -> episodes, approve season, download the screenplay `.md` |
 
@@ -86,7 +87,7 @@ Run `bash` commands in a normal terminal. Prefer a UI? See [Web App](#web-app-lo
 Optional, **speaker labels** (know which line belongs to whom, more accurate):
 1. Create an account and a Read token at https://huggingface.co/settings/tokens
 2. Open https://huggingface.co/pyannote/speaker-diarization-community-1 and accept the terms
-3. Before analyzing: `export HF_TOKEN=hf_xxx` (never put the token in a project file)
+3. `cp .env.example .env`, put the token in `HF_TOKEN=` (`.env` is gitignored, loaded by `./run_app.sh`), `chmod 600 .env`, restart the app. In a plain terminal session: `export HF_TOKEN=...` instead
 
 Without a token everything still runs; the AI guesses speakers from the frames (marked `speaker_unsure`).
 

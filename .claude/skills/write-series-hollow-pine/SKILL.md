@@ -1,6 +1,7 @@
 ---
 name: write-series-hollow-pine
 version: v1
+stable_version: v1
 description: |
   Turn a rough or fragmented story idea into a 10-20 episode vertical micro-drama series (60-120s
   episodes) told the way a boarding-school supernatural mystery is told: open on a bloodied

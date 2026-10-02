@@ -14,6 +14,7 @@
     <h2 style="margin-top:0">Đã có skill từ video này</h2>
     {% for s in run.skills %}<p><b>{{ s }}</b> <a class="btn small" href="/series/new?slug={{ s }}">Viết series với phong cách này</a></p>{% endfor %}
     <details class="adv"><summary>Tạo thêm skill khác / cập nhật skill</summary>{% endif %}
+  {% if not has_analysis %}<p class="hint warn">Nên chạy <a href="?tab=analysis">phân tích chuyên sâu</a> trước khi tạo skill: skill sẽ học thêm công thức giữ chân người xem và tránh lỗi của video mẫu.</p>{% endif %}
   {% if not run.skills %}<h2 style="margin-top:0">Bước tiếp theo: tạo skill viết series</h2>
     <p class="hint">Skill = "phong cách viết" học từ video này, dùng lại cho nhiều ý tưởng khác nhau. Mất khoảng 5–10 phút.</p>{% endif %}
   <form method="post" action="/skills" class="row">
@@ -26,10 +27,13 @@
 </div>
 {% endif %}
 
-<p class="tabs"><a href="?tab=story" class="{{ 'active' if tab=='story' }}">Cốt truyện</a><a href="?tab=dna" class="{{ 'active' if tab=='dna' }}">Nhân vật &amp; kỹ thuật</a><a href="?tab=units" class="{{ 'active' if tab=='units' }}">Các đoạn ({{ units|length }})</a></p>
+<p class="tabs"><a href="?tab=story" class="{{ 'active' if tab=='story' }}">Cốt truyện</a><a href="?tab=dna" class="{{ 'active' if tab=='dna' }}">Nhân vật &amp; kỹ thuật</a><a href="?tab=analysis" class="{{ 'active' if tab=='analysis' }}">Phân tích chuyên sâu</a><a href="?tab=units" class="{{ 'active' if tab=='units' }}">Các đoạn ({{ units|length }})</a></p>
 <div class="card doc">
 {% if tab == 'units' %}
   <table>{% for u in units %}<tr><td>{{ u.id }}</td><td>{{ u.t }}</td><td><span class="pill {{ 'ok' if u.done else 'muted' }}">{{ 'đã phân tích' if u.done else 'chưa' }}</span></td></tr>{% endfor %}</table>
+{% elif tab == 'analysis' and not has_analysis %}
+  <p>Chưa có phân tích chuyên sâu cho video này. Nhà phân tích phim đọc lại kết quả (không xem lại hình) để soát lỗi và chỉ ra vì sao video cuốn người xem: hook, nhịp tiết lộ, công thức viral, cách chia tập. Khoảng $1–3, 5–10 phút.</p>
+  {% if not job %}<form method="post" action="/runs/{{ run_id }}/resume"><button>Chạy phân tích chuyên sâu</button></form>{% endif %}
 {% elif text %}{{ text|md|safe }}{% else %}<p class="empty">Chưa có nội dung.</p>{% endif %}
 </div>
 {% endblock %}
