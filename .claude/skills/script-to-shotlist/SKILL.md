@@ -15,7 +15,13 @@ description: |
 
 ## When to Use This Skill
 
-Use after finalizing a script with `/write-story-<slug>`:
+Use after a series is approved (`/write-series-<slug>` + `/refine-skill <slug> --approve`).
+Input: one episode screenplay (`data/series/<slug>/<session-id>/final/epNN.md` + `.json`), or the
+whole `final/` dir -> each episode is processed separately, outputs go to `final/shots/epNN/`.
+Characters stay identical across episodes: build the character anchors once from the series bible
+(`final/bible.md`) and reuse them for every episode.
+
+What it does:
 - Break script into discrete 1–5s shots
 - Create structured data for video generation (image/video AI)
 - Generate visual descriptions for each shot
@@ -178,23 +184,23 @@ Direct address to camera builds connection
 
 ## Step 5: Prompt List (final output of the pipeline)
 
-Input should be the APPROVED script (`data/scripts/<slug>/<session-id>/final.md` from
-`/refine-skill --approve`). Draft script -> warn user, continue only if they confirm.
+Input should be an APPROVED episode (`data/series/<slug>/<session-id>/final/epNN.md` from
+`/refine-skill --approve`). Draft episode (`episodes/epNN_vK.md`) -> warn user, continue only if they confirm.
 
-Write next to the script:
+Write to `final/shots/epNN/`:
 - `prompts.json` - one entry per shot, for video gen tools / agents
 - `prompts.md` - numbered list for humans
 
 ### Character anchors
-Before writing prompts, build `characters` block once from the skill's Character Bible
-(`visual_signature`). Every prompt that shows a character repeats its anchor text
+Before writing prompts, build `characters` block once from the series bible
+(`final/bible.json` -> `visual_signature`). Every prompt that shows a character repeats its anchor text
 word-for-word. Same character must look identical in every shot.
 
 ### `prompts.json`
 ```json
 {
-  "source_script": "data/scripts/hollow-pine/20261001-143000/final.md",
-  "skill": "write-story-hollow-pine",
+  "source_script": "data/series/<slug>/20261001-143000/final/ep01.md",
+  "skill": "write-series-<slug>",
   "skill_version": "v3",
   "aspect_ratio": "9:16",
   "total_duration_sec": 90,
@@ -232,7 +238,7 @@ word-for-word. Same character must look identical in every shot.
 
 ### `prompts.md`
 ```markdown
-# <Title> - Prompt List (90s, 32 shots, skill hollow-pine v3)
+# <Title> - Prompt List (90s, 32 shots, skill <slug> v3)
 
 ## Characters
 - char_01: teen girl, 16, dark wavy shoulder-length hair, navy blazer, ...

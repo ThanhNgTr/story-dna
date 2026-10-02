@@ -26,7 +26,7 @@ Use this skill when you have a `shotlist.json` from `/script-to-shotlist` and ne
 ## Quick Start
 
 ```
-/direct-video --shotlist data/scripts/generated/shotlist.json \
+/direct-video --shotlist data/series/<slug>/<session-id>/final/shots/ep01/shotlist.json \
   --tone "gothic thriller" \
   --visual-reference "desaturated teal + warm amber practicals"
 ```
