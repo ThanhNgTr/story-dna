@@ -5,10 +5,17 @@
 {% if not skills %}<div class="card banner">Chưa có phong cách (skill) nào. <a href="/">Học một video mẫu</a> rồi bấm <b>Tạo skill</b>.</div>{% else %}
 <form class="card" method="post" action="/series" enctype="multipart/form-data">
   <label>1. Chọn phong cách</label>
-  {% for s in skills %}<label class="item" style="display:block;font-weight:400;cursor:pointer">
-    <input type="radio" name="slug" value="{{ s.slug }}" {{ 'checked' if s.slug == slug or (not slug and loop.first) }} required>
-    <b>{{ s.slug }}</b> <span class="muted">{{ s.version or '' }}</span>
-    <div class="meta" style="margin-left:22px">{{ s.description[:260] }}{% if s.description|length > 260 %}…{% endif %}</div></label>{% endfor %}
+  <select name="slug" id="skill" required onchange="showSkill()">
+    {% for s in skills %}<option value="{{ s.slug }}" data-desc="{{ s.description }}" {{ 'selected' if s.slug == slug }}>{{ s.slug }}{% if s.version %} ({{ s.version }}){% endif %}</option>{% endfor %}
+  </select>
+  <p class="hint" id="skill-desc"></p>
+  <script>
+    function showSkill() {
+      const o = document.getElementById('skill').selectedOptions[0];
+      document.getElementById('skill-desc').textContent = o ? o.dataset.desc : '';
+    }
+    showSkill();
+  </script>
 
   <label>2. Tên tạm của series <span class="muted" style="font-weight:400">(không bắt buộc)</span></label>
   <input type="text" name="title" placeholder="Ví dụ: Ngôi làng bão">

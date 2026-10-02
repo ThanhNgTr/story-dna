@@ -65,3 +65,5 @@ details.adv summary { cursor:pointer; color:var(--muted); margin-top:14px; }
 .banner { border-left:4px solid var(--accent); }
 .progress { height:8px; background:var(--line); border-radius:99px; overflow:hidden; margin:6px 0; }
 .progress > i { display:block; height:100%; background:var(--accent); }
+button.link { background:transparent; color:var(--muted); border:0; padding:5px 6px; text-decoration:underline; }
+button.link:hover { color:var(--bad); }

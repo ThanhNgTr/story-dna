@@ -1,0 +1,10 @@
+{% macro hide_btn(kind, item, what) -%}
+<form method="post" action="/hide" style="display:inline" onsubmit="return confirm('Ẩn {{ what }}? Không xóa dữ liệu, khôi phục được ở mục &quot;Đã ẩn&quot; cuối trang Tổng quan.')">
+  <input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="item" value="{{ item }}">
+  <button class="small link" title="Ẩn (khôi phục được)">Ẩn</button></form>
+{%- endmacro %}
+{% macro unhide_btn(kind, item) -%}
+<form method="post" action="/unhide" style="display:inline">
+  <input type="hidden" name="kind" value="{{ kind }}"><input type="hidden" name="item" value="{{ item }}">
+  <button class="small secondary">Khôi phục</button></form>
+{%- endmacro %}

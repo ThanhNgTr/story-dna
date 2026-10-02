@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
 
-from . import config
+from . import config, hidden
 from .jobs import JobManager
 from .pipeline import analyze, series
 
@@ -169,12 +169,61 @@ def series_stage(s: dict) -> tuple[str, str]:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
+    hid = {k: hidden.hidden(k) for k in hidden.KINDS}
     sessions = series.list_sessions()
     for s in sessions:
+        s["key"] = f"{s['slug']}/{s['session_id']}"
         s["stage"] = series_stage(s)
-    recent = [{**j.data, "elapsed": elapsed(j.data)} for j in jobs.list()[:8]]
-    return page(request, "index.html", env=config.check_environment(), runs=list_runs(),
-                skills=all_skills(), sessions=sessions, jobs=recent)
+    runs = list_runs()
+    recent = [{**j.data, "elapsed": elapsed(j.data), "live": jobs.is_running(j.id)} for j in jobs.list()]
+    shown_jobs = [j for j in recent if j["id"] not in hid["jobs"]][:8]
+    archived = {
+        "runs": [r for r in runs if r["id"] in hid["runs"]],
+        "series": [s for s in sessions if s["key"] in hid["series"]],
+        "skills": sorted(hid["skills"]),
+        "jobs": [j for j in recent if j["id"] in hid["jobs"]],
+    }
+    return page(request, "index.html", env=config.check_environment(),
+                runs=[r for r in runs if r["id"] not in hid["runs"]],
+                skills=all_skills(), sessions=[s for s in sessions if s["key"] not in hid["series"]],
+                jobs=shown_jobs, archived=archived, n_archived=sum(len(v) for v in archived.values()))
+
+
+def item_busy(kind: str, item: str) -> bool:
+    for j in jobs.list():
+        if not jobs.is_running(j.id):
+            continue
+        p = j.data["params"]
+        if (kind == "jobs" and j.id == item) or \
+           (kind == "runs" and Path(p.get("run_dir") or j.data.get("result", {}).get("run_dir") or "x").name == item) or \
+           (kind == "skills" and p.get("slug") == item) or \
+           (kind == "series" and f"{p.get('slug')}/{p.get('session_id')}" == item):
+            return True
+    return False
+
+
+@app.post("/hide")
+async def hide_item(request: Request, kind: str = Form(...), item: str = Form(...)):
+    if kind not in hidden.KINDS:
+        raise HTTPException(400, "Loại không hợp lệ")
+    if item_busy(kind, item):
+        raise HTTPException(400, "Mục này đang có việc chạy. Đợi xong (hoặc dừng việc) rồi ẩn.")
+    try:
+        hidden.hide(kind, item)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return RedirectResponse(request.headers.get("referer") or "/", status_code=303)
+
+
+@app.post("/unhide")
+async def unhide_item(request: Request, kind: str = Form(...), item: str = Form(...)):
+    if kind not in hidden.KINDS:
+        raise HTTPException(400, "Loại không hợp lệ")
+    try:
+        hidden.unhide(kind, item)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return RedirectResponse(request.headers.get("referer") or "/", status_code=303)
 
 
 # ---------- analysis ----------
@@ -328,7 +377,7 @@ def series_view(request: Request, slug: str, sid: str, view: str = "", v: int = 
     job = running_job_for("session_id", sid)
     return page(request, "series.html", slug=slug, sid=sid, st=st, view=view, text=text, nav=nav,
                 current=path.name if path else None, job=job, stage=series_stage(info),
-                skill=series.skill_info(slug))
+                skill=series.skill_info(slug), skill_archived=slug in hidden.hidden("skills"))
 
 
 @app.post("/series/{slug}/{sid}/refine")

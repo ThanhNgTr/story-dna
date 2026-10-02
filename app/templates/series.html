@@ -12,6 +12,8 @@
   <div class="{{ 'done' if st.final else '' }}">4 · Chốt &amp; tải biên kịch</div>
 </div>
 
+{% if skill_archived %}<div class="card banner"><b class="warn">Skill {{ slug }} đang bị ẩn</b> nên chưa góp ý / viết tiếp được.
+  Khôi phục ở mục "Đã ẩn" trang <a href="/">Tổng quan</a>. Bạn vẫn đọc và tải file biên kịch bình thường.</div>{% endif %}
 {% if job %}<div class="card banner" hx-get="/jobs/{{ job.id }}/watch" hx-trigger="every 10s" hx-swap="none">
   <b>Claude đang làm:</b> {{ job.data.title }} — <a href="/jobs/{{ job.id }}">xem tiến độ</a>. Trang sẽ tự tải lại khi xong.</div>{% endif %}
 
@@ -43,7 +45,8 @@
 </div>
 
 <aside class="panel card sticky">
-  {% if job %}<p class="muted" style="margin-top:0">Đang có việc chạy cho series này. Góp ý tiếp khi nó xong.</p>
+  {% if skill_archived %}<p class="muted" style="margin-top:0">Skill đang bị ẩn — khôi phục để góp ý.</p>
+  {% elif job %}<p class="muted" style="margin-top:0">Đang có việc chạy cho series này. Góp ý tiếp khi nó xong.</p>
   {% else %}
   <h2 style="margin-top:0">Góp ý <span class="muted" style="font-size:13px;font-weight:400">(không bắt buộc)</span></h2>
   <form method="post" action="/series/{{ slug }}/{{ sid }}/refine">

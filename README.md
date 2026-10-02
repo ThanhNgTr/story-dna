@@ -59,6 +59,7 @@ The same pipeline with a browser UI, for one user or an internal team, running o
 | 1 Analyze video | Pick the long video with the folder browser, set dialogue language, start. Live progress per step and per unit |
 | Analysis result | Read `story.md` / `dna.md`, unit status, resume an unfinished run, generate the `write-series-<slug>` skill |
 | 2 Write series | Pick a skill, paste or upload your idea, episodes (10-20) and length (60-120 s) -> adaptation + bible + outline |
+| Hide / restore | Every analysis, skill, series and job has a **Hide** button; hidden items are listed under "Hidden" at the bottom of the dashboard with **Restore**. Nothing is deleted: analyses/series/jobs are only flagged (`data/ui_state.json`); a hidden skill moves to `data/archive/skills/` so Claude stops loading it until restored |
 | Series session | Read every document and episode, send feedback (per episode / outline / all), approve outline -> episodes, approve season, download the screenplay `.md` |
 
 How it works:

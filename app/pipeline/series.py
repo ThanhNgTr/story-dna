@@ -105,7 +105,10 @@ def skill_info(slug: str) -> dict:
         desc = " ".join(str(fm.get("description", "")).split())
         # Every generated description starts with the same boilerplate; show the style-specific part
         i = desc.find("told the way")
-        info["description"] = ("Phong cách: " + desc[i + len("told the way"):].strip()) if i >= 0 else desc
+        if i >= 0:
+            desc = "Phong cách: " + desc[i + len("told the way"):].strip()
+        j = desc.find(" Use whenever")
+        info["description"] = desc[:j] if j > 0 else desc
         info["version"] = fm.get("version")
     except Exception:
         pass
