@@ -78,6 +78,9 @@ pages not migrated yet link back to the old UI.
 | Screen | What you do |
 |---|---|
 | Dự án (home) | Running jobs, all series as cards (search, filter: waiting for you / in progress / final; hide), writing styles, reference videos, hidden items with restore |
+| Học video mẫu | Pick a video or a folder of episodes on this machine, or drag & drop to upload (streamed into `data/input/`); shows episodes, durations, time estimate and "already analyzed" warning; language + advanced options |
+| Video page | Vietnamese overview (logline, synopsis, characters, why it hooks, film craft), English story / DNA / film analysis, unit progress, resume, create or update a writing style |
+| Style page | Vietnamese summary (what ideas it fits, main rules), reference video, version history with changes, series using it, full SKILL.md |
 | Series mới | 3-step wizard: pick a style, write or upload the idea (template, drag & drop .md/.txt, draft kept in the browser), episodes + length with a summary -> Claude writes bible + outline |
 | Project overview | 4-step progress, one "next step" action (approve outline, approve season), episode cards |
 | Episode reader | Scenes as cards, VO vs dialogue styled, scene timeline, "story" or "full technical" view, ledger questions |
@@ -94,6 +97,9 @@ cd web && npm install
 npm run dev          # http://127.0.0.1:5173/ui/ , proxies /api to ./run_app.sh on :8765
 npm run build        # writes app/static/ui/ (commit it)
 ```
+
+Vietnamese summaries: `app/pipeline/summary.py` (one Sonnet call) writes `<run>/summary_vi.json` after an analysis
+and `data/skills-generated/write-series-<slug>_summary_vi.json` after a skill build; older ones get a button.
 
 Backend for it: `app/api.py` (JSON under `/api`, SSE at `/api/events` and `/api/jobs/<id>/events`),
 `app/pipeline/screenplay.py` (comments, manual edits, JSON -> Markdown renderer).

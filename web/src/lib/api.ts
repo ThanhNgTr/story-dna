@@ -160,6 +160,7 @@ export interface Skill {
   run_id: string | null
   projects: number
   reference: { id: string; title: string | null; minutes: number; sources: string[] } | null
+  tagline_vi?: string | null
 }
 
 export interface Analysis {
@@ -175,6 +176,8 @@ export interface Analysis {
   genre: string | null
   skills: string[]
   job: Job | null
+  title_vi?: string | null
+  genre_vi?: string | null
 }
 
 // ----- looks: asset registry (/series-assets) + reference images -----
@@ -272,13 +275,76 @@ export interface AssetsView {
 
 export type AssetKind = 'character' | 'outfit' | 'location' | 'prop'
 
+// ----- reference videos + writing styles -----
+
+export interface BrowseEntry { name: string; path: string; dir: boolean; size_mb?: number }
+export interface BrowseResult { cwd: string; parent: string | null; entries: BrowseEntry[]; n_videos: number; input_dir: string }
+export interface Estimate { units: number; transcribe: string; analysts: string; merge: string; total: string }
+export interface ProbeResult {
+  path: string
+  is_dir: boolean
+  items: { name: string; duration_sec: number | null }[]
+  minutes: number
+  estimate: Estimate | null
+  existing: { id: string; title: string | null; sources: string[]; done: boolean; analyzed: number; units: number }[]
+}
+
+export interface RunSummaryVi {
+  title_vi?: string
+  genre_vi?: string
+  logline_vi?: string
+  synopsis_vi?: string
+  characters?: { name: string; tier?: string; role_vi?: string; desc_vi?: string }[]
+  why_it_hooks_vi?: string[]
+  style_vi?: Record<'story' | 'pacing' | 'camera' | 'sound' | 'color', string>
+  episodes_hint_vi?: string
+}
+
+export interface AnalysisDetail {
+  id: string
+  title: string | null
+  genre: string | null
+  logline: string | null
+  sources: { filename: string; duration_sec: number | null }[]
+  minutes: number | null
+  language: string | null
+  units: { id: string; start: number; end: number; source?: string; done: boolean }[]
+  done: boolean
+  skills: string[]
+  docs: Record<'story' | 'dna' | 'analysis', boolean>
+  characters: { name: string; tier?: string }[]
+  summary_vi: RunSummaryVi | null
+  suggested_slug: string
+  job: Job | null
+}
+
+export interface SkillSummaryVi {
+  version?: string
+  tagline_vi?: string
+  description_vi?: string
+  best_for_vi?: string[]
+  not_for_vi?: string[]
+  rules_vi?: Record<string, string[]>
+}
+
+export interface SkillDetail extends Omit<Skill, 'reference' | 'projects'> {
+  versions: { version: string; created: string | null; changes: string[]; stable: boolean }[]
+  projects: { slug: string; session_id: string; title: string }[]
+  reference: { id: string; title: string | null; minutes: number } | null
+  summary_vi: SkillSummaryVi | null
+  summary_stale: boolean
+  skill_md: string
+}
+
 export interface NewProject { slug: string; title: string; idea: string; episodes: number; episode_sec: number }
 
 export class ApiError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  data: unknown
+  constructor(status: number, message: string, data?: unknown) {
     super(message)
     this.status = status
+    this.data = data
   }
 }
 
@@ -289,11 +355,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     let msg = res.statusText
+    let data: unknown
     try {
       const body = await res.json()
-      msg = body.detail || msg
+      data = body.detail
+      msg = typeof body.detail === 'string' ? body.detail : body.detail?.message || msg
     } catch { /* not json */ }
-    throw new ApiError(res.status, msg)
+    throw new ApiError(res.status, msg, data)
   }
   return res.json() as Promise<T>
 }
@@ -340,6 +408,18 @@ export const api = {
   saveAssets: (slug: string, sid: string, base_file: string, data: Registry, note = '') =>
     request<{ file: string; version: number; warnings: string[] }>(`${p(slug, sid)}/assets`,
       { method: 'PUT', body: JSON.stringify({ base_file, data, note }) }),
+  browse: (path = '') => request<BrowseResult>(`/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`),
+  probe: (path: string) => request<ProbeResult>(`/probe?path=${encodeURIComponent(path)}`),
+  startAnalysis: (body: { video_path: string; language: string; chunk_sec: number; max_frames: number; force?: boolean }) =>
+    request<Job>('/analyses', { method: 'POST', body: JSON.stringify(body) }),
+  analysis: (id: string) => request<AnalysisDetail>(`/analyses/${id}`),
+  analysisDoc: (id: string, kind: string) => request<{ kind: string; markdown: string }>(`/analyses/${id}/doc/${kind}`),
+  resumeAnalysis: (id: string) => request<Job>(`/analyses/${id}/resume`, { method: 'POST' }),
+  createSkill: (body: { run_id: string; slug: string; update: boolean }) =>
+    request<Job>('/skills', { method: 'POST', body: JSON.stringify(body) }),
+  skill: (slug: string) => request<SkillDetail>(`/skills/${slug}`),
+  summarize: (target: 'run' | 'skill', id: string) =>
+    request<Job>('/summaries', { method: 'POST', body: JSON.stringify({ target, id, force: true }) }),
   jobs: (limit = 30) => request<Job[]>(`/jobs?limit=${limit}`),
   job: (id: string) => request<JobDetail>(`/jobs/${id}`),
   cancelJob: (id: string) => request<{ ok: boolean }>(`/jobs/${id}/cancel`, { method: 'POST' }),
@@ -356,6 +436,8 @@ export const qk = {
   episode: (slug: string, sid: string, n: number, v: number) => ['episode', slug, sid, n, v] as const,
   comments: (slug: string, sid: string) => ['comments', slug, sid] as const,
   assets: (slug: string, sid: string) => ['assets', slug, sid] as const,
+  analysis: (id: string) => ['analysis', id] as const,
+  skill: (slug: string) => ['skill', slug] as const,
   jobs: ['jobs'] as const,
   job: (id: string) => ['job', id] as const,
 }
@@ -368,3 +450,24 @@ export const legacy = {
   project: (slug: string, sid: string, view = '') => `/series/${slug}/${sid}${view ? `?view=${view}` : ''}`,
   job: (id: string) => `/jobs/${id}`,
 }
+
+/** Upload one video file with progress (fetch has no upload progress). Resolves to the saved path. */
+export function uploadVideo(file: File, folder: string, onProgress: (pct: number) => void): Promise<{ path: string; folder: string }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `/api/uploads?name=${encodeURIComponent(file.name)}&folder=${encodeURIComponent(folder)}`)
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(Math.round((100 * e.loaded) / e.total))
+    xhr.onload = () => {
+      let body: { detail?: string; path?: string; folder?: string } = {}
+      try { body = JSON.parse(xhr.responseText) } catch { /* not json */ }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(body as { path: string; folder: string })
+      else reject(new ApiError(xhr.status, body.detail || xhr.statusText))
+    }
+    xhr.onerror = () => reject(new ApiError(0, 'Mất kết nối khi tải lên.'))
+    xhr.send(file)
+  })
+}
+
+export const LANGUAGES: [string, string][] = [
+  ['', 'Tự nhận diện'], ['vi', 'Tiếng Việt'], ['en', 'Tiếng Anh'], ['zh', 'Tiếng Trung'], ['ko', 'Tiếng Hàn'], ['ja', 'Tiếng Nhật'], ['th', 'Tiếng Thái'],
+]

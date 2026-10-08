@@ -236,6 +236,10 @@ async def create_skill(job: Job) -> dict:
     version = install_skill(slug)
     _check(version is not None or update, "skill was not written")
     job.step("skill", "done", skill=f"write-series-{slug}", version=version)
+    # Vietnamese summary for the UI; optional, never fails the skill build
+    from .summary import summarize_skill
+    job.step("summary", "running")
+    job.step("summary", "done" if await summarize_skill(job, slug) else "failed")
     return {"slug": slug}
 
 

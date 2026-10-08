@@ -3,6 +3,9 @@ import { AppShell } from '@/components/AppShell'
 import { JobPage } from '@/pages/JobPage'
 import { HomePage } from '@/pages/HomePage'
 import { NewSeriesPage } from '@/pages/NewSeriesPage'
+import { StylePage } from '@/pages/styles/StylePage'
+import { NewVideoPage } from '@/pages/videos/NewVideoPage'
+import { VideoPage } from '@/pages/videos/VideoPage'
 import { DocPage } from '@/pages/project/DocPage'
 import { EpisodePage } from '@/pages/project/EpisodePage'
 import { HistoryPage } from '@/pages/project/HistoryPage'
@@ -16,6 +19,9 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route index element={<HomePage />} />
         <Route path="new" element={<NewSeriesPage />} />
+        <Route path="videos/new" element={<NewVideoPage />} />
+        <Route path="videos/:id" element={<VideoPage />} />
+        <Route path="styles/:slug" element={<StylePage />} />
         <Route path="p/:slug/:sid" element={<ProjectLayout />}>
           <Route index element={<OverviewPage />} />
           <Route path="doc/:kind" element={<DocPage />} />

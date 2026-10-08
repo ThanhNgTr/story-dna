@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+from types import SimpleNamespace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from . import api, config, hidden
 from .jobs import JobManager
 from .pipeline import analyze, series
 from .pipeline import assets as asset_images
+from .pipeline import summary
 
 APP_DIR = Path(__file__).parent
 app = FastAPI(title="story-dna")
@@ -33,7 +35,7 @@ jobs = JobManager()
 
 JOB_FUNCS = {"analysis": analyze.run_analysis, "skill": series.create_skill,
              "outline": series.write_outline, "refine": series.refine, "continue": series.continue_series,
-             "images": asset_images.run_images_job, "assets": series.build_assets}
+             "images": asset_images.run_images_job, "assets": series.build_assets, "summary": summary.run_summary_job}
 
 LANGUAGES = [("", "Tự nhận diện"), ("vi", "Tiếng Việt"), ("en", "Tiếng Anh"), ("zh", "Tiếng Trung"),
              ("ko", "Tiếng Hàn"), ("ja", "Tiếng Nhật"), ("th", "Tiếng Thái")]
@@ -49,7 +51,8 @@ STEPS = {"extract": "Dò cắt cảnh, chia đoạn, lấy khung hình", "transc
          "canon_source": "Video đã làm (canon)", "continue": "Đối chiếu video + outline phần tiếp",
          "diff": "So lời thoại kịch bản với video (trên máy, không tốn Claude)",
          "images": "Tạo ảnh tham chiếu bằng Codex (nhân vật, trang phục, bối cảnh)",
-         "assets": "Lập / cập nhật kho nhân vật, trang phục, bối cảnh"}
+         "assets": "Lập / cập nhật kho nhân vật, trang phục, bối cảnh",
+         "summary": "Tóm tắt tiếng Việt"}
 STEP_FIELDS = {"units": "đoạn", "total": "tổng", "shots": "shot", "done": "xong", "language": "ngôn ngữ",
                "segments": "câu thoại", "phase": "giai đoạn", "skill": "skill", "version": "phiên bản",
                "failed": "lỗi", "note": "ghi chú"}
@@ -182,8 +185,10 @@ def series_stage(s: dict) -> tuple[str, str]:
 
 # ---------- new React UI (web/ -> app/static/ui/) ----------
 
-app.include_router(api.build_router(jobs, JOB_FUNCS, lambda s: series_stage(s), lambda: list_runs(),
-                                   lambda kind, item: item_busy(kind, item)))
+app.include_router(api.build_router(
+    jobs, JOB_FUNCS, lambda s: series_stage(s), lambda: list_runs(), lambda kind, item: item_busy(kind, item),
+    SimpleNamespace(videos_in=lambda p: videos_in(p), duration=lambda p: video_duration(p),
+                    estimate=lambda d: estimate_analysis(d), covering=lambda v: runs_covering(v))))
 UI_INDEX = APP_DIR / "static" / "ui" / "index.html"
 
 

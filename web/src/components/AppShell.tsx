@@ -1,4 +1,4 @@
-import { Clapperboard, ExternalLink, Monitor, Moon, Plus, Sun } from 'lucide-react'
+import { Clapperboard, Monitor, Moon, Plus, Sun } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useJobsStream } from '@/lib/events'
@@ -37,9 +37,7 @@ export function AppShell() {
           </NavLink>
           <nav className="flex items-center gap-1">
             <NavItem to="/">Dự án</NavItem>
-            <a href="/analyze/new" className="flex items-center gap-1 rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground">
-              Video mẫu <ExternalLink className="size-3" />
-            </a>
+            <NavItem to="/videos/new">Học video mẫu</NavItem>
           </nav>
           <div className="ml-auto flex items-center gap-1">
             {!onHome && <Button render={<NavLink to="/new" />} size="sm" className="mr-1 hidden gap-1 sm:inline-flex"><Plus className="size-3.5" />Series mới</Button>}

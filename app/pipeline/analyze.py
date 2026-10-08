@@ -189,6 +189,17 @@ async def step_review(job: Job, run_dir: Path):
     job.step("review", "done")
 
 
+async def step_summary(job: Job, run_dir: Path):
+    """Vietnamese summary for the UI. Optional: a failure is logged, never fails the analysis."""
+    from .summary import load, run_summary_path, summarize_run
+    if load(run_summary_path(run_dir)):
+        job.step("summary", "skipped")
+        return
+    job.step("summary", "running")
+    ok = await summarize_run(job, run_dir)
+    job.step("summary", "done" if ok else "failed")
+
+
 async def run_analysis(job: Job) -> dict:
     run_dir = await step_extract(job)
     job.data["result"]["run_dir"] = str(run_dir)
@@ -197,6 +208,7 @@ async def run_analysis(job: Job) -> dict:
     await step_units(job, run_dir)
     await step_merge(job, run_dir)
     await step_review(job, run_dir)
+    await step_summary(job, run_dir)
     return {"run_dir": str(run_dir)}
 
 

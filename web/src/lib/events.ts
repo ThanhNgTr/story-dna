@@ -28,7 +28,7 @@ export function useJobsStream() {
             qc.invalidateQueries({ queryKey: ['doc', j.slug, j.session_id] })
             qc.invalidateQueries({ queryKey: ['assets', j.slug, j.session_id] })
           }
-          for (const k of [qk.projects, qk.skills, qk.analyses]) qc.invalidateQueries({ queryKey: k })
+          for (const k of [qk.projects, qk.skills, qk.analyses, ['analysis'], ['skill']]) qc.invalidateQueries({ queryKey: k })
           const st = JOB_STATUS[j.status]
           const msg = `${j.title}: ${st.label.toLowerCase()}`
           if (j.status === 'done') toast.success(msg)
@@ -46,6 +46,8 @@ export function useJobsStream() {
           qc.invalidateQueries({ queryKey: ['assets', j.slug, j.session_id] })
         }
         imagesDone.current.set(j.id, done)
+        // Analysis: units finish one by one; keep the video page in step
+        if (j.kind === 'analysis' && j.status === 'running') qc.invalidateQueries({ queryKey: ['analysis'] })
         seen.set(j.id, j.status)
       }
     })

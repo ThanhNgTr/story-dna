@@ -96,6 +96,12 @@ export function JobPage() {
             <Button onClick={() => resume.mutate()} disabled={resume.isPending}>Chạy tiếp</Button>}
           {job.status === 'done' && job.slug && job.session_id &&
             <Button render={<Link to={`/p/${job.slug}/${job.session_id}`} />}>Mở dự án</Button>}
+          {typeof job.result.run_dir === 'string' && (
+            <Button variant={job.status === 'done' ? 'default' : 'outline'} render={<Link to={`/videos/${(job.result.run_dir as string).split('/').pop()}`} />}>Xem kết quả phân tích</Button>
+          )}
+          {job.kind === 'skill' && job.status === 'done' && typeof job.result.slug === 'string' && (
+            <Button render={<Link to={`/styles/${job.result.slug}`} />}>Xem phong cách</Button>
+          )}
         </div>
       </div>
 

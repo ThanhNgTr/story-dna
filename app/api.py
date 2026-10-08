@@ -14,14 +14,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from . import config, eta, hidden
 from .jobs import Job, JobManager
 from .pipeline import assets as asset_images
-from .pipeline import screenplay, series
+from .pipeline import analyze, screenplay, series, summary
 
 DOC_KINDS = ("adaptation", "bible", "outline", "canon")
 
@@ -131,8 +131,32 @@ class EpisodeEdit(BaseModel):
     note: str = ""
 
 
+class AnalyzeIn(BaseModel):
+    video_path: str
+    language: str = ""
+    chunk_sec: int = 120
+    max_frames: int = 40
+    force: bool = False
+
+
+class SkillIn(BaseModel):
+    run_id: str
+    slug: str
+    update: bool = False
+
+
+class SummaryIn(BaseModel):
+    target: str
+    id: str
+    force: bool = True
+
+
+UPLOAD_MAX = 8 * 1024 ** 3  # 8 GB per file
+
+
 def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tuple[str, str]],
-                 list_runs: Callable[[], list[dict]], item_busy: Callable[[str, str], bool]) -> APIRouter:
+                 list_runs: Callable[[], list[dict]], item_busy: Callable[[str, str], bool], video) -> APIRouter:
+    """`video`: helpers from main (videos_in, duration, estimate, covering) shared with the old pages."""
     r = APIRouter(prefix="/api")
 
     def summaries(js: list[Job]) -> list[dict]:
@@ -205,7 +229,8 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
         for slug in series.list_series_skills():
             info = series.skill_info(slug)
             run = runs.get(info.get("run_id") or "")
-            out.append({**info, "projects": used.get(slug, 0),
+            sm = summary.load(summary.skill_summary_path(slug))
+            out.append({**info, "projects": used.get(slug, 0), "tagline_vi": (sm or {}).get("tagline_vi"),
                         "reference": {"id": run["id"], "title": run["title"], "minutes": run["minutes"],
                                       "sources": run["sources"]} if run else None})
         return out
@@ -219,7 +244,8 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                 continue
             job = x.pop("job", None)
             x.pop("paths", None)
-            out.append({**x, "job": one(job) if job else None})
+            sm = summary.load(summary.run_summary_path(config.ANALYSES / x["id"])) or {}
+            out.append({**x, "job": one(job) if job else None, "title_vi": sm.get("title_vi"), "genre_vi": sm.get("genre_vi")})
         return out
 
     @r.post("/hide")
@@ -445,6 +471,178 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             return asset_images.save_registry_edit(d, body.base_file, body.data, body.note)
         except ValueError as e:
             raise HTTPException(409 if "phiên bản mới" in str(e) else 400, str(e))
+
+    # ---------- reference videos: pick, upload, analyze, read ----------
+
+    def in_roots(p: Path) -> bool:
+        return any(p == r or r in p.parents for r in config.BROWSE_ROOTS)
+
+    @r.get("/browse")
+    def browse(path: str = ""):
+        p = Path(path).expanduser().resolve() if path else config.INPUT.resolve()
+        if not in_roots(p) or not p.is_dir():
+            p = config.INPUT.resolve() if config.INPUT.exists() else config.BROWSE_ROOTS[0]
+        entries = []
+        try:
+            for c in sorted(p.iterdir(), key=lambda c: (not c.is_dir(), c.name.lower())):
+                if c.name.startswith("."):
+                    continue
+                if c.is_dir():
+                    entries.append({"name": c.name, "path": str(c), "dir": True})
+                elif c.suffix.lower() in config.VIDEO_EXTS:
+                    entries.append({"name": c.name, "path": str(c), "dir": False, "size_mb": round(c.stat().st_size / 1e6)})
+        except PermissionError:
+            pass
+        parent = p.parent if p.parent != p and in_roots(p.parent) else None
+        n_videos = sum(1 for e in entries if not e["dir"]) if p == Path.home() else len(video.videos_in(p))
+        return {"cwd": str(p), "parent": str(parent) if parent else None, "entries": entries, "n_videos": n_videos,
+                "input_dir": str(config.INPUT)}
+
+    @r.get("/probe")
+    def probe(path: str):
+        vp = Path(path).expanduser()
+        if not in_roots(vp.resolve()):
+            raise HTTPException(400, "Đường dẫn nằm ngoài các thư mục được phép.")
+        vids = video.videos_in(vp) if vp.exists() else []
+        items = [{"name": str(v.relative_to(vp)) if vp.is_dir() else v.name, "duration_sec": video.duration(v)} for v in vids]
+        durs = [i["duration_sec"] for i in items if i["duration_sec"]]
+        return {"path": str(vp), "is_dir": vp.is_dir(), "items": items, "minutes": round(sum(durs) / 60, 1),
+                "estimate": video.estimate(durs) if durs else None,
+                "existing": [{k: x[k] for k in ("id", "title", "sources", "done", "analyzed", "units")} for x in video.covering(vids)]}
+
+    @r.post("/uploads")
+    async def upload(request: Request, name: str, folder: str = ""):
+        """Stream one video into data/input/<folder>/ (the browser sends the raw file as the body)."""
+        fname = Path(name).name
+        if Path(fname).suffix.lower() not in config.VIDEO_EXTS:
+            raise HTTPException(400, f"Chỉ nhận video: {', '.join(sorted(config.VIDEO_EXTS))}")
+        sub = series.slugify(folder) if folder else ""
+        dest_dir = (config.INPUT / sub) if sub else config.INPUT
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / fname
+        if dest.exists():
+            raise HTTPException(409, f"Đã có {dest.name} trong {dest_dir}. Đổi tên file hoặc chọn nó ở tab Trên máy này.")
+        part = dest.with_suffix(dest.suffix + ".part")
+        size = 0
+        try:
+            with part.open("wb") as f:
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > UPLOAD_MAX:
+                        raise HTTPException(413, "File quá lớn (tối đa 8 GB).")
+                    f.write(chunk)
+            part.rename(dest)
+        finally:
+            part.unlink(missing_ok=True)
+        return {"path": str(dest), "folder": str(dest_dir), "size_mb": round(size / 1e6)}
+
+    @r.post("/analyses")
+    async def analyze_start(body: AnalyzeIn):
+        vp = Path(body.video_path).expanduser()
+        if not in_roots(vp.resolve()):
+            raise HTTPException(400, "Đường dẫn nằm ngoài các thư mục được phép.")
+        vids = video.videos_in(vp) if vp.exists() else []
+        if not vids:
+            raise HTTPException(400, f"Không tìm thấy video nào ở: {vp}")
+        existing = video.covering(vids)
+        if existing and not body.force:
+            wanted = {str(v.resolve()) for v in vids}
+            full = [x for x in existing if wanted <= set(x["paths"])]
+            raise HTTPException(409, {"message": "Đã từng học các video này.", "partial": not full,
+                                      "existing": [{k: x[k] for k in ("id", "title", "sources", "done")} for x in (full or existing)]})
+        label = f"{vp.name}/ ({len(vids)} video)" if vp.is_dir() else vp.name
+        job = jobs.start("analysis", f"Học video: {label}",
+                         {"video_path": str(vp), "language": body.language or None, "chunk_sec": body.chunk_sec,
+                          "max_frames": body.max_frames}, analyze.run_analysis)
+        return one(job)
+
+    def run_or_404(run_id: str) -> Path:
+        d = config.ANALYSES / run_id
+        if not re.fullmatch(r"[\w.-]+", run_id) or not (d / "manifest.json").exists():
+            raise HTTPException(404, "Không tìm thấy bản phân tích.")
+        return d
+
+    @r.get("/analyses/{run_id}")
+    def analysis(run_id: str):
+        d = run_or_404(run_id)
+        m = json.loads((d / "manifest.json").read_text())
+        dna = summary.load(d / "dna.json") or {}
+        units = [{"id": u["unit_id"], "start": u["t_start"], "end": u["t_end"], "source": u.get("source"),
+                  "done": (d / "dna" / f"{u['unit_id']}.dna.json").exists()} for u in m.get("units", [])]
+        run = next((x for x in list_runs() if x["id"] == run_id), {})
+        job = run.get("job")
+        suggested = "-".join(series.slugify(dna.get("title") or dna.get("genre") or "series").split("-")[:3])
+        return {
+            "id": run_id, "title": dna.get("title"), "genre": dna.get("genre"), "logline": dna.get("logline"),
+            "sources": [{"filename": x.get("filename"), "duration_sec": x.get("duration_sec")} for x in m.get("sources", [])],
+            "minutes": run.get("minutes"), "language": run.get("language"), "units": units,
+            "done": run.get("done", False), "skills": run.get("skills", []),
+            "docs": {k: (d / f).exists() for k, f in (("story", "story.md"), ("dna", "dna.md"), ("analysis", "film_analysis.md"))},
+            "characters": [{"name": c.get("name"), "tier": c.get("tier")} for c in dna.get("characters", []) if isinstance(c, dict)],
+            "summary_vi": summary.load(summary.run_summary_path(d)),
+            "suggested_slug": suggested, "job": one(job) if job else None,
+        }
+
+    @r.get("/analyses/{run_id}/doc/{kind}")
+    def analysis_doc(run_id: str, kind: str):
+        d = run_or_404(run_id)
+        f = {"story": "story.md", "dna": "dna.md", "analysis": "film_analysis.md"}.get(kind)
+        if not f or not (d / f).exists():
+            raise HTTPException(404, "Chưa có tài liệu này.")
+        return {"kind": kind, "markdown": (d / f).read_text(encoding="utf-8")}
+
+    @r.post("/analyses/{run_id}/resume")
+    async def analysis_resume(run_id: str):
+        d = run_or_404(run_id)
+        if item_busy("runs", run_id):
+            raise HTTPException(409, "Bản phân tích này đang chạy.")
+        return one(jobs.start("analysis", f"Chạy tiếp phân tích {run_id}", {"run_dir": str(d)}, analyze.run_analysis))
+
+    # ---------- writing styles (skills) ----------
+
+    @r.post("/skills")
+    async def skill_create(body: SkillIn):
+        run_or_404(body.run_id)
+        slug = series.slugify(body.slug)
+        if not slug:
+            raise HTTPException(400, "Tên phong cách không hợp lệ.")
+        if series.skill_dir(slug).exists() and not body.update:
+            raise HTTPException(409, f"Phong cách {slug} đã có. Đổi tên hoặc chọn cập nhật phong cách có sẵn.")
+        if item_busy("skills", slug):
+            raise HTTPException(409, "Phong cách này đang được tạo / cập nhật.")
+        job = jobs.start("skill", f"{'Cập nhật' if body.update else 'Tạo'} phong cách {slug}",
+                         {"run_dir": str(config.ANALYSES / body.run_id), "slug": slug, "update": body.update}, job_funcs["skill"])
+        return one(job)
+
+    @r.get("/skills/{slug}")
+    def skill_detail(slug: str):
+        if slug not in series.list_series_skills():
+            raise HTTPException(404, "Không có phong cách này.")
+        info = series.skill_info(slug)
+        versions = []
+        for f in sorted(config.DATA.glob(f"skills-generated/write-series-{slug}_v*.json"), key=series._version):
+            m = summary.load(f) or {}
+            versions.append({"version": m.get("version") or f"v{series._version(f)}",
+                             "created": m.get("created_timestamp") or m.get("created_at"),
+                             "changes": m.get("changes") or [], "stable": bool(m.get("stable"))})
+        runs = {x["id"]: x for x in list_runs()}
+        run = runs.get(info.get("run_id") or "")
+        projects = [{"slug": x["slug"], "session_id": x["session_id"], "title": x["title"]}
+                    for x in series.list_sessions() if x["slug"] == slug]
+        sm = summary.load(summary.skill_summary_path(slug))
+        return {**info, "versions": versions, "projects": projects,
+                "reference": {"id": run["id"], "title": run["title"], "minutes": run["minutes"]} if run else None,
+                "summary_vi": sm, "summary_stale": bool(sm and sm.get("version") != info.get("version")),
+                "skill_md": (series.skill_dir(slug) / "SKILL.md").read_text(encoding="utf-8")}
+
+    @r.post("/summaries")
+    async def summary_start(body: SummaryIn):
+        if body.target == "run":
+            run_or_404(body.id)
+        elif body.target != "skill" or body.id not in series.list_series_skills():
+            raise HTTPException(400, "Không rõ cần tóm tắt cái gì.")
+        title = f"Tóm tắt tiếng Việt: {body.id}"
+        return one(jobs.start("summary", title, body.model_dump(), job_funcs["summary"]))
 
     # ---------- jobs ----------
 

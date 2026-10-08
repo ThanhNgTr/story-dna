@@ -86,19 +86,22 @@ function SkillCard({ s }: { s: Skill }) {
           <div className="text-xs text-muted-foreground">{s.version}{s.projects ? ` · ${s.projects} series` : ''}</div>
         </div>
       </div>
-      <p className="mt-3 line-clamp-4 text-sm text-muted-foreground">{s.description || 'Chưa có mô tả.'}</p>
+      <p className="mt-3 line-clamp-4 text-sm text-muted-foreground">{s.tagline_vi || s.description || 'Chưa có mô tả.'}</p>
       {s.reference && (
         <p className="mt-2 text-xs text-muted-foreground">
           Học từ: {s.reference.title || s.reference.sources.join(', ')} ({s.reference.minutes} phút)
         </p>
       )}
-      <Button render={<Link to={`/new?skill=${s.slug}`} />} variant="outline" size="sm" className="mt-4 self-start">Viết series với phong cách này</Button>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button render={<Link to={`/new?skill=${s.slug}`} />} variant="outline" size="sm">Viết series</Button>
+        <Button render={<Link to={`/styles/${s.slug}`} />} variant="ghost" size="sm">Xem luật</Button>
+      </div>
     </div>
   )
 }
 
 function AnalysisRow({ a, onHide }: { a: Analysis; onHide: () => void }) {
-  const name = a.title || a.genre || a.sources.join(', ')
+  const name = a.title_vi || a.title || a.genre_vi || a.genre || a.sources.join(', ')
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
       <Film className="size-4 shrink-0 text-muted-foreground" />
@@ -112,7 +115,7 @@ function AnalysisRow({ a, onHide }: { a: Analysis; onHide: () => void }) {
       {a.job ? <StatusBadge tone="run">Đang phân tích</StatusBadge>
         : a.done ? <StatusBadge tone="ok">Xong</StatusBadge>
           : <StatusBadge tone="warn">Chưa xong ({a.analyzed}/{a.units})</StatusBadge>}
-      <a href={`/runs/${a.id}`} className="text-sm text-primary hover:underline">Xem</a>
+      <Link to={`/videos/${a.id}`} className="text-sm text-primary hover:underline">Xem</Link>
       {!a.job && <button onClick={onHide} className="text-xs text-muted-foreground hover:text-foreground">Ẩn</button>}
     </div>
   )
@@ -223,7 +226,7 @@ export function HomePage() {
                 : 'Chọn một phong cách bên dưới và đưa ý tưởng của bạn vào để viết series 10–20 tập.'}
             </p>
             <div className="mt-6 flex gap-2">
-              <Button render={<a href={legacy.analyzeNew} />} variant={noSkills ? 'default' : 'outline'}>Học video mẫu</Button>
+              <Button render={<Link to="/videos/new" />} variant={noSkills ? 'default' : 'outline'}>Học video mẫu</Button>
               {!noSkills && <Button render={<Link to="/new" />}>Viết series mới</Button>}
             </div>
           </div>
@@ -249,7 +252,7 @@ export function HomePage() {
             <h2 className="text-lg font-semibold">Video mẫu đã học</h2>
             <p className="text-sm text-muted-foreground">Video dài nhiều tập mà Claude đã xem, nghe và rút ra cốt truyện + cách làm phim.</p>
           </div>
-          <Button render={<a href={legacy.analyzeNew} />} variant="outline" size="sm" className="gap-1.5"><Plus className="size-3.5" /> Học video mẫu</Button>
+          <Button render={<Link to="/videos/new" />} variant="outline" size="sm" className="gap-1.5"><Plus className="size-3.5" /> Học video mẫu</Button>
         </div>
         <div className="divide-y rounded-xl border bg-card px-4">
           {analyses.data?.length ? analyses.data.map((a) => <AnalysisRow key={a.id} a={a} onHide={() => hide.mutate({ kind: 'runs', item: a.id })} />)

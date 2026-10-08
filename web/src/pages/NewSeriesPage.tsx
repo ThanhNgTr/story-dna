@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { api, legacy, qk } from '@/lib/api'
+import { api, qk } from '@/lib/api'
 import { askNotificationPermission } from '@/lib/events'
 import { cn } from '@/lib/utils'
 
@@ -79,7 +79,7 @@ export function NewSeriesPage() {
         <Palette className="mx-auto size-10 text-muted-foreground" />
         <h1 className="mt-4 text-xl font-semibold">Chưa có phong cách nào</h1>
         <p className="mt-2 text-muted-foreground">Học một video mẫu trước. Claude rút ra cách kể chuyện từ video đó, rồi bạn viết series theo phong cách ấy.</p>
-        <Button render={<a href={legacy.analyzeNew} />} className="mt-6">Học video mẫu</Button>
+        <Button render={<Link to="/videos/new" />} className="mt-6">Học video mẫu</Button>
       </main>
     )
   }
@@ -110,7 +110,7 @@ export function NewSeriesPage() {
         {step === 0 && (
           <div>
             <h2 className="font-semibold">Viết theo phong cách nào?</h2>
-            <p className="mt-1 text-sm text-muted-foreground">Chỉ mượn cách kể (cấu trúc, nhịp, máy quay, âm thanh). Tên, nơi chốn, sự kiện của video mẫu không bị chép.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Chỉ mượn cách kể (cấu trúc, nhịp, máy quay, âm thanh). Tên, nơi chốn, sự kiện của video mẫu không bị chép. <Link to={d.slug ? `/styles/${d.slug}` : '/'} className="text-primary hover:underline">Xem luật của phong cách đang chọn</Link></p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {skills.isLoading && [0, 1].map((i) => <Skeleton key={i} className="h-40" />)}
               {skills.data?.map((s) => (
@@ -120,7 +120,7 @@ export function NewSeriesPage() {
                     <span className="font-semibold">{s.slug}</span>
                     {d.slug === s.slug ? <Check className="size-4 text-primary" /> : <span className="text-xs text-muted-foreground">{s.version}</span>}
                   </div>
-                  <p className="mt-2 line-clamp-5 text-sm text-muted-foreground">{s.description}</p>
+                  <p className="mt-2 line-clamp-5 text-sm text-muted-foreground">{s.tagline_vi || s.description}</p>
                   {s.reference && <p className="mt-2 text-xs text-muted-foreground">Học từ: {s.reference.title || s.reference.sources.join(', ')}</p>}
                 </button>
               ))}
