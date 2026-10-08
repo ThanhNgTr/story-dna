@@ -1,254 +1,344 @@
 # story-dna
 
-Long reference video → story + craft DNA → series-writing skill → 10-20 episode screenplay (POC)
+Learn how a story is told from one long reference video, then write your own series the same way.
 
-Learn how a reference story is built (plot, characters, storytelling, camera, sound, color,
-pacing) from one long video, then turn a rough, fragmented idea into a series told the same way:
-series bible + season outline + episode screenplays of 1-2 minutes each.
+```
+reference video ─▶ story + craft DNA ─▶ writing style (skill) ─▶ your idea ─▶ bible + outline ─▶ 10-20 episode screenplays
+                                                                                            └─▶ characters, costumes, locations + reference images
+```
 
-## Quick Start
+What you get:
 
-0. **One-time setup** (audio transcription, local CPU, no sudo):
+- **Analysis of a reference video** (many episodes edited into one cut, or a folder of episodes): plot, acts,
+  reveals, main and supporting characters, storytelling, pacing, camera, sound, color. Every rule cites the
+  time, scene or line it comes from. Vietnamese summary for reading.
+- **A reusable writing style** (`write-series-<slug>`): the reference plot abstracted into beat functions, plus
+  craft rules. Content (names, places, events) is never copied.
+- **Your series**: a fragmented idea in any language becomes an adaptation map, a series bible, a season outline
+  and 10-20 vertical micro-drama episodes of 60-120 s, written in the idea's language.
+- **Review loop**: comment on a beat, edit in place, compare versions, approve; general feedback improves the
+  style for the next series.
+- **Looks registry**: fixed faces, costumes per episode, locations with day/night variants, props, and the
+  continuity errors between episodes; reference images generated with Codex.
+- **Production helpers** (optional): shot lists with one video prompt per 1-5 s shot, director / camera / sound /
+  design briefs.
+
+Everything runs on your own machine. The browser app is the main way to use it; every step also works as a
+Claude Code command.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Install](#install)
+- [Run the app](#run-the-app)
+- [Using the app, step by step](#using-the-app-step-by-step)
+- [Command line (Claude Code)](#command-line-claude-code)
+- [Time and cost](#time-and-cost)
+- [Configuration](#configuration)
+- [Where things are stored](#where-things-are-stored)
+- [Development](#development)
+- [Switch to a new reference video](#switch-to-a-new-reference-video)
+- [Troubleshooting](#troubleshooting)
+- [Limits](#limits)
+
+## Requirements
+
+| What | Needed for | Check |
+|---|---|---|
+| **Claude Code CLI, logged in** | everything (analysis, styles, writing) | `claude --version`, then `claude` once to log in |
+| `ffmpeg` + `ffprobe` | reading videos | `ffmpeg -version` |
+| Python 3.10+ and [uv](https://docs.astral.sh/uv/) | the app and transcription | `python3 --version`, `~/.local/bin/uv --version` |
+| WhisperX in `.venv/` (~2.5 GB) | real dialogue transcripts (recommended; without it dialogue is guessed from frames) | `.venv/bin/python -c "import whisperx"` |
+| Hugging Face token (optional) | speaker labels in transcripts | see [Install](#install) step 4 |
+| Codex CLI, logged in with ChatGPT (optional) | reference images of characters / locations / props | ChatGPT/Codex extension in VS Code, or `codex` on PATH |
+| Node 20+ (optional) | only to change the web UI | `node --version` |
+
+Linux and macOS. The Claude CLI is found via `CLAUDE_BIN`, `PATH` or the VS Code extension; Codex via
+`CODEX_BIN`, `PATH` or the VS Code ChatGPT extension.
+
+## Install
+
+1. **ffmpeg**: `sudo apt install ffmpeg` (Ubuntu) or `brew install ffmpeg` (macOS).
+2. **uv + Python environment + WhisperX** (local CPU, no sudo):
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh -s -- --no-modify-path
    ~/.local/bin/uv venv .venv --python 3.12
    ~/.local/bin/uv pip install --python .venv/bin/python whisperx \
      --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
    ```
+   The web app's own packages (`app/requirements.txt`) are installed into the same `.venv` by `./run_app.sh`
+   on first start.
+3. **Claude Code**: install it and log in once (`claude`). The app uses that account; no API key.
+4. **Optional, speaker labels**:
+   1. Create a Read token at https://huggingface.co/settings/tokens
+   2. Accept the terms at https://huggingface.co/pyannote/speaker-diarization-community-1
+   3. `cp .env.example .env`, set `HF_TOKEN=`, `chmod 600 .env`. Without it everything runs; speakers are
+      guessed from the frames and marked `speaker_unsure`.
+5. **Optional, reference images**: install the ChatGPT/Codex extension in VS Code (or the Codex CLI) and log in
+   with ChatGPT. Images use your ChatGPT plan, no OpenAI API key.
 
-1. **Learn the reference video** (one long video; many episodes edited into one cut):
-   ```
-   /analyze-videos --input data/input/reference.mp4
-   ```
-   Produces `data/analyses/<run-id>/dna.json`, `dna.md`, `story.md`
-
-2. **Generate the series skill**:
-   ```
-   /skill-creator-from-dna --dna data/analyses/<run-id>/dna.json --name <slug>
-   ```
-   Creates `.claude/skills/write-series-<slug>/`
-
-3. **Write your series** from a rough idea (notes, scattered scenes, any language):
-   ```
-   /write-series-<slug> --idea-file my_notes.md --episodes 12 --episode-sec 90
-   ```
-   Adaptation map + bible + season outline -> stops for your review
-
-4. **Review loop**:
-   ```
-   /refine-skill <slug> --feedback "move the big reveal earlier; less voiceover"
-   /refine-skill <slug> --approve outline     # then episodes get written
-   /refine-skill <slug> --feedback "ep04: ending too soft"
-   /refine-skill <slug> --approve             # final/ (bible, outline, ep01..epN)
-   ```
-
-5. **Optional production**: `/script-to-shotlist data/series/<slug>/<session-id>/final/ep01.md`,
-   then the briefs in [PRODUCTION_PIPELINE.md](PRODUCTION_PIPELINE.md).
-
-## Web App (local POC)
-
-The same pipeline with a browser UI, for one user or an internal team, running on your own machine.
+## Run the app
 
 ```bash
-./run_app.sh            # http://127.0.0.1:8765
+./run_app.sh
 ```
 
-| Screen | What you do |
+Open **http://127.0.0.1:8765/ui/**. The server listens on this machine only. Jobs run in the background:
+you can close the tab, and you get a notification when a job finishes.
+
+The older pages are still at http://127.0.0.1:8765/ (same data). Use them for the one flow not moved yet:
+continuing a series after some episodes were produced. Shot lists and production briefs are commands for now
+(see [Command line](#command-line-claude-code)).
+
+## Using the app, step by step
+
+### 1. Learn a reference video (rare, slowest step)
+
+**Học video mẫu** in the top bar.
+
+- Pick a video, or a whole folder of episodes, on this machine (under `data/input/` by default), or drag & drop
+  files to upload them. The page lists the episodes in order with durations and an estimated time.
+- Choose the dialogue language (more accurate than auto-detect when the video opens with music).
+- Already analyzed? The app offers the old result instead of starting again.
+
+The video page shows progress per 2-minute unit, then a Vietnamese overview: logline, synopsis, characters,
+why viewers get hooked, how it is filmed. The full English story, DNA and film analysis are in the other tabs.
+
+### 2. Create a writing style
+
+On the video page: **Tạo phong cách viết**, give it a short name (lowercase, hyphens, e.g. `storm-village`).
+About 10-20 minutes. Another reference video can later **update** the same style instead of making a new one.
+
+The style page shows what kind of ideas it fits, its main rules in Vietnamese, the version history and the
+series that use it.
+
+### 3. Start a series
+
+**Series mới**: pick a style, write or paste the idea (a template, a `.md`/`.txt` file or drag & drop work;
+fragments are fine), choose 10-20 episodes and 60-120 s per episode.
+
+```
+Bối cảnh: làng chài miền Trung, mùa bão.
+Nhân vật: Mai (17, con gái người gác hải đăng), Tuấn (bạn thân), ông Bảy (trưởng làng).
+Cảnh muốn có: Mai tìm thấy thư của mẹ trong căn phòng bị niêm phong.
+Kết: chưa nghĩ ra, muốn có twist.
+```
+
+Claude writes the adaptation map (how your idea fits the style's story structure), the series bible and the
+season outline, then **stops for your review**. Empty parts are filled from the style and marked; where your
+idea and the style disagree, your idea wins.
+
+### 4. Review the outline, then write the episodes
+
+Read the bible and outline in the project. Not right yet: send feedback. Right: **Duyệt outline → viết tập**.
+Claude writes every episode (about 2 minutes per episode).
+
+### 5. Read, comment, edit, compare
+
+Each episode opens as scene cards: action, dialogue and voice-over styled apart, a scene timeline, a "story"
+view or a "full technical" view (camera, light, sound).
+
+- **Comment**: hover a beat, click **Góp ý** (select text first to quote it). Collect notes across episodes,
+  then **Gửi N góp ý cho Claude sửa** sends them as one round with exact positions.
+- **Edit directly**: **Sửa trực tiếp** to change words yourself; saved as the next version, no Claude call.
+- **Compare**: word-level diff between any two versions.
+
+Feedback that is about this series changes only this series. Feedback that applies to any series ("every
+cliffhanger feels the same") also improves the style, as a new style version.
+
+### 6. Looks: characters, costumes, locations, props
+
+**Ngoại hình** in the project sidebar.
+
+- **Lập kho** builds the registry from the bible and episodes: face, hair and build per character, which
+  costume each one wears in which episode, every location with its time-of-day variants, props, and a list of
+  **continuity errors** between episodes with suggested fixes.
+- **Sửa** changes a character, location or prop by hand (new registry version). **Nhờ Claude sửa** takes
+  free-text corrections. **Cập nhật từ các tập** re-reads the latest episodes.
+- **Tạo ảnh còn thiếu** asks Codex for a character sheet (face + 3 full-body views), extra costumes of the same
+  person, one image per location and time of day, and props. Review them in **Duyệt ảnh**; approved images
+  become the references for shot lists and video tools, and the character avatars in the episode reader.
+- Scene headers in the episode reader link to their location and costumes.
+
+### 7. Finalize and export
+
+**Chốt season** copies the latest bible, outline, episodes and looks registry into `final/`. Download the whole
+screenplay as one `.md` from the project overview.
+
+### 8. After production
+
+- **Continue a series** (older pages: series page → "Viết tiếp từ video đã làm") whose first episodes are
+  already made into videos: the produced videos are checked
+  against the scripts (video wins), the bible is updated, and the next episodes are outlined, either following
+  the old plan or as a new arc. Three checking levels, cheapest first: skip (your notes only), quick
+  (transcript + line-by-line diff), full (frames analyzed like a reference video).
+- **Shot list, video prompts and production briefs** per approved episode (commands):
+  see [PRODUCTION_PIPELINE.md](PRODUCTION_PIPELINE.md).
+
+## Command line (Claude Code)
+
+Every step is also a command inside Claude Code opened at the project folder (`claude`, or the VS Code
+extension). Results land in the same folders, so the app shows them too.
+
+| Step | Command |
 |---|---|
-| Dashboard | Environment check (ffmpeg, WhisperX, Claude CLI, HF_TOKEN), analyses, skills, series, recent jobs |
-| 1 Analyze video | Pick the long video with the folder browser, set dialogue language, start. Live progress per step and per unit |
-| Analysis result | Read `story.md` / `dna.md`, unit status, resume an unfinished run, generate the `write-series-<slug>` skill |
-| 2 Write series | Pick a skill, paste or upload your idea, episodes (10-20) and length (60-120 s) -> adaptation + bible + outline |
-| Continue from produced videos | On a series page (or "continue a series produced elsewhere" on the dashboard): pick the episodes already made as videos (or an existing analysis), how many are produced, how many new episodes, and the direction (follow the old outline adapted to what is on screen, or a new arc). Three ways to check the produced episodes, cheapest first: **skip** (videos follow the scripts; add notes on changes, ~1 Claude call), **quick** (local WhisperX transcript + local line-by-line script diff via `.claude/skills/continue-series/_script_diff.py`; Claude reads only the diff, no frames), **full** (frames analyzed like a reference video, ~$0.45 per video minute). Claude then writes a canon report (script vs screen, video wins), updates the bible and writes the outline for the next episodes; approve -> only the missing episodes are written. Optionally also updates the style skill from the real videos |
-| Hide / restore | Every analysis, skill, series and job has a **Hide** button; hidden items are listed under "Hidden" at the bottom of the dashboard with **Restore**. Nothing is deleted: analyses/series/jobs are only flagged (`data/ui_state.json`); a hidden skill moves to `data/archive/skills/` so Claude stops loading it until restored |
-| Series session | Read every document and episode, send feedback (per episode / outline / all), approve outline -> episodes, approve season, download the screenplay `.md` |
+| Learn a reference video | `/analyze-videos --input data/input/reference.mp4` (say the dialogue language, e.g. "dialogue is Vietnamese") |
+| Create a style | `/skill-creator-from-dna --dna data/analyses/<run-id>/dna.json --name <slug>` (`--update <slug>` to add a video to a style) |
+| Write a series | `/write-series-<slug> --idea-file data/input/idea.md --episodes 12 --episode-sec 90` |
+| Feedback / approve | `/refine-skill <slug> --feedback "..."`, `--approve outline`, `--approve` |
+| Looks registry | `/series-assets --session data/series/<slug>/<session-id> [--feedback "..."]` |
+| Reference images | `.venv/bin/python -m app.pipeline.assets plan\|generate\|status\|approve\|reject --session <session-dir>` |
+| Continue after production | `/continue-series --session <dir> --canon <run>/dna.json --style write-series-<slug> --produced <k> --direction follow\|new-arc --new-episodes <m>` |
+| Shot list + video prompts | `/script-to-shotlist data/series/<slug>/<session-id>/final/ep01.md` |
+| Briefs | `/direct-video`, `/cinematographer-brief`, `/sound-design-brief`, `/production-design-brief` |
 
-How it works:
-- Backend: FastAPI (`app/`), background jobs in `data/jobs/<id>.json` + `.log`; a failed or interrupted job can be resumed and skips finished steps and units.
-- Claude: the app runs the Claude Code CLI headless (`claude -p`) with the account logged in on this machine, in the project dir, so the project skills and agents are used as-is (`app/claude_runner.py` is the only place that calls Claude). The CLI is found via `CLAUDE_BIN`, `PATH`, or the VS Code extension.
-- Analysis is orchestrated by the backend (`app/pipeline/analyze.py`): scripts, then up to `STORY_DNA_PARALLEL` (default 4) `video-analyst` runs at once, then `story-merger`. Also runnable without the UI: `.venv/bin/python -m app.pipeline.analyze --run data/analyses/<run-id>`.
-- The folder browser only shows paths under `STORY_DNA_BROWSE_ROOTS` (default: your home dir). The server binds to 127.0.0.1 only.
-- The cost shown per job is what the Claude CLI reports; on a subscription it reflects usage, not a bill.
-
-### New UI (React, in progress)
-
-Open `http://127.0.0.1:8765/ui/` (link "Giao diện mới" in the old header). It replaces the old pages step by step;
-pages not migrated yet link back to the old UI.
-
-| Screen | What you do |
-|---|---|
-| Dự án (home) | Running jobs, all series as cards (search, filter: waiting for you / in progress / final; hide), writing styles, reference videos, hidden items with restore |
-| Học video mẫu | Pick a video or a folder of episodes on this machine, or drag & drop to upload (streamed into `data/input/`); shows episodes, durations, time estimate and "already analyzed" warning; language + advanced options |
-| Video page | Vietnamese overview (logline, synopsis, characters, why it hooks, film craft), English story / DNA / film analysis, unit progress, resume, create or update a writing style |
-| Style page | Vietnamese summary (what ideas it fits, main rules), reference video, version history with changes, series using it, full SKILL.md |
-| Series mới | 3-step wizard: pick a style, write or upload the idea (template, drag & drop .md/.txt, draft kept in the browser), episodes + length with a summary -> Claude writes bible + outline |
-| Project overview | 4-step progress, one "next step" action (approve outline, approve season), episode cards |
-| Episode reader | Scenes as cards, VO vs dialogue styled, scene timeline, "story" or "full technical" view, ledger questions |
-| Comments | Hover a beat -> "Góp ý" (select text first to quote it); collect notes, then send all as one feedback round (`/refine-skill`) with exact positions. Stored in `<session>/comments.json` |
-| Manual edit | "Sửa trực tiếp": edit action, dialogue, delivery, camera/light/sound in place; saves `episodes/epNN_v(K+1).json/.md` (no Claude), runs the asset lint, logs the round. Blocked while a job runs on the series |
-| Compare | Word-level diff between any two versions of an episode |
-| Ngoại hình | Characters (face, hair, body, invariants, wardrobe matrix per episode, sheet + outfit images), locations (variants per time of day), props, "Duyệt ảnh" (all pending images, multi-select approve/reject), continuity issues with a link to the episode. Image viewer with side-by-side compare and the prompt used. "Sửa" edits a character / location / prop and saves `assets_v(N+1)` (validated, no Claude); "Nhờ Claude sửa" and "Cập nhật từ các tập" run `/series-assets`; "Tạo ảnh còn thiếu" runs Codex. In the episode reader, scene headers link to the location and outfits, and approved sheets become the character avatars |
-| Jobs | Header button: live progress of every running job (Server-Sent Events) with time left, toast + browser notification when done; job page with live log, cancel, resume. Time left = median of finished jobs of the same kind on this machine, per episode / per image (`app/eta.py`) |
-
-The built UI is committed in `app/static/ui/`, so running the app needs Python only. To change the UI (Node 20+):
-
-```bash
-cd web && npm install
-npm run dev          # http://127.0.0.1:5173/ui/ , proxies /api to ./run_app.sh on :8765
-npm run build        # writes app/static/ui/ (commit it)
-```
-
-Vietnamese summaries: `app/pipeline/summary.py` (one Sonnet call) writes `<run>/summary_vi.json` after an analysis
-and `data/skills-generated/write-series-<slug>_summary_vi.json` after a skill build; older ones get a button.
-
-Backend for it: `app/api.py` (JSON under `/api`, SSE at `/api/events` and `/api/jobs/<id>/events`),
-`app/pipeline/screenplay.py` (comments, manual edits, JSON -> Markdown renderer).
-
-## User Guide
-
-Run every `/...` command inside Claude Code (terminal or VS Code), opened at the project folder.
-Run `bash` commands in a normal terminal. Prefer a UI? See [Web App](#web-app-local-poc).
-
-### 1. Setup (one time)
-
-| Step | Command | Check |
-|---|---|---|
-| ffmpeg | `sudo apt install ffmpeg` (Ubuntu) / `brew install ffmpeg` (macOS) | `ffmpeg -version` |
-| Python 3.10+ | preinstalled on Linux/macOS | `python3 --version` |
-| uv | `curl -LsSf https://astral.sh/uv/install.sh \| sh -s -- --no-modify-path` | `~/.local/bin/uv --version` |
-| WhisperX (~2.5 GB) | the `uv venv` + `uv pip install` commands in Quick Start step 0 | `.venv/bin/python -c "import whisperx"` |
-
-Optional, **speaker labels** (know which line belongs to whom, more accurate):
-1. Create an account and a Read token at https://huggingface.co/settings/tokens
-2. Open https://huggingface.co/pyannote/speaker-diarization-community-1 and accept the terms
-3. `cp .env.example .env`, put the token in `HF_TOKEN=` (`.env` is gitignored, loaded by `./run_app.sh`), `chmod 600 .env`, restart the app. In a plain terminal session: `export HF_TOKEN=...` instead
-
-Without a token everything still runs; the AI guesses speakers from the frames (marked `speaker_unsure`).
-
-### 2. Prepare input
-
-- **Reference video**: copy it into `data/input/` (mp4, mov, mkv, avi, webm). One long video made of
-  several episodes edited together is the intended case; a folder of videos also works.
-- **Your idea**: any text/markdown file, fragments are fine, in any language, e.g. `data/input/idea.md`:
-  ```markdown
-  Setting: a fishing village on the central coast, storm season.
-  Characters: Mai (17, the lighthouse keeper's daughter), Tuan (best friend), Mr. Bay (village chief).
-  Scene I want: Mai finds a letter from her mother in a sealed room.
-  Scene I want: the whole village goes quiet when someone mentions the storm night 10 years ago.
-  Ending: not decided, want a twist.
-  ```
-
-### 3. Run step by step
-
-**Step 1 — Learn the reference video** (rare, slowest step)
-```
-/analyze-videos --input data/input/reference.mp4
-```
-- Non-English dialogue (e.g. Vietnamese): say so in the command ("dialogue is Vietnamese"), the AI then
-  transcribes with `--language vi`. Whisper detects the language from the first 30s only and can be
-  wrong if the video opens with music.
-- Time (CPU): shot detection ~1 min; transcript ~0.65x video length (30 min video ≈ 20 min);
-  AI analysis ~3 min per 2-min unit, units run in parallel.
-- Check in `data/analyses/<run-id>/`:
-  - `story.md`: the plot retold in order — is it the right story?
-  - `dna.md`: main/supporting characters, acts, mysteries, camera/sound/color rules
-  - merge notes in `dna.md`: what the AI was unsure about (e.g. whether two characters are one person)
-  - `manifest.json` -> `audio.language` must match the video's language
-
-**Step 2 — Generate the series skill** (once per reference video)
-```
-/skill-creator-from-dna --dna data/analyses/<run-id>/dna.json --name <slug>
-```
-- `<slug>`: lowercase, hyphens, e.g. `storm-village`. This creates the new command `/write-series-storm-village`.
-- Add another reference video to an existing skill: `--update <slug>`.
-
-**Step 3 — Write the series from your idea**
-```
-/write-series-<slug> --idea-file data/input/idea.md --episodes 12 --episode-sec 90
-```
+`/write-series-<slug>` options:
 
 | Option | Default | Meaning |
 |---|---|---|
 | `--idea` / `--idea-file` | required | Idea as text, or a file path |
-| `--episodes` | 12 | Number of episodes, 10–20 |
-| `--episode-sec` | 90 | Episode length, 60–120 seconds |
+| `--episodes` | 12 | Number of episodes, 10-20 |
+| `--episode-sec` | 90 | Episode length, 60-120 seconds |
 | `--characters` | - | Names + roles, e.g. `"Mai (lead), Tuan (friend)"` |
-| `--sample` | - | Existing draft; the AI keeps its content and applies the style |
+| `--sample` | - | Existing draft; keeps its content and applies the style |
 | `--auto` | off | Write all episodes without stopping for outline review |
 
-The AI stops after writing **adaptation.md** (how your idea maps onto the reference story structure),
-the **bible** (world, characters) and the **outline** (one summary per episode), in
-`data/series/<slug>/<session-id>/`.
+Analysis without Claude Code open: `.venv/bin/python -m app.pipeline.analyze --run data/analyses/<run-id>`
+(resume) or `--video <path>`.
 
-**Step 4 — Feedback and approval** (repeat until happy)
+## Time and cost
+
+Measured on a CPU-only laptop; your numbers vary with the machine and the Claude plan. The app learns from
+finished jobs and shows "time left" for running ones.
+
+| Step | Time | Notes |
+|---|---|---|
+| Learn a video | ~1.5 h for 50 min of video | transcript ~0.65x video length; ~3-4 min per 2-min unit, 4 units at once; merge 6-18 min. Full frame analysis ≈ $0.45 per video minute of Claude usage |
+| Create a style | 10-20 min | |
+| Bible + outline | 5-10 min | |
+| Episodes | ~2 min per episode | |
+| Feedback round | 3-10 min | |
+| Looks registry | 5-10 min | |
+| Reference image (Codex) | 1-4 min each | one at a time; ~25 images for a 10-episode series |
+| Vietnamese summary | ~1 min | ≈ $0.2 (Sonnet) |
+
+On a Claude subscription the cost shown per job reflects usage, not a bill.
+
+## Configuration
+
+Put overrides in `.env` (copy `.env.example`; gitignored, loaded by `./run_app.sh`).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `HF_TOKEN` | - | Hugging Face token for speaker labels |
+| `CLAUDE_BIN` | auto | Path to the `claude` binary |
+| `CODEX_BIN` | auto | Path to the `codex` binary |
+| `PORT` | 8765 | Web app port |
+| `STORY_DNA_PARALLEL` | 4 | Claude processes at once during analysis |
+| `STORY_DNA_CODEX_PARALLEL` | 1 | Images generated at once |
+| `STORY_DNA_CODEX_TIMEOUT` | 600 | Seconds before one image attempt is abandoned |
+| `STORY_DNA_BROWSE_ROOTS` | `~` | Folders the video picker may show (`:`-separated) |
+| `STORY_DNA_PERMISSION_MODE` | `acceptEdits` | Permission mode of the headless Claude runs |
+
+## Where things are stored
+
+All results are files under `data/` (gitignored). JSON is the source of truth; Markdown sits next to it for
+reading. Nothing is overwritten: every change is a new version (`bible_v2`, `ep04_v3`, `assets_v2`,
+`SKILL_v3`).
+
 ```
-/refine-skill <slug> --feedback "move the brother twist to episode 7; less voiceover"
-/refine-skill <slug> --approve outline      # approve outline -> the AI writes the episodes
-/refine-skill <slug> --feedback "episode 4 ending is weak, add a scene where Mr. Bay lies"
-/refine-skill <slug> --approve              # finalize the season
+data/
+├── input/                              # reference videos (copied or uploaded)
+├── analyses/<run-id>/                  # one per reference video
+│   ├── manifest.json, shots/, frames/, transcripts/, dna/   # per-unit work
+│   ├── dna.json, dna.md, story.md      # merged plot + craft DNA
+│   ├── film_analysis.md/.json          # why it hooks, how to split into episodes
+│   └── summary_vi.json                 # Vietnamese summary for the app
+├── series/<slug>/<session-id>/         # one per series
+│   ├── input.json, idea.md, adaptation.md
+│   ├── bible_vN.md/.json, outline_vN.md/.json, canon_vN.md/.json
+│   ├── episodes/epNN_vK.md/.json       # every version of every episode
+│   ├── assets/assets_vN.md/.json       # looks registry
+│   ├── assets/characters|locations|props/, images.json   # reference images + review state
+│   ├── comments.json                   # review comments
+│   ├── iterations.json                 # every feedback / approval / edit round
+│   └── final/                          # approved season: bible, outline, epNN, assets, series.md
+├── skills-generated/                   # style metadata per version + Vietnamese summaries
+├── jobs/<id>.json + .log               # background jobs (resume after a restart)
+├── archive/skills/                     # hidden styles (restorable)
+└── ui_state.json                       # hidden projects / videos / jobs
 ```
-- Feedback in any language. The AI splits it: **general** feedback ("every cliffhanger feels the same")
-  also patches the skill for future runs; **story-specific** feedback ("rename Tuan") changes only this series.
-- Every change creates a new version (`outline_v2`, `ep04_v2`...); old versions are kept.
 
-**Step 5 — Get the result**
-- Final screenplays: `data/series/<slug>/<session-id>/final/` — `bible.md`, `outline.md`, `ep01.md` ... `epNN.md`
-  (plus `.json` for other tools), `series.md` = index.
-- Optional video production: `/script-to-shotlist .../final/ep01.md`, then the briefs in [PRODUCTION_PIPELINE.md](PRODUCTION_PIPELINE.md).
+```
+.claude/
+├── CLAUDE.md                           # project rules and footguns (read this before changing anything)
+├── agents/                             # video-analyst, story-merger, film-analyst
+└── skills/
+    ├── analyze-videos/                 # _analyze.py (shots, units, frames), _transcribe.py (WhisperX)
+    ├── skill-creator-from-dna/         # DNA -> write-series-<slug>
+    ├── write-series-<slug>/            # generated styles (SKILL.md, references/, versions/)
+    ├── refine-skill/                   # feedback, approve
+    ├── series-assets/                  # looks registry, _assets.py scan/validate/render/lint
+    ├── continue-series/                # continue after production
+    ├── script-to-shotlist/             # shots + video prompts
+    └── direct-video/, cinematographer-brief/, sound-design-brief/, production-design-brief/
+app/                                    # FastAPI backend + older pages
+web/                                    # React UI source (built into app/static/ui/)
+```
 
-### 4. Switch to a new reference video
+## Development
 
-Delete the generated skill `.claude/skills/write-series-*` and the data in `data/analyses/*`, `data/series/*`,
-`data/skills-generated/*` (or ask Claude to "reset the project per CLAUDE.md"), then start again at step 1.
+- **Backend**: FastAPI in `app/`. `app/api.py` is the JSON API for the React UI (Server-Sent Events at
+  `/api/events` and `/api/jobs/<id>/events`); `app/main.py` mounts it and still serves the older pages.
+  Long work runs as jobs (`app/jobs.py`), resumable, skipping finished steps and units.
+- **Claude** is called only in `app/claude_runner.py` (headless `claude -p` in the project dir, so project skills
+  and agents load as usual). **Codex** only in `app/codex_runner.py`.
+- **Pipelines**: `app/pipeline/analyze.py` (analysis), `series.py` (styles, outline, refine, continue,
+  registry), `assets.py` (reference images), `screenplay.py` (comments, manual edits, JSON -> Markdown),
+  `summary.py` (Vietnamese summaries); `app/eta.py` estimates time left.
+- **Frontend**: React + Vite + TypeScript + Tailwind + shadcn (Base UI) in `web/`. The build is committed in
+  `app/static/ui/` so users need Python only. After changing `web/`:
+  ```bash
+  cd web && npm install
+  npm run dev       # http://127.0.0.1:5173/ui/, proxies the API to ./run_app.sh on :8765
+  npm run build     # writes app/static/ui/ - commit it
+  ```
+- **Browser tests** (system Chrome via `playwright-core`): `web/scripts/e2e-*.mjs`. They write data, so run them
+  against a copy of a session (the scripts say which), never on real work.
+- Headless Claude cannot write inside `.claude/`; style edits go through `data/skills-staging/` and are installed
+  by the backend. Other footguns: `.claude/CLAUDE.md`.
 
-### 5. Troubleshooting
+## Switch to a new reference video
+
+Keep the tool skills and agents; remove the generated styles `.claude/skills/write-series-*` and the data in
+`data/analyses/*`, `data/series/*`, `data/skills-generated/*` (or ask Claude to "reset the project per
+CLAUDE.md"). Then start again at step 1. To keep old work instead, just hide it in the app.
+
+## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `ffmpeg: command not found` | Install ffmpeg (section 1) |
-| `.venv/bin/python: No such file` | WhisperX not installed; still runs, but dialogue is only guessed from frames |
-| Transcript in the wrong language / gibberish | Re-run the transcript with `--language <code>` (e.g. `vi`) |
-| Odd repeated lines ("Thank you", "Please subscribe...") | Whisper hallucinates over music; the analysts filter them, see `dropped_segments` |
-| Too many / too few shots | Re-analyze with `--scene-threshold 0.2` (fewer) or `0.08` (more, dark footage) |
-| A character split in two / two merged into one | Check the merge notes, fix through feedback in step 4 |
-| `/write-series-...` does not appear | Check `.claude/skills/write-series-<slug>/SKILL.md` exists, restart the Claude Code session |
-| Diarization off although a token is set | Model terms not accepted on Hugging Face, or `HF_TOKEN` not exported in the same terminal |
+| App says "claude CLI not found" | Install Claude Code and log in, or set `CLAUDE_BIN` in `.env` |
+| `/ui/` shows "not built" | `cd web && npm install && npm run build` (or use a copy with `app/static/ui/` committed) |
+| Port 8765 in use | `PORT=8800 ./run_app.sh` |
+| A job shows "interrupted" | The server was restarted while it ran; open the job and click **Chạy tiếp** (finished parts are skipped) |
+| `ffmpeg: command not found` | Install ffmpeg |
+| `.venv/bin/python: No such file` | Run the install step 2; without WhisperX dialogue is only guessed from frames |
+| Transcript in the wrong language / gibberish | Analyze again with the right dialogue language |
+| Odd repeated lines ("Thank you", "Please subscribe...") | Whisper hallucinates over music; the analysts drop them (`dropped_segments`) |
+| Too many / too few shots | `/analyze-videos ... --scene-threshold 0.2` (fewer) or `0.08` (more, dark footage) |
+| A character split in two / two merged into one | Check the merge notes in `dna.md`, fix it through feedback |
+| `/write-series-...` does not appear in Claude Code | Check `.claude/skills/write-series-<slug>/SKILL.md` exists, restart the Claude Code session |
+| Speaker labels off although a token is set | Model terms not accepted on Hugging Face, or `HF_TOKEN` not in `.env` / not exported |
+| "Codex CLI not found" / no images | Install and log in to the ChatGPT/Codex extension, or set `CODEX_BIN` |
+| An image keeps failing | See the error under the item (usually a content refusal or a plan limit); edit the description, try later |
+| Episodes and the looks registry disagree | **Ngoại hình → Cập nhật từ các tập**, then check **Lỗi liên tục** |
 
-## Directory Structure
+## Limits
 
-```
-.
-├── .claude/
-│   ├── CLAUDE.md                       # project guide + footguns
-│   ├── agents/
-│   │   ├── video-analyst.md            # one per ~2-min unit: scenes, characters, dialogue, plot events, craft
-│   │   └── story-merger.md             # stitches units into one plot + craft DNA
-│   └── skills/
-│       ├── analyze-videos/             # _analyze.py (shots, units, frames), _transcribe.py (WhisperX)
-│       ├── skill-creator-from-dna/     # DNA -> write-series-<slug>
-│       ├── refine-skill/               # feedback loop + approve
-│       ├── script-to-shotlist/         # optional: episode -> 1-5s shots + video prompts
-│       ├── direct-video/               # optional production briefs
-│       ├── cinematographer-brief/
-│       ├── sound-design-brief/
-│       └── production-design-brief/
-├── data/                               # gitignored
-│   ├── analyses/<run-id>/              # manifest, shots, frames, transcripts, dna/, dna.json, story.md
-│   ├── series/<slug>/<session-id>/     # input, adaptation, bible, outline, episodes, final/
-│   └── skills-generated/               # skill metadata per version
-└── .venv/                              # WhisperX (gitignored)
-```
-
-## Prerequisites
-
-- `ffmpeg` + `ffprobe`
-- Python 3.10+ (frame extraction, no packages)
-- `.venv` with WhisperX for dialogue (optional but strongly recommended)
-- Optional `HF_TOKEN` (+ accepted pyannote terms) for speaker labels
-
-## Notes
-
-- No external APIs: Claude reads frames natively, audio is transcribed locally
-- Every DNA rule cites evidence (time, scene, quoted line)
-- Skills and series files are versioned; nothing is overwritten
-- New reference video: reset per CLAUDE.md "PROJECT RESET"
+- Local, single machine: the app uses the Claude Code (and Codex) accounts logged in on that machine. Serving
+  other people over the internet would need the Claude API, logins and a job queue.
+- The only external service besides Claude is Codex for images, on the user's ChatGPT plan.
+- Analyses and styles are written in English (they are read by Claude); the app adds Vietnamese summaries.
+  Screenplays follow the language of your idea.
+- Reference images keep faces consistent across shots well, but not perfectly; review every image.
