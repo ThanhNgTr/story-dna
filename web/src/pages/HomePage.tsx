@@ -172,7 +172,7 @@ export function HomePage() {
       .filter((p) => !needle || `${p.title} ${p.slug}`.toLowerCase().includes(needle))
       .sort((a, b) => (b.created_at ?? b.session_id).localeCompare(a.created_at ?? a.session_id))
   }, [projects.data, q, filter])
-  const noSkills = skills.data && !skills.data.length
+  const noSkills = !!skills.data && !skills.data.length
 
   return (
     <main className="mx-auto max-w-6xl space-y-12 px-4 py-10">
@@ -209,7 +209,9 @@ export function HomePage() {
           </div>
         )}
 
-        {projects.isLoading ? (
+        {projects.error ? (
+          <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">Chưa tải được danh sách dự án.</p>
+        ) : projects.isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-48 rounded-xl" />)}</div>
         ) : list.length ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -243,6 +245,7 @@ export function HomePage() {
         {skills.data?.length ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{skills.data.map((s) => <SkillCard key={s.slug} s={s} />)}</div>
         ) : skills.isLoading ? <Skeleton className="h-40 rounded-xl" />
+          : skills.error ? <p className="text-sm text-muted-foreground">Chưa tải được.</p>
           : <p className="text-sm text-muted-foreground">Chưa có phong cách nào. Học một video mẫu rồi tạo phong cách từ kết quả.</p>}
       </section>
 
@@ -256,7 +259,7 @@ export function HomePage() {
         </div>
         <div className="divide-y rounded-xl border bg-card px-4">
           {analyses.data?.length ? analyses.data.map((a) => <AnalysisRow key={a.id} a={a} onHide={() => hide.mutate({ kind: 'runs', item: a.id })} />)
-            : <p className="py-4 text-sm text-muted-foreground">{analyses.isLoading ? 'Đang tải…' : 'Chưa có video mẫu nào.'}</p>}
+            : <p className="py-4 text-sm text-muted-foreground">{analyses.isLoading ? 'Đang tải…' : analyses.error ? 'Chưa tải được.' : 'Chưa có video mẫu nào.'}</p>}
         </div>
       </section>
 

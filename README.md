@@ -299,10 +299,12 @@ web/                                    # React UI source (built into app/static
 - **Frontend**: React + Vite + TypeScript + Tailwind + shadcn (Base UI) in `web/`. The build is committed in
   `app/static/ui/` so users need Python only. After changing `web/`:
   ```bash
+  ./run_app.sh      # terminal 1: the backend (API, jobs) on :8765 - the dev UI needs it
   cd web && npm install
-  npm run dev       # http://127.0.0.1:5173/ui/, proxies the API to ./run_app.sh on :8765
+  npm run dev       # terminal 2: open http://localhost:5173/ui/ (hot reload; /api is proxied to :8765)
   npm run build     # writes app/static/ui/ - commit it
   ```
+  Without the backend the dev UI shows a red "Không kết nối được máy chủ" banner and reconnects by itself.
 - **Browser tests** (system Chrome via `playwright-core`): `web/scripts/e2e-*.mjs`. They write data, so run them
   against a copy of a session (the scripts say which), never on real work.
 - Headless Claude cannot write inside `.claude/`; style edits go through `data/skills-staging/` and are installed

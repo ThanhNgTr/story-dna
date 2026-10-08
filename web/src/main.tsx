@@ -7,6 +7,9 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import App from './App'
 import './index.css'
 
+// Dev server root (http://127.0.0.1:5173/) -> the app lives under /ui like in the built version
+if (!window.location.pathname.startsWith('/ui')) window.history.replaceState(null, '', '/ui/')
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 10_000, refetchOnWindowFocus: true, retry: 1 } },
 })

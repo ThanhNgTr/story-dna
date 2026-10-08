@@ -1,6 +1,8 @@
-import { Clapperboard, Monitor, Moon, Plus, Sun } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Clapperboard, Monitor, Moon, Plus, ServerOff, Sun } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { api } from '@/lib/api'
 import { useJobsStream } from '@/lib/events'
 import { useTheme, type Theme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
@@ -25,6 +27,8 @@ export function AppShell() {
   const [theme, setTheme] = useTheme()
   const Icon = THEME_ICON[theme]
   const onHome = useLocation().pathname === '/'
+  // Backend down (dev server without ./run_app.sh, or the app was stopped): say so instead of empty pages
+  const health = useQuery({ queryKey: ['health'], queryFn: api.health, retry: false, refetchInterval: (q) => (q.state.error ? 5000 : 60000) })
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur supports-backdrop-filter:bg-background/70">
@@ -48,6 +52,14 @@ export function AppShell() {
           </div>
         </div>
       </header>
+      {health.error && (
+        <div className="border-b border-destructive/30 bg-destructive/10 px-4 py-2.5 text-sm">
+          <div className="mx-auto flex max-w-[1500px] items-center gap-2">
+            <ServerOff className="size-4 shrink-0 text-destructive" />
+            <span><b>Không kết nối được máy chủ story-dna.</b> Chạy <code className="rounded bg-background px-1">./run_app.sh</code> ở thư mục dự án; trang tự kết nối lại.</span>
+          </div>
+        </div>
+      )}
       <Outlet />
     </div>
   )
