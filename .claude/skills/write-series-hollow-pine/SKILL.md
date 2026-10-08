@@ -1,6 +1,6 @@
 ---
 name: write-series-hollow-pine
-version: v2
+version: v3
 stable_version: v1
 description: |
   Turn a rough or fragmented story idea into a 10-20 episode vertical micro-drama series (60-120s
@@ -8,11 +8,11 @@ description: |
   flash-forward then title-card rewind the clock, drop the protagonist into a closed institution
   that takes away her means of escape and binds everyone under one collective-punishment rule,
   and let her cynical first-person voiceover undercut every official lie while she hides her real
-  reason for coming. Mysteries open fast and almost never close; a physical object with scratched
+  reason for coming. Mysteries open fast and close late, all answered by the finale; a physical object with scratched
   text carries the central question; allies arrive through one small action, authority figures
   through one unsoftened line. Cuts are fast (~24/min, ~2.5s per shot) with one deliberately held
   10-13s take per episode; cold teal-blue fog means danger and warm amber lamplight means the
-  institution is watching. Every episode ends mid-decision on an irreversible internal choice.
+  institution is watching. Every episode before the finale ends mid-decision on an irreversible internal choice; the finale resolves it.
   Use whenever the user wants to develop an idea, notes, scattered scenes, a logline or a draft
   into a series, season outline, episode scripts or screenplay in this style, even if they only
   paste fragments. Output: series bible + season outline + episode screenplays (md + json).
@@ -45,6 +45,17 @@ single 91-second episode. Episode-level craft is measured; season-level structur
 | `--continue` | - | Existing session dir: keep bible, extend or revise |
 | `--auto` | off | Skip the outline approval stop |
 
+## Story Contract (overrides this skill on conflict)
+
+Every series must be a complete story: `.claude/skills/story-contract/references/story-contract.md`.
+Main plot with one central question, start -> `happy` or `bad` ending shown in the last episode,
+1-2 main characters + >=2 supporting characters tied to them, dialogue in every episode, setting
+and how it changes (`setting_timeline`), climaxes (midpoint + final, never >3 episodes without
+one), mysteries opened -> clued -> answered (only 1 minor question may stay open). The style rules
+below decide HOW it is told; where one says "nothing is resolved" or "leave questions open", it
+applies to episodes 1..N-1 only. Check: `python3 .claude/skills/story-contract/_story_check.py
+<session-dir>` -> 0 errors.
+
 ## Workflow
 
 Session dir: `data/series/hollow-pine/<session-id>/` (session-id = UTC `YYYYMMDD-HHMMSS`).
@@ -74,6 +85,11 @@ Save `input.json` first: the raw idea, every flag value, and this skill's versio
   `assets/assets_v1.md/.json`: fixed face/hair/body per character, default + planned outfits,
   canonical locations with day/night variants, key props. Show it together with the outline; look
   feedback goes to `/series-assets --feedback`.
+- **Story contract (outline)**: bible + outline carry the contract fields (`main_plot`, `ending`,
+  `relation_to_main`, `arc`, `setting_timeline`, `climaxes`, ledger `tier` + `answer`; outline
+  `act`, `main_plot_step`, `locations`, `setting_change`, `climax`). Then
+  `python3 .claude/skills/story-contract/_story_check.py <session-dir> --stage outline` -> 0 errors
+  before stopping.
 - STOP and show the outline unless `--auto`. The user approves with
   `/refine-skill hollow-pine --approve outline` or gives feedback.
 
@@ -90,6 +106,9 @@ Save `input.json` first: the raw idea, every flag value, and this skill's versio
   timing, motif callbacks, timecodes summing to `--episode-sec`.
 - Then `python3 .claude/skills/series-assets/_assets.py lint <session-dir>` -> 0 errors, and
   `/series-assets --session <session-dir>` (scene map, `new_assets` get real IDs, drift report).
+- Story contract: `python3 .claude/skills/story-contract/_story_check.py <session-dir>` -> 0 errors
+  (dialogue in every episode, ledger as planned, last episode carries `ending` and resolves the
+  central question on screen).
 - Write `series.md` (index + all episodes) and reply with: outline table, open threads, file paths.
 
 ## Story Template (season arc)
@@ -122,7 +141,7 @@ reveal rhythm; the reference does not contain this beat. See Data limits.
 | 80-88 | Lowest point: an ally is lost, the collective-punishment rule falls on everyone, and she is blamed for it | The rule stated in the premiere delivers its full weight | projected from Rule Six escalation |
 | 88-92 | The premiere's flash-forward image is reached and passed; the audience finally sees why she was bloodied and who she was calling | Pays the structural debt the cold open created | projected from t=0.58 + 9.53 device |
 | 92-97 | She confronts the buried truth and what the institution's lie cost; the theme is answered out loud | Theme: "the lies institutions tell to control people, and what it costs to go looking" | projected from theme |
-| 97-100 | Finale ends mid-decision on a new irreversible choice, with an ambiguous spoken warning from an unidentified voice; one season question stays unanswered | The reference's only demonstrated ending mode | measured pattern, t=84.07 |
+| 97-100 | Finale: the protagonist makes the irreversible choice ON screen, the central question is answered and the ending (happy/bad) lands; at most one minor question stays open as a sequel hook | The decision shape is the reference's ending mode; the resolution is the story contract | measured pattern t=84.07 + story contract |
 
 ### Mystery / reveal ledger pattern
 
@@ -348,8 +367,9 @@ self-revealing, then a short ambiguous spoken line from an unidentified voice, t
 face (Ref: t=84.07, break candidate strength 3).
 
 **Season premiere:** the full flash-forward + title-card rewind, and five world rules stated in one
-scene. **Season finale:** the same mid-decision ending at a larger scale, with two questions left
-unanswered and one new name spoken for the first time (projected from the reference's ending type
+scene. **Season finale (story contract):** the decision is made and its result shown; the central
+question is answered and the happy/bad ending lands; at most one minor question stays open and a
+new name may be spoken in the last line as a sequel hook (projected from the reference's ending type
 `cliffhanger` and its 5 unanswered questions).
 
 ## Output Format
@@ -386,19 +406,21 @@ Logline: ... | Story beats: <template beats + %> | Cliffhanger: <type>
 
 `bible_vK.json`: `{title, logline, premise, theme, world: {setting, rules[], locations[], motifs[]},
 cast: [{character_id, name, tier, role, want, need, flaw, secret, visual_signature, voice: {style,
-sample_lines[]}}], ledger_plan: [{question, open_ep, clue_eps[], answer_ep}], relationships[]}`
+sample_lines[]}}], ledger_plan: [{id, question, tier, open_ep, clue_eps[], answer_ep, answer}], relationships[]}` + story
+contract fields (main_plot, ending, setting_timeline, climaxes, cast relation_to_main/arc/secret_reveal_ep)
 
 `outline_vK.json`: `{episodes: [{episode, title, logline, beats[], template_beats: [{pct, function}],
-reveal, cliffhanger_type, characters[]}], never_answered[]}`
+reveal, cliffhanger_type, characters[], act, main_plot_step, locations[], setting_change, climax, ledger}],
+never_answered[]}`; last episode `ending` + `cliffhanger_type: "resolution"`
 
 ## Self-check
 
 - [ ] Every Story Template beat is assigned to an episode via `ceil(p/100 * N)`, and no episode holds more than 3
 - [ ] Premiere contains: flash-forward, title-card rewind, means of escape removed, five rules in one scene, collective-punishment rule last
 - [ ] The premiere's flash-forward lands at 88-92% of the season
-- [ ] 4-6 mystery questions are open in every episode; one answered per 2-3 episodes; exactly 2 unanswered at the finale
+- [ ] 4-6 mystery questions are open in every episode; one answered per 2-3 episodes; at most 1 minor question unanswered at the finale
 - [ ] Each episode has a reveal or clue beat roughly every 17s (~5 per 90s)
-- [ ] Every episode ends mid-decision: VO irreversible-choice line + short ambiguous spoken line + hold on face
+- [ ] Every episode except the finale ends mid-decision: VO irreversible-choice line + short ambiguous spoken line + hold on face
 - [ ] Each episode has exactly one held take of 10-13s, and no other shot over 3s
 - [ ] Shot count matches ~24/min (~36 per 90s); shot mix ≈ CU 38 / MCU 24 / ECU 22 / WS 16
 - [ ] Word count per episode within 190-240 for 90s; average line 6-7 words; protagonist holds ~60% of lines
@@ -409,6 +431,8 @@ reveal, cliffhanger_type, characters[]}], never_answered[]}`
 - [ ] Warm light only in enclosed authority spaces; cold teal only outside; any lone warm light outside means something is watching
 - [ ] At least one motif is still unexplained at the finale
 - [ ] Scene timecodes sum exactly to `--episode-sec`
+- [ ] Story contract: `_story_check.py` reports 0 errors (complete plot, happy/bad ending shown,
+      main + supporting cast, dialogue, setting timeline, climaxes, every mystery answered but <=1)
 
 ## Data limits
 
@@ -447,3 +471,4 @@ reveal, cliffhanger_type, characters[]}], never_answered[]}`
 - v2 (2026-10-08T12:30:00Z): episodes are written against the asset registry (/series-assets):
   bible-only registry at Stage 2, scene IDs + outfits per Stage 3 episode-contract, lint in the
   continuity pass. No story/style rule changed.
+- v3 (2026-10-08T09:41:01Z): story contract (story-contract skill): complete plot to a happy/bad ending shown in the last episode, main_plot / ending / setting_timeline / climaxes / ledger answers in bible + outline, _story_check.py at Stage 2 and 3. Finale and unanswered-question rules now apply to episodes 1..N-1 only (drift from the reference's open ending, requested by the user).

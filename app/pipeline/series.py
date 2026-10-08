@@ -222,6 +222,61 @@ async def _claude(job: Job, prompt: str, tag: str, timeout_sec: int = 5400):
     return res
 
 
+STORY_CHECK = config.SKILLS / "story-contract" / "_story_check.py"
+
+
+def _story_check(d: Path, stage: str) -> dict:
+    """Deterministic story-contract check; writes and returns <session>/story_check.json."""
+    import subprocess
+    subprocess.run(["python3", str(STORY_CHECK), str(d), "--stage", stage], cwd=str(config.ROOT),
+                   capture_output=True, text=True, timeout=120)
+    try:
+        return json.loads((d / "story_check.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"ok": False, "errors": ["story_check.py produced no report"], "warnings": []}
+
+
+def story_check_view(slug: str, session_id: str) -> dict | None:
+    """Fresh check for the UI (fast, no Claude). None before an outline exists."""
+    st = session_state(slug, session_id)
+    if st["outline"] is None:
+        return None
+    rep = _story_check(st["dir"], "episodes" if st["episodes"] else "outline")
+    return {k: rep.get(k) for k in ("ok", "stage", "checked_at", "errors", "warnings")}
+
+
+async def fix_story(job: Job) -> dict:
+    """Web job: check the session and let Claude repair what the story contract flags."""
+    p = job.data["params"]
+    st = session_state(p["slug"], p["session_id"])
+    _check(st["outline"] is not None, "no outline yet")
+    rep = await enforce_story_contract(job, st["dir"], "episodes" if st["episodes"] else "outline")
+    return {"slug": p["slug"], "session_id": p["session_id"], "ok": rep.get("ok")}
+
+
+async def enforce_story_contract(job: Job, d: Path, stage: str) -> dict:
+    """Check the session against the story contract; on errors let Claude repair once, then re-check.
+
+    Never fails the job: what is left stays in story_check.json and the UI shows it.
+    """
+    job.step("story_check", "running")
+    rep = _story_check(d, stage)
+    if not rep.get("ok"):
+        job.log(f"[story_check] {len(rep['errors'])} errors, repairing: " + "; ".join(rep["errors"][:5]))
+        try:
+            await _claude(job, f"/story-contract --session {d}\n\nStage: {stage}. Run non-interactively: do "
+                               "not ask questions; keep the user's idea and the style skill's rules." + UI_NOTE,
+                          "story_check", 3600)
+        except RuntimeError as e:
+            job.log(f"[story_check] repair failed: {e}")
+        rep = _story_check(d, stage)
+    job.step("story_check", "done" if rep.get("ok") else "failed",
+             errors=len(rep.get("errors", [])), warnings=len(rep.get("warnings", [])))
+    job.data.setdefault("result", {})["story_check"] = {"ok": rep.get("ok"), "errors": rep.get("errors", [])[:30]}
+    job.save()
+    return rep
+
+
 async def create_skill(job: Job) -> dict:
     p = job.data["params"]
     run_dir, slug = Path(p["run_dir"]), p["slug"]
@@ -268,6 +323,7 @@ async def write_outline(job: Job) -> dict:
     st = session_state(slug, sid)
     _check(st["outline"] is not None, "outline was not written")
     job.step("outline", "done")
+    await enforce_story_contract(job, d, "outline")
     return {"slug": slug, "session_id": sid}
 
 
@@ -306,6 +362,9 @@ async def refine(job: Job) -> dict:
     if step == "final":
         _check(session_state(slug, sid)["final"], "final/ was not created")
     job.step(step, "done")
+    if step != "final":
+        st = session_state(slug, sid)
+        await enforce_story_contract(job, st["dir"], "episodes" if st["episodes"] else "outline")
     return {"slug": slug, "session_id": sid}
 
 
@@ -399,6 +458,7 @@ async def continue_series(job: Job) -> dict:
     _check(after["canon"] > before["canon"], "canon report was not written")
     _check(after["outline"] > before["outline"], "continuation outline was not written")
     job.step("continue", "done")
+    await enforce_story_contract(job, d, "outline")
     return {"slug": slug, "session_id": sid}
 
 

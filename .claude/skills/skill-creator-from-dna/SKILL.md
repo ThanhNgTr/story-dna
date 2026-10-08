@@ -105,6 +105,9 @@ Learned from: <dna path>, <source files, total duration>. Reference plot: refere
 | `--continue` | - | Existing session dir: keep bible, extend or revise |
 | `--auto` | off | Skip the outline approval stop |
 
+## Story Contract (overrides this skill on conflict)
+<copy the "Story Contract" paragraph below verbatim>
+
 ## Workflow
 Session dir: data/series/<slug>/<session-id>/ (session-id = UTC YYYYMMDD-HHMMSS). Save input.json first.
 
@@ -119,6 +122,7 @@ Session dir: data/series/<slug>/<session-id>/ (session-id = UTC YYYYMMDD-HHMMSS)
 - Outline: one row per episode — title, logline, beats, which Story Template beat(s) it carries (% position), reveal/clue, cliffhanger type, characters.
 - Spread: map Story Template % positions onto episodes (beat at p% -> episode ceil(p/100 * N)).
 - Looks: after the bible, run /series-assets --session <session-dir> (bible-only) -> assets/assets_v1.md/.json (fixed faces, default + planned outfits, canonical locations with variants, key props). Show it with the outline.
+- Story contract: bible + outline carry the fields of .claude/skills/story-contract/references/story-contract.md (main_plot, ending, setting_timeline, climaxes, ledger tier + answer; outline act, main_plot_step, locations, setting_change, climax); python3 .claude/skills/story-contract/_story_check.py <session-dir> --stage outline -> 0 errors.
 - STOP and show the outline unless --auto. User approves with /refine-skill <slug> --approve outline or gives feedback.
 
 ### Stage 3 — Episodes (episodes/epNN_v1.md/.json)
@@ -127,6 +131,7 @@ Session dir: data/series/<slug>/<session-id>/ (session-id = UTC YYYYMMDD-HHMMSS)
 - N > 6: write in parallel with general-purpose subagents, 3-4 episodes each; give each the bible, outline, this SKILL.md path and its episode numbers.
 - Continuity pass after all episodes: names, visual signatures (verbatim), ledger timing, callbacks, timecodes adding up.
 - Then python3 .claude/skills/series-assets/_assets.py lint <session-dir> -> 0 errors, and /series-assets --session <session-dir> (scene map, new_assets get real IDs, drift report).
+- python3 .claude/skills/story-contract/_story_check.py <session-dir> -> 0 errors.
 - Write series.md (index + all episodes) and reply with: outline table, open threads, file paths.
 
 ## Story Template (season arc)
@@ -176,7 +181,7 @@ want vs need, voice pattern, arc pattern, Ref (name in reference)>
 <episode md + json: see skill-creator-from-dna "Episode output format"; bible/outline json shapes>
 
 ## Self-check
-<8-12 checkboxes: structure %, ledger, hooks, durations, signatures verbatim, VO share, pacing; always include: every scene has loc_id + variant_id and every on-screen character an outfit from the asset registry, _assets.py lint 0 errors>
+<8-12 checkboxes: structure %, ledger, hooks, durations, signatures verbatim, VO share, pacing; always include: _story_check.py 0 errors; every scene has loc_id + variant_id and every on-screen character an outfit from the asset registry, _assets.py lint 0 errors>
 
 ## Data limits
 <sources, what was inferred (music, speakers), sample size>
@@ -184,6 +189,23 @@ want vs need, voice pattern, arc pattern, Ref (name in reference)>
 ## Changelog
 - v1 (<ISO>): generated from <dna path>
 ````
+
+### Story Contract paragraph (copy into every generated skill)
+
+```markdown
+Every series must be a complete story: `.claude/skills/story-contract/references/story-contract.md`.
+Main plot with one central question, start -> `happy` or `bad` ending shown in the last episode,
+1-2 main characters + >=2 supporting characters tied to them, dialogue in every episode, setting
+and how it changes (`setting_timeline`), climaxes (midpoint + final, never >3 episodes without
+one), mysteries opened -> clued -> answered (only 1 minor question may stay open). The style rules
+below decide HOW it is told; where one says "nothing is resolved" or "leave questions open", it
+applies to episodes 1..N-1 only. Check: `python3 .claude/skills/story-contract/_story_check.py
+<session-dir>` -> 0 errors.
+```
+
+A reference that ends open (cliffhanger, unanswered questions) still teaches its finale SHAPE;
+write the Story Template's last rows and the finale hook so the season resolves (note the drift
+in Data limits). Bible/outline JSON shapes in Output Format include the contract fields.
 
 ### Episode output format (put in generated skill's Output Format)
 
@@ -212,6 +234,7 @@ Logline: ... | Story beats: <template beats> | Cliffhanger: <type>
   "new_assets": [], "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}
 }
 ```
+Last episode adds `"ending": {"type": "happy|bad", "central_question_answer": "..."}`.
 
 ## Steps
 

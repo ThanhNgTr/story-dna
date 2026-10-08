@@ -50,6 +50,7 @@ export const STEP_LABEL: Record<string, string> = {
   diff: 'So lời thoại kịch bản với video',
   images: 'Tạo ảnh tham chiếu bằng Codex',
   assets: 'Lập / cập nhật kho nhân vật, bối cảnh',
+  story_check: 'Kiểm tra cốt truyện (mở đầu → kết, nhân vật, bối cảnh, cao trào, bí ẩn)',
 }
 
 export function jobProgress(job: Job): number | null {

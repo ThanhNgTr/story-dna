@@ -35,7 +35,8 @@ jobs = JobManager()
 
 JOB_FUNCS = {"analysis": analyze.run_analysis, "skill": series.create_skill,
              "outline": series.write_outline, "refine": series.refine, "continue": series.continue_series,
-             "images": asset_images.run_images_job, "assets": series.build_assets, "summary": summary.run_summary_job}
+             "images": asset_images.run_images_job, "assets": series.build_assets, "summary": summary.run_summary_job,
+             "story": series.fix_story}
 
 LANGUAGES = [("", "Tự nhận diện"), ("vi", "Tiếng Việt"), ("en", "Tiếng Anh"), ("zh", "Tiếng Trung"),
              ("ko", "Tiếng Hàn"), ("ja", "Tiếng Nhật"), ("th", "Tiếng Thái")]
@@ -52,7 +53,8 @@ STEPS = {"extract": "Dò cắt cảnh, chia đoạn, lấy khung hình", "transc
          "diff": "So lời thoại kịch bản với video (trên máy, không tốn Claude)",
          "images": "Tạo ảnh tham chiếu bằng Codex (nhân vật, trang phục, bối cảnh)",
          "assets": "Lập / cập nhật kho nhân vật, trang phục, bối cảnh",
-         "summary": "Tóm tắt tiếng Việt"}
+         "summary": "Tóm tắt tiếng Việt",
+         "story_check": "Kiểm tra cốt truyện (mở đầu → kết, nhân vật, bối cảnh, cao trào, bí ẩn)"}
 STEP_FIELDS = {"units": "đoạn", "total": "tổng", "shots": "shot", "done": "xong", "language": "ngôn ngữ",
                "segments": "câu thoại", "phase": "giai đoạn", "skill": "skill", "version": "phiên bản",
                "failed": "lỗi", "note": "ghi chú"}

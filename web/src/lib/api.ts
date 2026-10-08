@@ -80,8 +80,11 @@ export interface Project {
   episodes: EpisodeInfo[]
   assets: { file: string; counts: Record<string, number>; issues: number } | null
   iterations: Iteration[]
+  story_check: StoryCheck | null
   job: Job | null
 }
+
+export interface StoryCheck { ok: boolean; stage: 'outline' | 'episodes'; checked_at: string; errors: string[]; warnings: string[] }
 
 export interface DocResponse { kind: string; file: string; version: number; markdown: string; data: unknown }
 
@@ -403,6 +406,7 @@ export const api = {
     request<Job>(`${p(slug, sid)}/assets/images`, { method: 'POST', body: JSON.stringify(body) }),
   reviewImages: (slug: string, sid: string, files: string[], status: 'approved' | 'rejected' | 'draft') =>
     request<{ updated: number }>(`${p(slug, sid)}/assets/review`, { method: 'POST', body: JSON.stringify({ files, status }) }),
+  fixStory: (slug: string, sid: string) => request<Job>(`${p(slug, sid)}/story/fix`, { method: 'POST' }),
   buildAssets: (slug: string, sid: string, feedback = '') =>
     request<Job>(`${p(slug, sid)}/assets/build`, { method: 'POST', body: JSON.stringify({ feedback }) }),
   saveAssets: (slug: string, sid: string, base_file: string, data: Registry, note = '') =>

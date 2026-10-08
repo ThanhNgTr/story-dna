@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, CheckCircle2, Clock, Film, Shirt } from 'lucide-react'
+import { Check, CheckCircle2, Clock, Film, ListChecks, Shirt, X } from 'lucide-react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmAction } from '@/components/ConfirmAction'
@@ -90,6 +90,66 @@ function NextAction({ p }: { p: Project }) {
   )
 }
 
+const REQUIREMENTS = [
+  'Trọn vẹn từ mở đầu đến kết (happy / bad)',
+  'Cốt truyện chính',
+  'Nhân vật chính và nhân vật phụ xoay quanh',
+  'Lời thoại của các nhân vật',
+  'Bối cảnh rõ ràng và cách bối cảnh thay đổi',
+  'Cao trào',
+  'Bí mật, bí ẩn: mở → manh mối → lời giải',
+]
+
+function StoryCheckCard({ p }: { p: Project }) {
+  const qc = useQueryClient()
+  const fix = useMutation({
+    mutationFn: () => api.fixStory(p.slug, p.session_id),
+    onSuccess: () => {
+      toast.success('Claude đang sửa cốt truyện. Xong sẽ có thông báo.')
+      qc.invalidateQueries({ queryKey: ['project', p.slug, p.session_id] })
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
+  const c = p.story_check
+  if (!c) return null
+  const byReq = REQUIREMENTS.map((_, i) => c.errors.filter((e) => e.startsWith(`[R${i + 1}]`)))
+  return (
+    <section className="rounded-xl border bg-card p-5 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 font-medium">
+          <ListChecks className="size-4" /> Kiểm tra cốt truyện
+          <span className="font-normal text-muted-foreground">({c.stage === 'outline' ? 'bible + outline' : 'bible + outline + các tập'})</span>
+        </div>
+        {!c.ok && !p.job && (
+          <ConfirmAction trigger={<Button size="sm">Sửa tự động</Button>} title="Sửa cốt truyện?"
+            description={<>Claude sửa {c.errors.length} lỗi, ghi phiên bản mới cho bible / outline / các tập liên quan. Bản cũ được giữ.</>}
+            confirmLabel="Sửa" pending={fix.isPending} onConfirm={() => fix.mutateAsync()} />
+        )}
+      </div>
+      <ul className="mt-3 space-y-1.5">
+        {REQUIREMENTS.map((label, i) => (
+          <li key={label}>
+            <details className="group">
+              <summary className={cn('flex cursor-pointer list-none items-center gap-2', !byReq[i].length && 'cursor-default')}>
+                {byReq[i].length
+                  ? <X className="size-4 shrink-0 text-destructive" />
+                  : <Check className="size-4 shrink-0 text-success" />}
+                <span>{label}</span>
+                {byReq[i].length > 0 && <span className="text-xs text-muted-foreground">{byReq[i].length} lỗi</span>}
+              </summary>
+              {byReq[i].length > 0 && (
+                <ul className="mt-1 ml-6 list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+                  {byReq[i].map((e) => <li key={e}>{e.replace(/^\[R\d\] /, '')}</li>)}
+                </ul>
+              )}
+            </details>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 export function OverviewPage() {
   const p = useProject()
   const base = `/p/${p.slug}/${p.session_id}`
@@ -111,6 +171,8 @@ export function OverviewPage() {
           </Link>
         </div>
       </div>
+
+      <StoryCheckCard p={p} />
 
       <section>
         <h2 className="mb-3 text-base font-semibold">Các tập</h2>

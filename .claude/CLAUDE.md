@@ -27,6 +27,11 @@ Codex CLI on the user's ChatGPT login (built-in image_gen, no OpenAI API key)
   different idea can be told the same way. Content (names, places, events) is never copied.
 - **Series session**: `data/series/<slug>/<session-id>/` — input, adaptation map, bible, outline,
   episodes, iterations, final/
+- **Story contract** (`.claude/skills/story-contract/`): every series is a complete story — main plot,
+  start -> happy/bad ending shown in the last episode, main + supporting cast tied to the main
+  character, dialogue, setting + how it changes, climaxes, mysteries opened -> clued -> answered.
+  Overrides style skills on conflict. `_story_check.py <session>` -> 0 errors; the web app runs it after
+  outline / episodes / feedback / continue and lets Claude repair once (`/story-contract`).
 - **Feedback loop**: `rule` feedback patches the skill (new version), `story` feedback edits only
   this series. Live SKILL.md = latest; immutable `versions/SKILL_vN.md`.
 
@@ -88,7 +93,7 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
 
 ## PROJECT RESET (new reference video)
 
-Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `series-assets`, `script-to-shotlist`, the 4 brief
+Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `series-assets`, `story-contract`, `script-to-shotlist`, the 4 brief
 skills, agents `video-analyst` + `story-merger` + `film-analyst`. Remove: generated `.claude/skills/write-series-*`,
 `data/analyses/*`, `data/series/*`, `data/skills-generated/*`.
 

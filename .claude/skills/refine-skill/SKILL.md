@@ -103,6 +103,11 @@ Ambiguous item -> one short question.
   when the session has `assets/`: `python3 .claude/skills/series-assets/_assets.py lint <session> <NN...>`
   -> 0 errors. If an episode added `new_assets` or the bible changed a look, run `/series-assets`
   after the round (new assets version).
+- Story contract (`.claude/skills/story-contract/references/story-contract.md`): every round
+  ends with `python3 .claude/skills/story-contract/_story_check.py <session>` (`--stage outline`
+  before episodes exist) -> 0 errors; fix what fails in the same round (next file versions).
+  Feedback that would break the contract (e.g. "no ending", "leave everything open") -> apply it
+  to episodes 1..N-1 only and say so in the change summary.
 - Run the skill's Self-check on everything re-generated. Update `series.md`.
 - Show a change summary: file -> what changed -> which feedback item.
 
@@ -132,7 +137,8 @@ Next: more feedback, `/refine-skill <slug> --approve outline` (stage outline), o
   episodes marked `PRODUCED (canon)` in the outline (series continued with `/continue-series`) and
   episodes already written are never rewritten. New episodes must match the latest `canon_vN.json`
   when one exists (characters as seen on screen, revealed facts, open threads).
-- `--approve` (all episodes exist): copy latest bible, outline, every episode (md + json) and
+- `--approve` (all episodes exist): run `_story_check.py <session>` first; errors -> fix them
+  before finalizing. Then copy latest bible, outline, every episode (md + json) and
   series.md into `final/`, plus the latest `assets/assets_vN.json/.md` as `final/assets.json/.md`
   (run `/series-assets` first if it is missing or older than the latest episode); set `stable_version: vN` in SKILL.md frontmatter and `"stable": true` in
   the metadata JSON; log `{"status": "approved"}`. Next step (optional):

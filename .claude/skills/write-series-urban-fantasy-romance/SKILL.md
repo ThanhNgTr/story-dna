@@ -1,6 +1,6 @@
 ---
 name: write-series-urban-fantasy-romance
-version: v2
+version: v3
 description: |
   Turn a rough or fragmented story idea into a 10-20 episode vertical micro-drama series
   (60-120s episodes) told the way an urban-fantasy dragon-shifter romance melodrama is told:
@@ -44,6 +44,17 @@ functions in this file get transplanted.
 | `--continue` | - | Existing session dir: keep bible, extend or revise |
 | `--auto` | off | Skip the outline approval stop |
 
+## Story Contract (overrides this skill on conflict)
+
+Every series must be a complete story: `.claude/skills/story-contract/references/story-contract.md`.
+Main plot with one central question, start -> `happy` or `bad` ending shown in the last episode,
+1-2 main characters + >=2 supporting characters tied to them, dialogue in every episode, setting
+and how it changes (`setting_timeline`), climaxes (midpoint + final, never >3 episodes without
+one), mysteries opened -> clued -> answered (only 1 minor question may stay open). The style rules
+below decide HOW it is told; where one says "nothing is resolved" or "leave questions open", it
+applies to episodes 1..N-1 only. Check: `python3 .claude/skills/story-contract/_story_check.py
+<session-dir>` -> 0 errors.
+
 ## Workflow
 
 Session dir: `data/series/urban-fantasy-romance/<session-id>/` (session-id = UTC `YYYYMMDD-HHMMSS`).
@@ -74,6 +85,11 @@ Save `input.json` first (raw idea text, all flags, resolved defaults, ISO timest
   `assets/assets_v1.md/.json`: fixed face/hair/body per character, default + planned outfits,
   canonical locations with day/night variants, key props. Show it together with the outline; look
   feedback goes to `/series-assets --feedback`.
+- **Story contract (outline)**: bible + outline carry the contract fields (`main_plot`, `ending`,
+  `relation_to_main`, `arc`, `setting_timeline`, `climaxes`, ledger `tier` + `answer`; outline
+  `act`, `main_plot_step`, `locations`, `setting_change`, `climax`). Then
+  `python3 .claude/skills/story-contract/_story_check.py <session-dir> --stage outline` -> 0 errors
+  before stopping.
 - **STOP** and show the outline unless `--auto`. User approves with
   `/refine-skill urban-fantasy-romance --approve outline` or gives feedback.
 
@@ -90,6 +106,9 @@ Save `input.json` first (raw idea text, all flags, resolved defaults, ISO timest
   callbacks, timecodes adding up to `--episode-sec` per episode.
 - Then `python3 .claude/skills/series-assets/_assets.py lint <session-dir>` -> 0 errors, and
   `/series-assets --session <session-dir>` (scene map, `new_assets` get real IDs, drift report).
+- Story contract: `python3 .claude/skills/story-contract/_story_check.py <session-dir>` -> 0 errors
+  (dialogue in every episode, ledger as planned, last episode carries `ending` and resolves the
+  central question on screen).
 - Write `series.md` (index + all episodes) and reply with: outline table, open threads, file paths.
 
 ## Story Template (season arc)
@@ -122,13 +141,14 @@ these beats are the **deduplicated** spine, so each appears once. See
 | 87-93 | The antagonist turns on the child — a slur, a grabbed jacket, a raised hand — and the child's power erupts visibly: slit eyes, rippling markings, cracking glass | Hurt the child, not the heroine, to earn the destruction | t=2744.26 |
 | 94-97 | The environment detonates; the protector walks in through the wreckage and his authority alone forces the antagonist to his knees, without a blow | Power shown as atmosphere, never as choreography | t=2771.47-2784.93 |
 | 98-99 | Ignoring the antagonist entirely, he crosses the room, pulls her into an embrace that leaves a glowing mark on her skin, and declares she is the only one who matters | The claiming answers her self-worth wound in an image, not a speech | t=2807.8 |
-| 100 | He turns a low, verdict-like voice on the antagonist — and the season ends mid-threat | The season's biggest question is asked, not answered | t=2838.43 |
+| 100 | He turns a low, verdict-like voice on the antagonist and the threat is carried out on screen; the central question is answered and the happy/bad ending lands | Story contract: the season resolves; the romance may stay unspoken but its outcome is shown | t=2838.43 |
 
 ### Mystery / reveal ledger pattern
 
 - Run **3-5 questions open at once**. Never fewer than 3 after 20%.
-- Close exactly **one** major question inside the season (the identity bombshell, 59-66%). Leave
-  the rest open — the reference ends with 7 of 8 unanswered. *Ref: mystery ledger.*
+- Close the identity bombshell at 59-66% and every other question by the finale (story
+  contract; at most 1 minor left open) — the reference ends with 7 of 8 unanswered, which this
+  skill no longer copies. *Ref: mystery ledger.*
 - Spacing on the closed thread: open at ~4% -> clues at ~11% and ~20% -> answer at ~39-65%.
   Minimum two clues before any answer.
 - The **romance question gets clues and never an answer**. The bond signal fires at 41-45%, again
@@ -358,8 +378,9 @@ arrivals, the bond signal, sigils, rage. Never for an ordinary emotional scene. 
   unexplained supernatural tell.
 - **Season premiere**: the flash-forward spoiler of the whole premise. Give away the ending of the
   season's A-question in the first 10 seconds; it is bait, not a leak. *Ref: insight 1.*
-- **Season finale**: the apex power turns a low verdict-like voice on the antagonist and the
-  episode **cuts mid-threat**. Nothing is resolved; the romance is marked on the body but never
+- **Season finale (story contract)**: the apex power turns a low verdict-like voice on the
+  antagonist and the verdict is carried out; the central question is answered and the happy/bad
+  ending lands; the romance is marked on the body but never
   spoken. *Ref: t=2838.43.*
 
 ## Output Format
@@ -393,12 +414,14 @@ Logline: ... | Story beats: <template beats + %> | Cliffhanger: <type>
 ```
 
 `bible_vK.json`: `{title, logline, premise, theme, world: {setting, rules[], locations[{name, look}],
-motifs[]}, characters[{character_id, name, tier, role, want, need, flaw, secret, visual_signature,
-voice: {style, sample_lines[]}}], mystery_ledger[{question, open_ep, clue_eps[], answer_ep, answer}],
-relationship_arcs[{a, b, arc}]}`
+motifs[]}, cast[{character_id, name, tier, role, want, need, flaw, secret, visual_signature,
+voice: {style, sample_lines[]}}], ledger_plan[{id, question, tier, open_ep, clue_eps[], answer_ep, answer}],
+relationship_arcs[{a, b, arc}]}` + story contract fields (main_plot, ending, setting_timeline, climaxes,
+cast relation_to_main/arc/secret_reveal_ep)
 
 `outline_vK.json`: `{episodes: [{episode, title, logline, duration_sec, beats[], template_beats[{pct,
-function}], reveal, cliffhanger_type, characters[]}], open_threads[]}`
+function}], reveal, cliffhanger_type, characters[], act, main_plot_step, locations[], setting_change,
+climax, ledger}], never_answered[]}`; last episode `ending` + `cliffhanger_type: "resolution"`
 
 ## Self-check
 
@@ -406,11 +429,11 @@ Before reporting Stage 3 complete:
 
 - [ ] Every Story Template beat is assigned to an episode, and its episode number equals
       `ceil(pct/100 * N)` (±1 episode)
-- [ ] 3-5 mystery questions open at once after 20%; exactly one major question answered in-season
+- [ ] 3-5 mystery questions open at once after 20%; the identity bombshell at 59-66%; every question but <=1 minor answered by the finale
 - [ ] The romance/bond question has clues but **no** dialogue confirmation
 - [ ] Every episode contains 1-2 reveals or clues (~55s rhythm); none has zero
-- [ ] Every episode ends on one of the three cliffhanger patterns
-- [ ] Episode 1 opens with a flash-forward spoiler in the first 10s; the finale cuts mid-threat
+- [ ] Every episode except the finale ends on one of the three cliffhanger patterns
+- [ ] Episode 1 opens with a flash-forward spoiler in the first 10s; the finale resolves the threat on screen
 - [ ] Scene timecodes in each episode sum to `--episode-sec` exactly
 - [ ] Shot count ≈ 0.5 x duration_sec (~45 per 90s); avg shot ~2.0s; shot mix ≈ 43% CU, 22% ECU,
       17% MS, 9% MCU, 9% WS
@@ -422,6 +445,8 @@ Before reporting Stage 3 complete:
 - [ ] At most 7 named characters; at most 4 locations, each reused 3+ times
 - [ ] Every major reveal arrives by phone call or voice message, not face-to-face exposition
 - [ ] The cold lead's warmth is shown only through involuntary tells, never a confession
+- [ ] Story contract: `_story_check.py` reports 0 errors (complete plot, happy/bad ending shown,
+      main + supporting cast, dialogue, setting timeline, climaxes, every mystery answered but <=1)
 
 ## Data limits
 
@@ -456,3 +481,4 @@ Before reporting Stage 3 complete:
 - v2 (2026-10-08T12:30:00Z): episodes are written against the asset registry (/series-assets):
   bible-only registry at Stage 2, scene IDs + outfits per Stage 3 episode-contract, lint in the
   continuity pass. No story/style rule changed.
+- v3 (2026-10-08T09:41:01Z): story contract (story-contract skill): complete plot to a happy/bad ending shown in the last episode, main_plot / ending / setting_timeline / climaxes / ledger answers in bible + outline, _story_check.py at Stage 2 and 3. Finale and unanswered-question rules now apply to episodes 1..N-1 only (drift from the reference's open ending, requested by the user).

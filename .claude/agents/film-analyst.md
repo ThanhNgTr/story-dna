@@ -73,7 +73,7 @@ Pacing sags, clichés, logic holes, cheap tricks, inconsistencies in the source 
   `{"analysis_timestamp", "audit": [...], "retention": {...}, "viral_formula": [...],
     "episode_template": {"cuts": [...], "beats": [...], "rules": [...]}, "character_engine": {...},
     "dialogue_craft": {...}, "weaknesses": [...], "top_rules_for_writers": [8-12 strings]}`
-- `film_analysis.md`: the same for humans, with tables, in English; quoted lines stay verbatim in
+- `film_analysis.md`: the same for humans, with tables, in Vietnamese; quoted lines stay verbatim in
   their original language.
 - Reply in at most 200 words: the 3 most important audit findings and the 3 strongest mechanisms.
 

@@ -312,6 +312,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             "episodes": episodes,
             "assets": {"file": av["file"], "counts": av["counts"], "issues": len(av["reg"].get("issues", []))} if av else None,
             "iterations": st["iterations"],
+            "story_check": series.story_check_view(slug, sid) if not job else None,
             "job": one(job) if job else None,
         }
 
@@ -451,6 +452,15 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             raise HTTPException(400, "Trạng thái không hợp lệ.")
         n = asset_images.set_status_many(session_or_404(slug, sid)["dir"], body.files, body.status)
         return {"updated": n}
+
+    @r.post("/projects/{slug}/{sid}/story/fix")
+    async def story_fix(slug: str, sid: str):
+        session_or_404(slug, sid)
+        if running_for(sid):
+            raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi sửa.")
+        job = jobs.start("story", f"Sửa cốt truyện theo yêu cầu bắt buộc ({slug})",
+                         {"slug": slug, "session_id": sid}, job_funcs["story"])
+        return one(job)
 
     @r.post("/projects/{slug}/{sid}/assets/build")
     async def assets_build(slug: str, sid: str, body: AssetsBuildIn):

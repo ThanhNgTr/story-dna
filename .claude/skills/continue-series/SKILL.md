@@ -92,6 +92,12 @@ previous bible" list at the top.
     user's idea file when given.
   - Both: the first new episode picks up exactly where episode k ended on screen (its last scene,
     cliffhanger, emotional state).
+- Story contract (`.claude/skills/story-contract/references/story-contract.md`) over the whole
+  series 1..k+m: the next bible version updates `main_plot`, `ending`, `setting_timeline`,
+  `climaxes`, `ledger_plan` so the story ends (happy/bad) in episode k+m. `new-arc`: the new arc
+  gets its own central question (the old one becomes tier `major`, keeping its answer episode).
+  Produced episodes keep what canon shows. `python3 .claude/skills/story-contract/_story_check.py
+  <session> --stage outline` -> 0 errors.
 - Self-check: canon respected (no contradiction with `canon_vN.json`), style skill's Self-check
   items that apply to an outline, continuity of names and visual signatures.
 
