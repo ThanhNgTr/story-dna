@@ -59,6 +59,7 @@
 <p class="hint">Công cụ: <span class="{{ 'ok' if env.ffmpeg else 'bad' }}">ffmpeg</span> ·
   <span class="{{ 'ok' if env.whisperx_venv else 'warn' }}">WhisperX</span> ·
   <span class="{{ 'ok' if env.claude_bin else 'bad' }}">Claude CLI</span> ·
+  <span class="{{ 'ok' if env.codex_bin else 'muted' }}">Codex CLI (tạo ảnh, tùy chọn)</span> ·
   <span class="{{ 'ok' if env.hf_token else 'muted' }}">HF_TOKEN (tách người nói, tùy chọn)</span></p>
 </div>
 {% if n_archived %}

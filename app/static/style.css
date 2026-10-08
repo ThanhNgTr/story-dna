@@ -67,3 +67,15 @@ details.adv summary { cursor:pointer; color:var(--muted); margin-top:14px; }
 .progress > i { display:block; height:100%; background:var(--accent); }
 button.link { background:transparent; color:var(--muted); border:0; padding:5px 6px; text-decoration:underline; }
 button.link:hover { color:var(--bad); }
+
+/* ---- asset registry (characters, locations, props) ---- */
+.asset { border-top:1px solid var(--line); padding-top:6px; margin-top:22px; scroll-margin-top:72px; }
+.asset h3 { font-size:15px; margin:18px 0 6px; scroll-margin-top:72px; }
+table.kv th { width:150px; color:var(--muted); font-weight:500; font-size:13px; }
+table.matrix td, table.matrix th { text-align:center; padding:4px 6px; } table.matrix td:first-child, table.matrix th:first-child { text-align:left; }
+.gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; margin:8px 0; }
+.gallery figure { margin:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--bg); }
+.gallery figure.approved { border:2px solid var(--ok); } .gallery figure.rejected { opacity:.45; }
+.gallery img { display:block; width:100%; height:auto; }
+.gallery figcaption { padding:6px 8px; font-size:12px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.gallery .actions { margin-left:auto; display:flex; gap:4px; } .gallery form, form.inline { display:inline; }

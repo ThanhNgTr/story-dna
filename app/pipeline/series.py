@@ -305,6 +305,23 @@ async def refine(job: Job) -> dict:
     return {"slug": slug, "session_id": sid}
 
 
+async def build_assets(job: Job) -> dict:
+    """/series-assets: build or update the asset registry (looks), optionally with look feedback."""
+    p = job.data["params"]
+    slug, sid = p["slug"], p["session_id"]
+    d = session_dir(slug, sid)
+    before = {x.name for x in (d / "assets").glob("assets_v*.json")}
+    job.step("assets", "running")
+    fb = f" --feedback {json.dumps(p['feedback'], ensure_ascii=False)}" if p.get("feedback") else ""
+    await _claude(job, f"/series-assets --session {d}{fb}\n\nRun non-interactively: do not ask questions; "
+                       "for ambiguous feedback pick the most reasonable reading and log it in iterations.json."
+                  + UI_NOTE, "assets", 3600)
+    new = sorted({x.name for x in (d / "assets").glob("assets_v*.json")} - before, key=lambda n: _version(Path(n)))
+    _check(bool(new), "no new assets_vN.json was written")
+    job.step("assets", "done", version=new[-1])
+    return {"slug": slug, "session_id": sid, "assets": new[-1]}
+
+
 async def continue_series(job: Job) -> dict:
     """Check the produced episodes (canon) as cheaply as the chosen mode allows, then /continue-series.
 

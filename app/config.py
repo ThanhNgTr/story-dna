@@ -57,11 +57,31 @@ def find_claude_bin() -> str | None:
     return str(max(candidates, key=_version_key)) if candidates else None
 
 
+# Image generation goes through the Codex CLI (ChatGPT login, built-in image_gen; no API key).
+# One image at a time: each takes ~1-3 min and counts against the ChatGPT plan's limits.
+CODEX_PARALLEL = int(os.environ.get("STORY_DNA_CODEX_PARALLEL", "1"))
+CODEX_TIMEOUT_SEC = int(os.environ.get("STORY_DNA_CODEX_TIMEOUT", "600"))
+
+
+def find_codex_bin() -> str | None:
+    """CODEX_BIN env, then PATH, then the newest binary bundled in the VS Code ChatGPT/Codex extension."""
+    env = os.environ.get("CODEX_BIN")
+    if env and Path(env).exists():
+        return env
+    on_path = shutil.which("codex")
+    if on_path:
+        return on_path
+    candidates = [c for c in Path.home().glob(".vscode/extensions/openai.chatgpt-*/bin/*/codex")
+                  if c.is_file() and os.access(c, os.X_OK)]
+    return str(max(candidates, key=lambda c: c.stat().st_mtime)) if candidates else None
+
+
 def check_environment() -> dict:
     return {
         "ffmpeg": shutil.which("ffmpeg") is not None,
         "ffprobe": shutil.which("ffprobe") is not None,
         "whisperx_venv": VENV_PY.exists(),
         "claude_bin": find_claude_bin(),
+        "codex_bin": find_codex_bin(),
         "hf_token": bool(os.environ.get("HF_TOKEN")),
     }

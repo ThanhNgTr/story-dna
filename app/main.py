@@ -18,9 +18,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markdown_it import MarkdownIt
 
-from . import config, hidden
+from . import api, config, hidden
 from .jobs import JobManager
 from .pipeline import analyze, series
+from .pipeline import assets as asset_images
 
 APP_DIR = Path(__file__).parent
 app = FastAPI(title="story-dna")
@@ -31,7 +32,8 @@ templates.env.filters["md"] = lambda text: md.render(text or "")
 jobs = JobManager()
 
 JOB_FUNCS = {"analysis": analyze.run_analysis, "skill": series.create_skill,
-             "outline": series.write_outline, "refine": series.refine, "continue": series.continue_series}
+             "outline": series.write_outline, "refine": series.refine, "continue": series.continue_series,
+             "images": asset_images.run_images_job, "assets": series.build_assets}
 
 LANGUAGES = [("", "Tự nhận diện"), ("vi", "Tiếng Việt"), ("en", "Tiếng Anh"), ("zh", "Tiếng Trung"),
              ("ko", "Tiếng Hàn"), ("ja", "Tiếng Nhật"), ("th", "Tiếng Thái")]
@@ -45,11 +47,16 @@ STEPS = {"extract": "Dò cắt cảnh, chia đoạn, lấy khung hình", "transc
          "skill": "Tạo skill viết series", "outline": "Viết ghép ý tưởng, bible và outline",
          "episodes": "Viết các tập", "feedback": "Sửa theo góp ý", "final": "Chốt season",
          "canon_source": "Video đã làm (canon)", "continue": "Đối chiếu video + outline phần tiếp",
-         "diff": "So lời thoại kịch bản với video (trên máy, không tốn Claude)"}
+         "diff": "So lời thoại kịch bản với video (trên máy, không tốn Claude)",
+         "images": "Tạo ảnh tham chiếu bằng Codex (nhân vật, trang phục, bối cảnh)",
+         "assets": "Lập / cập nhật kho nhân vật, trang phục, bối cảnh"}
 STEP_FIELDS = {"units": "đoạn", "total": "tổng", "shots": "shot", "done": "xong", "language": "ngôn ngữ",
                "segments": "câu thoại", "phase": "giai đoạn", "skill": "skill", "version": "phiên bản",
                "failed": "lỗi", "note": "ghi chú"}
-templates.env.globals.update(STATUS=STATUS, STEPS=STEPS, STEP_FIELDS=STEP_FIELDS)
+IMG_STATUS = {"draft": ("Chờ duyệt", "warn"), "approved": ("Đã duyệt", "ok"), "rejected": ("Đã bỏ", "muted")}
+ASSET_VIEWS = {"chars": "Nhân vật & trang phục", "locs": "Bối cảnh", "props": "Đạo cụ", "issues": "Lỗi liên tục"}
+templates.env.globals.update(STATUS=STATUS, STEPS=STEPS, STEP_FIELDS=STEP_FIELDS, IMG_STATUS=IMG_STATUS,
+                             ASSET_VIEWS=ASSET_VIEWS)
 
 
 def page(request: Request, name: str, **ctx) -> HTMLResponse:
@@ -171,6 +178,20 @@ def series_stage(s: dict) -> tuple[str, str]:
     if missing:
         return f"Chờ duyệt phần tiếp ({ep_range(missing)})", "warn"
     return f"Đang góp ý ({s['episodes']} tập)", "warn"
+
+
+# ---------- new React UI (web/ -> app/static/ui/) ----------
+
+app.include_router(api.build_router(jobs, JOB_FUNCS, lambda s: series_stage(s)))
+UI_INDEX = APP_DIR / "static" / "ui" / "index.html"
+
+
+@app.get("/ui", response_class=HTMLResponse)
+@app.get("/ui/{rest:path}", response_class=HTMLResponse)
+def ui(rest: str = ""):
+    if not UI_INDEX.exists():
+        raise HTTPException(404, "Giao diện mới chưa được build (cd web && npm install && npm run build).")
+    return HTMLResponse(UI_INDEX.read_text(), headers={"Cache-Control": "no-cache"})
 
 
 # ---------- dashboard ----------
@@ -388,8 +409,12 @@ def series_view(request: Request, slug: str, sid: str, view: str = "", v: int = 
     info = {"session_id": sid, "episodes": len(eps), "planned": st["planned"], "final": st["final_complete"],
             "has_outline": st["outline"] is not None, "missing": st["missing"], "produced": st["produced_upto"]}
     job = running_job_for("session_id", sid)
+    av = asset_images.view_model(st["dir"])
+    if view in ASSET_VIEWS and not av:
+        view = "outline"
     return page(request, "series.html", slug=slug, sid=sid, st=st, view=view, text=text, nav=nav,
                 current=path.name if path else None, job=job, stage=series_stage(info),
+                av=av, asset_base=f"/series/{slug}/{sid}/assets", codex=bool(config.find_codex_bin()),
                 skill=series.skill_info(slug), skill_archived=slug in hidden.hidden("skills"),
                 missing_label=ep_range(st["missing"]) if st["missing"] else "")
 
@@ -404,6 +429,53 @@ async def series_refine(slug: str, sid: str, feedback: str = Form(""), target: s
                      {"slug": slug, "session_id": sid, "feedback": feedback.strip(), "target": target,
                       "approve": approve or None}, series.refine)
     return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
+
+@app.post("/series/{slug}/{sid}/images")
+async def images_start(slug: str, sid: str, kinds: list[str] = Form([]), ids: str = Form(""),
+                       force: str = Form("")):
+    d = series.session_dir(slug, sid)
+    try:
+        asset_images.latest_registry(d)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    if not config.find_codex_bin():
+        raise HTTPException(400, "Không tìm thấy Codex CLI (cài extension ChatGPT/Codex hoặc đặt CODEX_BIN).")
+    params = {"slug": slug, "session_id": sid, "kinds": [k for k in kinds if k in asset_images.KINDS],
+              "ids": [i.strip() for i in ids.split(",") if i.strip()], "force": bool(force)}
+    job = jobs.start("images", f"Tạo ảnh tham chiếu ({slug})", params, asset_images.run_images_job)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
+
+@app.post("/series/{slug}/{sid}/images/review")
+async def images_review(slug: str, sid: str, file: str = Form(...), status: str = Form(...),
+                        back: str = Form("chars")):
+    try:
+        asset_images.set_status(series.session_dir(slug, sid), file, status)
+    except (KeyError, ValueError) as e:
+        raise HTTPException(400, str(e))
+    view, _, anchor = back.partition("#")
+    view = view if view in ASSET_VIEWS else "chars"
+    return RedirectResponse(f"/series/{slug}/{sid}?view={view}" + (f"#{anchor}" if anchor.isidentifier() else ""),
+                            status_code=303)
+
+
+@app.post("/series/{slug}/{sid}/assets")
+async def assets_start(slug: str, sid: str, feedback: str = Form("")):
+    job = jobs.start("assets", f"{'Sửa ngoại hình' if feedback.strip() else 'Lập kho nhân vật & bối cảnh'} ({slug})",
+                     {"slug": slug, "session_id": sid, "feedback": feedback.strip()}, series.build_assets)
+    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+
+
+@app.get("/series/{slug}/{sid}/assets/{path:path}")
+def asset_file(slug: str, sid: str, path: str, w: int = 0):
+    base = (series.session_dir(slug, sid) / "assets").resolve()
+    f = (base / path).resolve()
+    if not f.is_relative_to(base) or not f.is_file() or f.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise HTTPException(404)
+    if w:
+        f = asset_images.thumbnail(f, max(120, min(w, 1200)))
+    return FileResponse(f)
 
 
 @app.get("/series/continue", response_class=HTMLResponse)
