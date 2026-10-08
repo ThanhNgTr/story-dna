@@ -1,6 +1,6 @@
 ---
 name: write-series-hollow-pine
-version: v1
+version: v2
 stable_version: v1
 description: |
   Turn a rough or fragmented story idea into a 10-20 episode vertical micro-drama series (60-120s
@@ -70,16 +70,26 @@ Save `input.json` first: the raw idea, every flag value, and this skill's versio
 - **Outline:** one row per episode — title, logline, beats, which Story Template beat(s) it carries
   (% position), reveal/clue, cliffhanger type, characters.
 - **Spread:** beat at p% -> episode `ceil(p/100 * N)`.
+- **Looks**: after the bible, run `/series-assets --session <session-dir>` (bible-only) ->
+  `assets/assets_v1.md/.json`: fixed face/hair/body per character, default + planned outfits,
+  canonical locations with day/night variants, key props. Show it together with the outline; look
+  feedback goes to `/series-assets --feedback`.
 - STOP and show the outline unless `--auto`. The user approves with
   `/refine-skill hollow-pine --approve outline` or gives feedback.
 
 ### Stage 3 — Episodes (episodes/epNN_v1.md/.json)
 
 - Each episode follows the Episode Template and every rule section below.
+- Write against the asset registry (latest `assets/assets_vN.json`), following
+  `.claude/skills/series-assets/references/episode-contract.md`: every scene has `loc_id`, `variant_id`, `cast` (outfit per on-screen
+  character), `referenced`, `props`; anything new goes in `new_assets`. Subagents get the
+  registry path and the contract path too.
 - N > 6: write in parallel with general-purpose subagents, 3-4 episodes each. Give each the bible,
   the outline, this SKILL.md path and its episode numbers.
 - Continuity pass after all episodes: names, visual signatures (verbatim from the bible), ledger
   timing, motif callbacks, timecodes summing to `--episode-sec`.
+- Then `python3 .claude/skills/series-assets/_assets.py lint <session-dir>` -> 0 errors, and
+  `/series-assets --session <session-dir>` (scene map, `new_assets` get real IDs, drift report).
 - Write `series.md` (index + all episodes) and reply with: outline table, open threads, file paths.
 
 ## Story Template (season arc)
@@ -350,7 +360,7 @@ unanswered and one new name spoken for the first time (projected from the refere
 # EP03 — <Title> (90s)
 Logline: ... | Story beats: <template beats + %> | Cliffhanger: <type>
 
-### SC1 [00:00-00:12] EXT. <PLACE> — NIGHT
+### SC1 [00:00-00:12] EXT. <PLACE> — NIGHT  {loc_01 · char_01:o1}
 | Time | Shot | Action | Dialogue / VO | Camera | Light/Color | Sound |
 |---|---|---|---|---|---|---|
 | 0.0-1.8 | ECU | char_01 ... | VO: "..." | handheld | teal fog | drone, breath |
@@ -363,13 +373,14 @@ Logline: ... | Story beats: <template beats + %> | Cliffhanger: <type>
   "skill": "write-series-hollow-pine", "skill_version": "v1", "session": "<session-id>",
   "episode": 3, "title": "...", "total_duration_sec": 90, "aspect_ratio": "9:16",
   "characters": {"char_01": {"name": "...", "visual_signature": "..."}},
-  "scenes": [{"id": "SC1", "start_sec": 0, "end_sec": 12, "location": "...", "int_ext": "EXT",
+  "scenes": [{"id": "SC1", "start_sec": 0, "end_sec": 12, "location": "<registry name>", "loc_id": "loc_01", "variant_id": "loc_01_night",
+    "cast": {"char_01": "char_01_o1"}, "referenced": [], "props": ["prop_01"], "int_ext": "EXT",
     "time_of_day": "night",
     "beats": [{"start_sec": 0, "end_sec": 1.8, "shot_size": "ECU", "characters": ["char_01"],
       "action": "...",
       "dialogue": [{"character": "char_01", "line": "...", "voiceover": true, "delivery": "whisper"}],
       "camera": "...", "lighting_color": "...", "sound": "..."}]}],
-  "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}
+  "new_assets": [], "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}
 }
 ```
 
@@ -393,6 +404,8 @@ reveal, cliffhanger_type, characters[]}], never_answered[]}`
 - [ ] Word count per episode within 190-240 for 90s; average line 6-7 words; protagonist holds ~60% of lines
 - [ ] No supporting character exceeds 3 lines in an episode; no character explains plot to another
 - [ ] Visual signatures appear verbatim from the bible in every episode JSON
+- [ ] Every scene has `loc_id` + `variant_id`, every on-screen character an outfit from the asset
+      registry; `_assets.py lint` reports 0 errors
 - [ ] Warm light only in enclosed authority spaces; cold teal only outside; any lone warm light outside means something is watching
 - [ ] At least one motif is still unexplained at the finale
 - [ ] Scene timecodes sum exactly to `--episode-sec`
@@ -431,3 +444,6 @@ reveal, cliffhanger_type, characters[]}], never_answered[]}`
 - v1 (2026-10-02T07:14:08Z): generated from `data/analyses/20261002-071408/dna.json`
   (`Tập 1.mp4`, 91.3s, 1 unit). Non-interactive run; all ambiguities resolved to documented
   defaults and recorded in Data limits.
+- v2 (2026-10-08T12:30:00Z): episodes are written against the asset registry (/series-assets):
+  bible-only registry at Stage 2, scene IDs + outfits per Stage 3 episode-contract, lint in the
+  continuity pass. No story/style rule changed.

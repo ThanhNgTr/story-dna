@@ -118,12 +118,15 @@ Session dir: data/series/<slug>/<session-id>/ (session-id = UTC YYYYMMDD-HHMMSS)
 - Bible: title, logline, premise, theme, world rules, locations (with look), cast (tier, role, want/need/flaw/secret, visual_signature, voice + 2 sample lines), mystery ledger plan (question -> clue episodes -> answer episode), relationship arcs.
 - Outline: one row per episode — title, logline, beats, which Story Template beat(s) it carries (% position), reveal/clue, cliffhanger type, characters.
 - Spread: map Story Template % positions onto episodes (beat at p% -> episode ceil(p/100 * N)).
+- Looks: after the bible, run /series-assets --session <session-dir> (bible-only) -> assets/assets_v1.md/.json (fixed faces, default + planned outfits, canonical locations with variants, key props). Show it with the outline.
 - STOP and show the outline unless --auto. User approves with /refine-skill <slug> --approve outline or gives feedback.
 
 ### Stage 3 — Episodes (episodes/epNN_v1.md/.json)
 - Each episode follows the Episode Template and the rule sections below.
+- Write against the asset registry (latest assets/assets_vN.json) following .claude/skills/series-assets/references/episode-contract.md: every scene has loc_id, variant_id, cast (outfit per on-screen character), referenced, props; anything new goes in new_assets. Subagents get the registry and contract paths too.
 - N > 6: write in parallel with general-purpose subagents, 3-4 episodes each; give each the bible, outline, this SKILL.md path and its episode numbers.
 - Continuity pass after all episodes: names, visual signatures (verbatim), ledger timing, callbacks, timecodes adding up.
+- Then python3 .claude/skills/series-assets/_assets.py lint <session-dir> -> 0 errors, and /series-assets --session <session-dir> (scene map, new_assets get real IDs, drift report).
 - Write series.md (index + all episodes) and reply with: outline table, open threads, file paths.
 
 ## Story Template (season arc)
@@ -173,7 +176,7 @@ want vs need, voice pattern, arc pattern, Ref (name in reference)>
 <episode md + json: see skill-creator-from-dna "Episode output format"; bible/outline json shapes>
 
 ## Self-check
-<8-12 checkboxes: structure %, ledger, hooks, durations, signatures verbatim, VO share, pacing>
+<8-12 checkboxes: structure %, ledger, hooks, durations, signatures verbatim, VO share, pacing; always include: every scene has loc_id + variant_id and every on-screen character an outfit from the asset registry, _assets.py lint 0 errors>
 
 ## Data limits
 <sources, what was inferred (music, speakers), sample size>
@@ -189,7 +192,7 @@ want vs need, voice pattern, arc pattern, Ref (name in reference)>
 # EP03 — <Title> (90s)
 Logline: ... | Story beats: <template beats> | Cliffhanger: <type>
 
-### SC1 [00:00-00:12] EXT. <PLACE> — NIGHT
+### SC1 [00:00-00:12] EXT. <PLACE> — NIGHT  {loc_01 · char_01:o1}
 | Time | Shot | Action | Dialogue / VO | Camera | Light/Color | Sound |
 |---|---|---|---|---|---|---|
 | 0.0-1.8 | ECU | char_01 ... | VO: "..." | handheld | teal fog | drone, breath |
@@ -201,11 +204,12 @@ Logline: ... | Story beats: <template beats> | Cliffhanger: <type>
   "skill": "write-series-<slug>", "skill_version": "v1", "session": "<session-id>",
   "episode": 3, "title": "...", "total_duration_sec": 90, "aspect_ratio": "9:16",
   "characters": {"char_01": {"name": "...", "visual_signature": "..."}},
-  "scenes": [{"id": "SC1", "start_sec": 0, "end_sec": 12, "location": "...", "int_ext": "EXT", "time_of_day": "night",
+  "scenes": [{"id": "SC1", "start_sec": 0, "end_sec": 12, "location": "<registry name>", "loc_id": "loc_01", "variant_id": "loc_01_night",
+    "cast": {"char_01": "char_01_o1"}, "referenced": [], "props": ["prop_01"], "int_ext": "EXT", "time_of_day": "night",
     "beats": [{"start_sec": 0, "end_sec": 1.8, "shot_size": "ECU", "characters": ["char_01"], "action": "...",
       "dialogue": [{"character": "char_01", "line": "...", "voiceover": true, "delivery": "whisper"}],
       "camera": "...", "lighting_color": "...", "sound": "..."}]}],
-  "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}
+  "new_assets": [], "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}
 }
 ```
 

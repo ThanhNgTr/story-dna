@@ -1,6 +1,6 @@
 ---
 name: write-series-urban-fantasy-romance
-version: v1
+version: v2
 description: |
   Turn a rough or fragmented story idea into a 10-20 episode vertical micro-drama series
   (60-120s episodes) told the way an urban-fantasy dragon-shifter romance melodrama is told:
@@ -70,16 +70,26 @@ Save `input.json` first (raw idea text, all flags, resolved defaults, ISO timest
   carries (% position), reveal/clue, cliffhanger type, characters.
 - **Spread**: map Story Template % positions onto episodes — a beat at p% goes to episode
   `ceil(p/100 * N)`.
+- **Looks**: after the bible, run `/series-assets --session <session-dir>` (bible-only) ->
+  `assets/assets_v1.md/.json`: fixed face/hair/body per character, default + planned outfits,
+  canonical locations with day/night variants, key props. Show it together with the outline; look
+  feedback goes to `/series-assets --feedback`.
 - **STOP** and show the outline unless `--auto`. User approves with
   `/refine-skill urban-fantasy-romance --approve outline` or gives feedback.
 
 ### Stage 3 — Episodes (episodes/epNN_v1.md/.json)
 
 - Each episode follows the Episode Template and every rule section below.
+- Write against the asset registry (latest `assets/assets_vN.json`), following
+  `.claude/skills/series-assets/references/episode-contract.md`: every scene has `loc_id`, `variant_id`, `cast` (outfit per on-screen
+  character), `referenced`, `props`; anything new goes in `new_assets`. Subagents get the
+  registry path and the contract path too.
 - N > 6: write in parallel with general-purpose subagents, 3-4 episodes each; give each the bible,
   the outline, this SKILL.md path and its episode numbers.
 - Continuity pass after all episodes: names, visual signatures (verbatim), ledger timing,
   callbacks, timecodes adding up to `--episode-sec` per episode.
+- Then `python3 .claude/skills/series-assets/_assets.py lint <session-dir>` -> 0 errors, and
+  `/series-assets --session <session-dir>` (scene map, `new_assets` get real IDs, drift report).
 - Write `series.md` (index + all episodes) and reply with: outline table, open threads, file paths.
 
 ## Story Template (season arc)
@@ -360,7 +370,7 @@ arrivals, the bond signal, sigils, rage. Never for an ordinary emotional scene. 
 # EP03 — <Title> (90s)
 Logline: ... | Story beats: <template beats + %> | Cliffhanger: <type>
 
-### SC1 [00:00-00:12] EXT. <PLACE> — NIGHT
+### SC1 [00:00-00:12] EXT. <PLACE> — NIGHT  {loc_01 · char_01:o1}
 | Time | Shot | Action | Dialogue / VO | Camera | Light/Color | Sound |
 |---|---|---|---|---|---|---|
 | 0.0-1.8 | ECU | char_01 ... | VO: "..." | handheld | cold grey-blue | wind, phone buzz |
@@ -373,11 +383,12 @@ Logline: ... | Story beats: <template beats + %> | Cliffhanger: <type>
   "skill": "write-series-urban-fantasy-romance", "skill_version": "v1", "session": "<session-id>",
   "episode": 3, "title": "...", "total_duration_sec": 90, "aspect_ratio": "9:16",
   "characters": {"char_01": {"name": "...", "visual_signature": "..."}},
-  "scenes": [{"id": "SC1", "start_sec": 0, "end_sec": 12, "location": "...", "int_ext": "EXT", "time_of_day": "night",
+  "scenes": [{"id": "SC1", "start_sec": 0, "end_sec": 12, "location": "<registry name>", "loc_id": "loc_01", "variant_id": "loc_01_night",
+    "cast": {"char_01": "char_01_o1"}, "referenced": [], "props": ["prop_01"], "int_ext": "EXT", "time_of_day": "night",
     "beats": [{"start_sec": 0, "end_sec": 1.8, "shot_size": "ECU", "characters": ["char_01"], "action": "...",
       "dialogue": [{"character": "char_01", "line": "...", "voiceover": true, "delivery": "whisper"}],
       "camera": "...", "lighting_color": "...", "sound": "..."}]}],
-  "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}
+  "new_assets": [], "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}
 }
 ```
 
@@ -405,6 +416,8 @@ Before reporting Stage 3 complete:
       17% MS, 9% MCU, 9% WS
 - [ ] Spoken words per episode within ±15% of `0.323 x duration_sec x 224.5 / 60`; VO is 70-80%
 - [ ] Visual signatures copied **verbatim** from the bible in every episode
+- [ ] Every scene has `loc_id` + `variant_id`, every on-screen character an outfit from the asset
+      registry; `_assets.py lint` reports 0 errors
 - [ ] Blinding gold/orange light appears only on power beats
 - [ ] At most 7 named characters; at most 4 locations, each reused 3+ times
 - [ ] Every major reveal arrives by phone call or voice message, not face-to-face exposition
@@ -440,3 +453,6 @@ Before reporting Stage 3 complete:
 ## Changelog
 
 - v1 (2026-10-02T00:00:00Z): generated from `data/analyses/20261002-050718/dna.json`
+- v2 (2026-10-08T12:30:00Z): episodes are written against the asset registry (/series-assets):
+  bible-only registry at Stage 2, scene IDs + outfits per Stage 3 episode-contract, lint in the
+  continuity pass. No story/style rule changed.

@@ -41,6 +41,7 @@ data/series/<slug>/<session-id>/
 ├── outline_vK.md / .json
 ├── canon_vK.md / .json           # /continue-series: produced videos reconciled with scripts
 ├── episodes/epNN_vK.md / .json   # each episode versioned on its own
+├── assets/assets_vK.md / .json   # /series-assets: faces, outfits, locations, props, scene map
 ├── series.md                     # index of latest episode versions
 ├── iterations.json               # full feedback history
 └── final/                        # on --approve: bible.md, outline.md, epNN.md/.json, series.md
@@ -63,7 +64,11 @@ Split into items. Each item gets a **scope** and a **target**:
 | `rule` | Applies to every future series ("cliffhangers too similar", "less VO") | Patch SKILL.md AND re-generate targets |
 | `story` | Only this series ("move the reveal to ep 7", "rename Tuan") | Edit bible/outline/episodes only |
 
-Target: `bible` | `outline` | `epNN` | `all_episodes`.
+Target: `bible` | `outline` | `epNN` | `all_episodes` | `assets`.
+
+Looks feedback ("Linh's jacket is red", "the kitchen is its own room", "Vũ's face rounder") is
+`story` scope, target `assets`: run `/series-assets --session <dir> --feedback "<items>"`, then
+re-write only the episodes whose scenes the change touches (lint tells which).
 
 Rule items -> SKILL.md section:
 
@@ -94,6 +99,10 @@ Ambiguous item -> one short question.
   re-write only those (ask first if more than 5).
 - Episode change -> epNN vK+1 for the targeted episodes; keep neighbors consistent (check the
   episode before and after for continuity).
+- Every re-written episode follows `.claude/skills/series-assets/references/episode-contract.md`
+  when the session has `assets/`: `python3 .claude/skills/series-assets/_assets.py lint <session> <NN...>`
+  -> 0 errors. If an episode added `new_assets` or the bible changed a look, run `/series-assets`
+  after the round (new assets version).
 - Run the skill's Self-check on everything re-generated. Update `series.md`.
 - Show a change summary: file -> what changed -> which feedback item.
 
@@ -124,7 +133,8 @@ Next: more feedback, `/refine-skill <slug> --approve outline` (stage outline), o
   episodes already written are never rewritten. New episodes must match the latest `canon_vN.json`
   when one exists (characters as seen on screen, revealed facts, open threads).
 - `--approve` (all episodes exist): copy latest bible, outline, every episode (md + json) and
-  series.md into `final/`; set `stable_version: vN` in SKILL.md frontmatter and `"stable": true` in
+  series.md into `final/`, plus the latest `assets/assets_vN.json/.md` as `final/assets.json/.md`
+  (run `/series-assets` first if it is missing or older than the latest episode); set `stable_version: vN` in SKILL.md frontmatter and `"stable": true` in
   the metadata JSON; log `{"status": "approved"}`. Next step (optional):
   `/script-to-shotlist data/series/<slug>/<session-id>/final/ep01.md` (or the whole `final/` dir).
 

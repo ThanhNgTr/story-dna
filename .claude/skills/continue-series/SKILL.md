@@ -95,6 +95,13 @@ previous bible" list at the top.
 - Self-check: canon respected (no contradiction with `canon_vN.json`), style skill's Self-check
   items that apply to an outline, continuity of names and visual signatures.
 
+### C4 — Looks → asset registry
+
+Run `/series-assets --session <dir> --feedback "canon_vN: looks as seen on screen"`: costumes,
+faces, sets and props AS PRODUCED become the registry (video wins). Series produced elsewhere get
+their first registry here. The new episodes are then written against it
+(`.claude/skills/series-assets/references/episode-contract.md`).
+
 Then STOP for review. Do not write episode screenplays here: after approval, the style skill's
 Stage 3 writes only the missing episodes (k+1..k+m).
 

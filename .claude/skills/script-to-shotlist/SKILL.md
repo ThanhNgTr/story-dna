@@ -191,10 +191,23 @@ Write to `final/shots/epNN/`:
 - `prompts.json` - one entry per shot, for video gen tools / agents
 - `prompts.md` - numbered list for humans
 
-### Character anchors
-Before writing prompts, build `characters` block once from the series bible
-(`final/bible.json` -> `visual_signature`). Every prompt that shows a character repeats its anchor text
-word-for-word. Same character must look identical in every shot.
+### Character, outfit and location anchors
+Source of looks, first that exists: `final/assets.json`, else the latest `assets/assets_vN.json`
+(asset registry from `/series-assets`), else the bible (`final/bible.json` -> `visual_signature`).
+
+With a registry:
+- Character anchor = `characters[].prompt_en` (face/hair/body) + the outfit worn in this scene
+  (`wardrobe[].prompt_en`; outfit from the episode scene `cast`, else the registry `scene_map`).
+- Location anchor = `locations[].prompt_en` + the scene variant's `lighting`.
+- Prop anchor = `props[].prompt_en` (text on props verbatim).
+- Every prompt ends with `style.prompt_suffix_en`.
+- Each shot lists `refs`: approved reference images from `assets/images.json` (status `approved`)
+  for the characters (outfit image if one exists for the worn outfit, else the character sheet),
+  the location variant and the props in the shot, as paths relative to the session. Empty when
+  none is approved yet.
+
+Every prompt that shows a character repeats its anchor text word-for-word. Same character must
+look identical in every shot; the outfit changes only where the scene `cast` changes it.
 
 ### `prompts.json`
 ```json
@@ -204,9 +217,11 @@ word-for-word. Same character must look identical in every shot.
   "skill_version": "v3",
   "aspect_ratio": "9:16",
   "total_duration_sec": 90,
+  "assets": "data/series/<slug>/20261001-143000/final/assets.json",
   "characters": {
     "char_01": "teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant"
   },
+  "locations": {"loc_02": "foggy dead pine forest at night, ..."},
   "shots": [
     {
       "shot_number": 1,
@@ -218,6 +233,7 @@ word-for-word. Same character must look identical in every shot.
       "dialogue": [],
       "sfx": "heavy breathing, snapping branches",
       "camera": "handheld tracking MS, push-in",
+      "loc_id": "loc_02", "outfits": {"char_01": "char_01_o1"}, "refs": [],
       "video_prompt": "Night, dense foggy pine forest. teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant, runs toward camera in panic, glances back over her shoulder. Handheld tracking medium shot, slow push-in. Torch light from behind, desaturated teal, volumetric fog. Sound: heavy breathing, snapping branches. 3 seconds, 9:16."
     },
     {
