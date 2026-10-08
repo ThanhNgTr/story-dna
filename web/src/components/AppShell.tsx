@@ -1,5 +1,5 @@
-import { Clapperboard, ExternalLink, Monitor, Moon, Sun } from 'lucide-react'
-import { NavLink, Outlet } from 'react-router'
+import { Clapperboard, ExternalLink, Monitor, Moon, Plus, Sun } from 'lucide-react'
+import { NavLink, Outlet, useLocation } from 'react-router'
 import { Button } from '@/components/ui/button'
 import { useJobsStream } from '@/lib/events'
 import { useTheme, type Theme } from '@/lib/theme'
@@ -24,6 +24,7 @@ export function AppShell() {
   useJobsStream()
   const [theme, setTheme] = useTheme()
   const Icon = THEME_ICON[theme]
+  const onHome = useLocation().pathname === '/'
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur supports-backdrop-filter:bg-background/70">
@@ -41,6 +42,7 @@ export function AppShell() {
             </a>
           </nav>
           <div className="ml-auto flex items-center gap-1">
+            {!onHome && <Button render={<NavLink to="/new" />} size="sm" className="mr-1 hidden gap-1 sm:inline-flex"><Plus className="size-3.5" />Series mới</Button>}
             <JobCenter />
             <Button variant="ghost" size="icon" title={`Giao diện: ${THEME_LABEL[theme]}`} onClick={() => setTheme(NEXT[theme])}>
               <Icon className="size-4" />

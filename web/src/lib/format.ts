@@ -19,7 +19,10 @@ export function fmtTime(sec: number): string {
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return ''
   const d = new Date(iso)
-  return d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  const two = (n: number) => String(n).padStart(2, '0')
+  const date = `${two(d.getDate())}/${two(d.getMonth() + 1)}`
+  const year = d.getFullYear() !== new Date().getFullYear() ? `/${d.getFullYear()}` : ''
+  return `${date}${year} ${two(d.getHours())}:${two(d.getMinutes())}`
 }
 
 export const JOB_STATUS: Record<Job['status'], { label: string; tone: Tone }> = {
@@ -56,4 +59,13 @@ export function jobProgress(job: Job): number | null {
     }
   }
   return null
+}
+
+/** "còn khoảng 4 phút" — rounded, never a promise. */
+export function fmtEta(sec: number | null | undefined): string | null {
+  if (sec == null) return null
+  if (sec < 90) return 'sắp xong'
+  const m = Math.round(sec / 60)
+  if (m < 60) return `còn khoảng ${m} phút`
+  return `còn khoảng ${Math.floor(m / 60)} giờ ${m % 60 ? `${m % 60} phút` : ''}`.trim()
 }

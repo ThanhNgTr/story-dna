@@ -4,7 +4,7 @@ import { Link, NavLink, Outlet, useOutletContext, useParams } from 'react-router
 import { StatusBadge } from '@/components/StatusBadge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api, legacy, qk, type Project } from '@/lib/api'
-import { STEP_LABEL } from '@/lib/format'
+import { STEP_LABEL, fmtEta } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 export function useProject() {
@@ -83,7 +83,7 @@ export function ProjectLayout() {
             <span className="size-2 animate-pulse rounded-full bg-primary" />
             <span className="font-medium">{p.job.title}</span>
             {runningStep && <span className="text-muted-foreground">· {STEP_LABEL[runningStep] ?? runningStep}</span>}
-            <span className="ml-auto text-primary">Xem tiến độ →</span>
+            <span className="ml-auto text-primary">{fmtEta(p.job.eta_sec) ? `${fmtEta(p.job.eta_sec)} · ` : ''}Xem tiến độ →</span>
           </Link>
         )}
         <Outlet context={p} />

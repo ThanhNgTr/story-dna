@@ -26,7 +26,7 @@ export function useJobsStream() {
             qc.invalidateQueries({ queryKey: ['episode', j.slug, j.session_id] })
             qc.invalidateQueries({ queryKey: ['doc', j.slug, j.session_id] })
           }
-          qc.invalidateQueries({ queryKey: qk.projects })
+          for (const k of [qk.projects, qk.skills, qk.analyses]) qc.invalidateQueries({ queryKey: k })
           const st = JOB_STATUS[j.status]
           const msg = `${j.title}: ${st.label.toLowerCase()}`
           if (j.status === 'done') toast.success(msg)

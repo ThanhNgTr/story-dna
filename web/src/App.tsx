@@ -1,7 +1,8 @@
 import { Route, Routes } from 'react-router'
 import { AppShell } from '@/components/AppShell'
 import { JobPage } from '@/pages/JobPage'
-import { ProjectsPage } from '@/pages/ProjectsPage'
+import { HomePage } from '@/pages/HomePage'
+import { NewSeriesPage } from '@/pages/NewSeriesPage'
 import { DocPage } from '@/pages/project/DocPage'
 import { EpisodePage } from '@/pages/project/EpisodePage'
 import { HistoryPage } from '@/pages/project/HistoryPage'
@@ -12,7 +13,8 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppShell />}>
-        <Route index element={<ProjectsPage />} />
+        <Route index element={<HomePage />} />
+        <Route path="new" element={<NewSeriesPage />} />
         <Route path="p/:slug/:sid" element={<ProjectLayout />}>
           <Route index element={<OverviewPage />} />
           <Route path="doc/:kind" element={<DocPage />} />

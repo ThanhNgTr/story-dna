@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { api, qk, type Job } from '@/lib/api'
-import { JOB_STATUS, STEP_LABEL, fmtDate, fmtDuration, jobProgress } from '@/lib/format'
+import { JOB_STATUS, STEP_LABEL, fmtDate, fmtDuration, fmtEta, jobProgress } from '@/lib/format'
 import { StatusBadge } from './StatusBadge'
 
 function currentStep(job: Job): string | null {
@@ -26,7 +26,10 @@ export function JobRow({ job, onNavigate }: { job: Job; onNavigate?: () => void 
       </div>
       {job.status === 'running' && (
         <div className="mt-2 space-y-1.5">
-          {step && <div className="text-xs text-muted-foreground">{step}</div>}
+          <div className="flex justify-between gap-2 text-xs text-muted-foreground">
+            <span className="truncate">{step}</span>
+            {fmtEta(job.eta_sec) && <span className="shrink-0 text-primary">{fmtEta(job.eta_sec)}</span>}
+          </div>
           {pct != null && <Progress value={pct} className="h-1.5" />}
         </div>
       )}

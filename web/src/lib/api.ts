@@ -18,6 +18,7 @@ export interface Job {
   started_at: string | null
   finished_at: string | null
   elapsed_sec: number | null
+  eta_sec: number | null
   slug: string | null
   session_id: string | null
   result: Record<string, unknown>
@@ -36,6 +37,8 @@ export interface ProjectSummary {
   missing: number[]
   produced: number
   stage: Stage
+  created_at?: string
+  episode_sec?: number
 }
 
 export interface EpisodeInfo {
@@ -149,6 +152,33 @@ export type CommentDraft = Pick<Comment, 'episode' | 'version' | 'scene' | 'beat
 
 export interface SaveResult { version: number; file: string; lint: string | null }
 
+export interface Skill {
+  slug: string
+  name: string
+  description: string
+  version: string | null
+  run_id: string | null
+  projects: number
+  reference: { id: string; title: string | null; minutes: number; sources: string[] } | null
+}
+
+export interface Analysis {
+  id: string
+  sources: string[]
+  minutes: number
+  language: string | null
+  units: number
+  analyzed: number
+  done: boolean
+  title: string | null
+  logline: string | null
+  genre: string | null
+  skills: string[]
+  job: Job | null
+}
+
+export interface NewProject { slug: string; title: string; idea: string; episodes: number; episode_sec: number }
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -178,6 +208,15 @@ const p = (slug: string, sid: string) => `/projects/${encodeURIComponent(slug)}/
 export const api = {
   health: () => request<{ ok: boolean; env: Record<string, unknown> }>('/health'),
   projects: () => request<ProjectSummary[]>('/projects'),
+  createProject: (body: NewProject) =>
+    request<{ slug: string; session_id: string; job: Job }>('/projects', { method: 'POST', body: JSON.stringify(body) }),
+  skills: () => request<Skill[]>('/skills'),
+  analyses: () => request<Analysis[]>('/analyses'),
+  hide: (kind: 'runs' | 'series' | 'jobs' | 'skills', item: string) =>
+    request<{ ok: boolean }>('/hide', { method: 'POST', body: JSON.stringify({ kind, item }) }),
+  unhide: (kind: 'runs' | 'series' | 'jobs' | 'skills', item: string) =>
+    request<{ ok: boolean }>('/unhide', { method: 'POST', body: JSON.stringify({ kind, item }) }),
+  hidden: () => request<Record<'runs' | 'series' | 'jobs' | 'skills', string[]>>('/hidden'),
   project: (slug: string, sid: string) => request<Project>(p(slug, sid)),
   doc: (slug: string, sid: string, kind: string, v = 0) => request<DocResponse>(`${p(slug, sid)}/docs/${kind}${v ? `?v=${v}` : ''}`),
   episode: (slug: string, sid: string, n: number, v = 0) =>
@@ -204,6 +243,9 @@ export const api = {
 
 export const qk = {
   projects: ['projects'] as const,
+  skills: ['skills'] as const,
+  analyses: ['analyses'] as const,
+  hidden: ['hidden'] as const,
   project: (slug: string, sid: string) => ['project', slug, sid] as const,
   doc: (slug: string, sid: string, kind: string, v: number) => ['doc', slug, sid, kind, v] as const,
   episode: (slug: string, sid: string, n: number, v: number) => ['episode', slug, sid, n, v] as const,

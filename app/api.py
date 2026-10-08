@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -17,7 +18,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from . import config
+from . import config, eta, hidden
 from .jobs import Job, JobManager
 from .pipeline import assets as asset_images
 from .pipeline import screenplay, series
@@ -31,7 +32,7 @@ def _ts(s: str | None) -> float | None:
     return datetime.strptime(s, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
 
 
-def job_summary(job: Job, live: bool) -> dict:
+def job_summary(job: Job, live: bool, rates: dict | None = None) -> dict:
     d = job.data
     start, end = _ts(d.get("started_at")), _ts(d.get("finished_at"))
     now = datetime.now(timezone.utc).timestamp()
@@ -43,6 +44,7 @@ def job_summary(job: Job, live: bool) -> dict:
         "steps": d.get("steps", {}), "error": d.get("error"), "cost_usd": d.get("cost_usd", 0.0),
         "created_at": d.get("created_at"), "started_at": d.get("started_at"), "finished_at": d.get("finished_at"),
         "elapsed_sec": round((end or now) - start) if start else None,
+        "eta_sec": eta.eta_sec(job, rates) if rates is not None and status == "running" else None,
         "slug": d.get("params", {}).get("slug"), "session_id": d.get("params", {}).get("session_id"),
         "result": {k: v for k, v in (d.get("result") or {}).items() if k != "last_reply"},
     }
@@ -89,14 +91,35 @@ class SendCommentsIn(BaseModel):
     general: str = ""
 
 
+class NewProjectIn(BaseModel):
+    slug: str
+    title: str = ""
+    idea: str
+    episodes: int = 12
+    episode_sec: int = 90
+
+
+class HideIn(BaseModel):
+    kind: str
+    item: str
+
+
 class EpisodeEdit(BaseModel):
     base_version: int
     data: dict
     note: str = ""
 
 
-def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tuple[str, str]]) -> APIRouter:
+def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tuple[str, str]],
+                 list_runs: Callable[[], list[dict]], item_busy: Callable[[str, str], bool]) -> APIRouter:
     r = APIRouter(prefix="/api")
+
+    def summaries(js: list[Job]) -> list[dict]:
+        rates = eta.history(jobs.list())
+        return [job_summary(j, jobs.is_running(j.id), rates) for j in js]
+
+    def one(job: Job) -> dict:
+        return summaries([job])[0]
 
     def running_for(sid: str) -> Job | None:
         for j in jobs.list():
@@ -121,11 +144,88 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
 
     @r.get("/projects")
     def projects():
+        hid = hidden.hidden("series")
         out = []
         for s in series.list_sessions():
+            if f"{s['slug']}/{s['session_id']}" in hid:
+                continue
             label, tone = stage(s)
-            out.append({**s, "stage": {"label": label, "tone": tone}})
+            inp = series.session_state(s["slug"], s["session_id"])["input"]
+            out.append({**s, "stage": {"label": label, "tone": tone}, "created_at": inp.get("created_at"),
+                        "episode_sec": inp.get("episode_sec")})
         return out
+
+    @r.post("/projects")
+    async def project_create(body: NewProjectIn):
+        if body.slug not in series.list_series_skills():
+            raise HTTPException(400, "Không có phong cách này.")
+        if body.slug in hidden.hidden("skills"):
+            raise HTTPException(400, "Phong cách này đang bị ẩn.")
+        idea = body.idea.strip()
+        if len(idea) < 20:
+            raise HTTPException(400, "Ý tưởng quá ngắn: viết thêm vài dòng về nhân vật, bối cảnh hoặc cảnh bạn muốn có.")
+        episodes = max(10, min(20, body.episodes))
+        episode_sec = max(60, min(120, body.episode_sec))
+        sid = series.new_session(body.slug, idea, episodes, episode_sec, body.title.strip())
+        job = jobs.start("outline", f"Viết outline: {body.title.strip() or body.slug}",
+                         {"slug": body.slug, "session_id": sid, "episodes": episodes, "episode_sec": episode_sec},
+                         job_funcs["outline"])
+        return {"slug": body.slug, "session_id": sid, "job": one(job)}
+
+    # ---------- styles (skills) + reference videos (analyses) ----------
+
+    @r.get("/skills")
+    def skills():
+        runs = {x["id"]: x for x in list_runs()}
+        used: dict[str, int] = {}
+        for s in series.list_sessions():
+            used[s["slug"]] = used.get(s["slug"], 0) + 1
+        out = []
+        for slug in series.list_series_skills():
+            info = series.skill_info(slug)
+            run = runs.get(info.get("run_id") or "")
+            out.append({**info, "projects": used.get(slug, 0),
+                        "reference": {"id": run["id"], "title": run["title"], "minutes": run["minutes"],
+                                      "sources": run["sources"]} if run else None})
+        return out
+
+    @r.get("/analyses")
+    def analyses():
+        hid = hidden.hidden("runs")
+        out = []
+        for x in list_runs():
+            if x["id"] in hid:
+                continue
+            job = x.pop("job", None)
+            x.pop("paths", None)
+            out.append({**x, "job": one(job) if job else None})
+        return out
+
+    @r.post("/hide")
+    def hide(body: HideIn):
+        if body.kind not in hidden.KINDS:
+            raise HTTPException(400, "Loại không hợp lệ.")
+        if item_busy(body.kind, body.item):
+            raise HTTPException(409, "Mục này đang có việc chạy. Đợi xong rồi ẩn.")
+        try:
+            hidden.hide(body.kind, body.item)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True}
+
+    @r.post("/unhide")
+    def unhide(body: HideIn):
+        if body.kind not in hidden.KINDS:
+            raise HTTPException(400, "Loại không hợp lệ.")
+        try:
+            hidden.unhide(body.kind, body.item)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        return {"ok": True}
+
+    @r.get("/hidden")
+    def hidden_list():
+        return {k: sorted(hidden.hidden(k)) for k in hidden.KINDS}
 
     @r.get("/projects/{slug}/{sid}")
     def project(slug: str, sid: str):
@@ -165,7 +265,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             "episodes": episodes,
             "assets": {"file": av["file"], "counts": av["counts"], "issues": len(av["reg"].get("issues", []))} if av else None,
             "iterations": st["iterations"],
-            "job": job_summary(job, True) if job else None,
+            "job": one(job) if job else None,
         }
 
     @r.get("/projects/{slug}/{sid}/docs/{kind}")
@@ -214,7 +314,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
         job = jobs.start("refine", f"{title} ({slug})",
                          {"slug": slug, "session_id": sid, "feedback": body.feedback.strip(),
                           "target": body.target, "approve": body.approve or None}, job_funcs["refine"])
-        return job_summary(job, True)
+        return one(job)
 
     # ---------- review comments + manual edits ----------
 
@@ -258,7 +358,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                          {"slug": slug, "session_id": sid, "feedback": text, "target": target, "approve": None},
                          job_funcs["refine"])
         screenplay.mark_sent(d, [c["id"] for c in open_], job.id)
-        return job_summary(job, True)
+        return one(job)
 
     @r.put("/projects/{slug}/{sid}/episodes/{n}")
     def episode_save(slug: str, sid: str, n: int, body: EpisodeEdit):
@@ -274,14 +374,14 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
 
     @r.get("/jobs")
     def job_list(limit: int = 30):
-        return [job_summary(j, jobs.is_running(j.id)) for j in jobs.list()[:limit]]
+        return summaries(jobs.list()[:limit])
 
     @r.get("/jobs/{job_id}")
     def job_get(job_id: str, tail: int = 200):
         job = jobs.get(job_id)
         if not job:
             raise HTTPException(404)
-        return {**job_summary(job, jobs.is_running(job_id)), "log": job.tail(tail),
+        return {**one(job), "log": job.tail(tail),
                 "last_reply": (job.data.get("result") or {}).get("last_reply")}
 
     @r.post("/jobs/{job_id}/cancel")
@@ -296,18 +396,21 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
         if not job or jobs.is_running(job_id) or job.data["kind"] not in job_funcs:
             raise HTTPException(409, "Không chạy tiếp được việc này.")
         jobs.start(job.data["kind"], job.data["title"], job.data["params"], job_funcs[job.data["kind"]], job=job)
-        return job_summary(job, True)
+        return one(job)
 
     @r.get("/events")
     async def events():
         """Active + recent jobs, pushed whenever anything changes (job center, page refreshes)."""
         async def gen():
-            last = None
+            last, pushed = None, 0.0
             while True:
-                snap = [job_summary(j, jobs.is_running(j.id)) for j in jobs.list()[:15]]
+                snap = summaries(jobs.list()[:15])
+                # eta changes every tick; push it at most every ~30s unless something else changed
                 key = json.dumps([(s["id"], s["status"], s["steps"]) for s in snap])
+                if key == last and time.monotonic() - pushed > 30:
+                    last = None
                 if key != last:
-                    last = key
+                    last, pushed = key, time.monotonic()
                     yield _sse("jobs", snap)
                 else:
                     yield ": ping\n\n"
@@ -326,7 +429,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             while True:
                 j = jobs.get(job_id)
                 live = jobs.is_running(job_id)
-                s = job_summary(j, live)
+                s = one(j)
                 key = json.dumps([s["status"], s["steps"], s["error"]])
                 if key != last_key:
                     last_key = key

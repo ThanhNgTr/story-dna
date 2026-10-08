@@ -7,7 +7,7 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { api, qk, type Job, type JobDetail } from '@/lib/api'
-import { JOB_STATUS, STEP_LABEL, fmtDate, fmtDuration } from '@/lib/format'
+import { JOB_STATUS, STEP_LABEL, fmtDate, fmtDuration, fmtEta } from '@/lib/format'
 
 function useLiveJob(id: string) {
   const qc = useQueryClient()
@@ -67,6 +67,7 @@ export function JobPage() {
         <p className="mt-1 text-sm text-muted-foreground">
           Bắt đầu {fmtDate(job.started_at ?? job.created_at)}{job.elapsed_sec != null && ` · ${fmtDuration(job.elapsed_sec)}`}
           {job.cost_usd ? ` · ${job.cost_usd.toFixed(2)} USD` : ''}
+          {job.status === 'running' && fmtEta(job.eta_sec) && <span className="text-primary"> · {fmtEta(job.eta_sec)}</span>}
         </p>
       </div>
 

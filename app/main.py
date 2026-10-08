@@ -182,7 +182,8 @@ def series_stage(s: dict) -> tuple[str, str]:
 
 # ---------- new React UI (web/ -> app/static/ui/) ----------
 
-app.include_router(api.build_router(jobs, JOB_FUNCS, lambda s: series_stage(s)))
+app.include_router(api.build_router(jobs, JOB_FUNCS, lambda s: series_stage(s), lambda: list_runs(),
+                                   lambda kind, item: item_busy(kind, item)))
 UI_INDEX = APP_DIR / "static" / "ui" / "index.html"
 
 

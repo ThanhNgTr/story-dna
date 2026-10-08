@@ -77,13 +77,14 @@ pages not migrated yet link back to the old UI.
 
 | Screen | What you do |
 |---|---|
-| Dự án | All series as cards: stage, episodes written / planned, next step |
+| Dự án (home) | Running jobs, all series as cards (search, filter: waiting for you / in progress / final; hide), writing styles, reference videos, hidden items with restore |
+| Series mới | 3-step wizard: pick a style, write or upload the idea (template, drag & drop .md/.txt, draft kept in the browser), episodes + length with a summary -> Claude writes bible + outline |
 | Project overview | 4-step progress, one "next step" action (approve outline, approve season), episode cards |
 | Episode reader | Scenes as cards, VO vs dialogue styled, scene timeline, "story" or "full technical" view, ledger questions |
 | Comments | Hover a beat -> "Góp ý" (select text first to quote it); collect notes, then send all as one feedback round (`/refine-skill`) with exact positions. Stored in `<session>/comments.json` |
 | Manual edit | "Sửa trực tiếp": edit action, dialogue, delivery, camera/light/sound in place; saves `episodes/epNN_v(K+1).json/.md` (no Claude), runs the asset lint, logs the round. Blocked while a job runs on the series |
 | Compare | Word-level diff between any two versions of an episode |
-| Jobs | Header button: live progress of every running job (Server-Sent Events), toast + browser notification when done; job page with live log, cancel, resume |
+| Jobs | Header button: live progress of every running job (Server-Sent Events) with time left, toast + browser notification when done; job page with live log, cancel, resume. Time left = median of finished jobs of the same kind on this machine, per episode / per image (`app/eta.py`) |
 
 The built UI is committed in `app/static/ui/`, so running the app needs Python only. To change the UI (Node 20+):
 
