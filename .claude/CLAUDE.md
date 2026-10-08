@@ -12,7 +12,8 @@ POC system for:
 
 **Output**: Markdown for humans + JSON for agents
 **Tech**: Claude Vision (built-in), ffmpeg (local), Python, WhisperX (local CPU, project `.venv/`)
-**No external APIs** (no OpenRouter, Deepgram, Anthropic API key)
+**No external APIs** (no OpenRouter, Deepgram, Anthropic API key). Exception: reference images via the
+Codex CLI on the user's ChatGPT login (built-in image_gen, no OpenAI API key)
 
 ## KEY CONCEPTS
 
@@ -40,6 +41,9 @@ POC system for:
 7. **Skill name conflicts**: check `.claude/skills/` before generating.
 8. **Headless Claude cannot write inside `.claude/`** (protected even with allow rules). The web app stages skill edits in `data/skills-staging/write-series-<slug>/`, then validates + installs them into `.claude/skills/`.
 9. **Scene detection limits**: fades/dissolves merge into one shot; flashes can add false cuts (`--scene-threshold`).
+10. **Codex images are slow and plan-limited**: ~1-4 min each, one at a time (`STORY_DNA_CODEX_PARALLEL=1`);
+    a full series is ~25 images ≈ 1h. A refusal or plan limit shows as `last_error` in `images.json`.
+    Codex binary lives in the versioned VS Code extension dir; `config.find_codex_bin()` / `CODEX_BIN`.
 
 ## WORKFLOW
 
@@ -63,6 +67,19 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
 3. **Write series** (`/write-series-<slug> --idea-file notes.md --episodes 12 --episode-sec 90`)
    - Stage 1 adaptation map -> Stage 2 bible + outline (stop for approval) -> Stage 3 episodes
 4. **Refine** (`/refine-skill <slug> --feedback "..."`, `--approve outline`, `--approve`)
+4b. **Asset registry** (`/series-assets --session <dir> [--feedback "..."]`) — bible-only at end of Stage 2,
+   refreshed after Stage 3 / refine rounds / continue-series. Episodes follow
+   `series-assets/references/episode-contract.md` (scene `loc_id`, `variant_id`, `cast` outfits, `props`);
+   `_assets.py lint <session>` checks them; `/script-to-shotlist` builds prompts from the registry
+   - Reference images: `python3 -m app.pipeline.assets plan|generate|status|approve|reject --session <dir>`
+     (or web job `images`): Codex makes character sheets, outfits, location plates per variant, props into
+     `assets/characters|locations|props/`; review state in `assets/images.json`; approved = refs for shotlists
+   - Web: series page, group "Ngoại hình" (Nhân vật & trang phục / Bối cảnh / Đạo cụ / Lỗi liên tục): build/update
+     the registry (job `assets`), generate images (job `images`), approve/reject each image
+   - `_assets.py scan` -> Claude builds `assets/assets_vN.json/.md`: characters (face/hair/body, wardrobe
+     per episode), locations (canonical sets, variants), props, scene map (every scene -> loc/outfits),
+     continuity issues. `_assets.py validate` must pass (every scene + on-screen character mapped)
+   - Text only; `assets/characters/<id>/`, `assets/locations/<id>/` reserved for reference images
 5. **Continue after production** (`/continue-series --session <dir> --canon <run>/dna.json --style write-series-<slug> --produced <k> --direction follow|new-arc --new-episodes <m>`)
    - Produced videos are analyzed with step 1, then reconciled with the scripts as CANON (video wins) -> `canon_vN`, bible/outline next version; approve -> only missing episodes are written
    - Works for series produced outside the app (no scripts: bible built from the videos)
@@ -71,9 +88,17 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
 
 ## PROJECT RESET (new reference video)
 
-Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `script-to-shotlist`, the 4 brief
+Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `series-assets`, `script-to-shotlist`, the 4 brief
 skills, agents `video-analyst` + `story-merger` + `film-analyst`. Remove: generated `.claude/skills/write-series-*`,
 `data/analyses/*`, `data/series/*`, `data/skills-generated/*`.
+
+## WEB UI
+
+- Old UI: Jinja pages (`app/templates/`). New UI: React + Vite + Tailwind + shadcn (Base UI) in `web/`, built into
+  `app/static/ui/` (committed; users need Python only), served at `/ui`, JSON API in `app/api.py`.
+- Users run the app locally (handoff). Priority of the migration: screenplay reading/review first.
+- After changing `web/`: `cd web && npm run build`, commit `app/static/ui/`. shadcn here uses Base UI: `render={<X />}`, not `asChild`.
+- Manual episode edits and comments never call Claude; they write the next `epNN_vK` / `comments.json`.
 
 ## OUTPUT STYLE
 

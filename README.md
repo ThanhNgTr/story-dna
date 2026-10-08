@@ -70,6 +70,32 @@ How it works:
 - The folder browser only shows paths under `STORY_DNA_BROWSE_ROOTS` (default: your home dir). The server binds to 127.0.0.1 only.
 - The cost shown per job is what the Claude CLI reports; on a subscription it reflects usage, not a bill.
 
+### New UI (React, in progress)
+
+Open `http://127.0.0.1:8765/ui/` (link "Giao diện mới" in the old header). It replaces the old pages step by step;
+pages not migrated yet link back to the old UI.
+
+| Screen | What you do |
+|---|---|
+| Dự án | All series as cards: stage, episodes written / planned, next step |
+| Project overview | 4-step progress, one "next step" action (approve outline, approve season), episode cards |
+| Episode reader | Scenes as cards, VO vs dialogue styled, scene timeline, "story" or "full technical" view, ledger questions |
+| Comments | Hover a beat -> "Góp ý" (select text first to quote it); collect notes, then send all as one feedback round (`/refine-skill`) with exact positions. Stored in `<session>/comments.json` |
+| Manual edit | "Sửa trực tiếp": edit action, dialogue, delivery, camera/light/sound in place; saves `episodes/epNN_v(K+1).json/.md` (no Claude), runs the asset lint, logs the round. Blocked while a job runs on the series |
+| Compare | Word-level diff between any two versions of an episode |
+| Jobs | Header button: live progress of every running job (Server-Sent Events), toast + browser notification when done; job page with live log, cancel, resume |
+
+The built UI is committed in `app/static/ui/`, so running the app needs Python only. To change the UI (Node 20+):
+
+```bash
+cd web && npm install
+npm run dev          # http://127.0.0.1:5173/ui/ , proxies /api to ./run_app.sh on :8765
+npm run build        # writes app/static/ui/ (commit it)
+```
+
+Backend for it: `app/api.py` (JSON under `/api`, SSE at `/api/events` and `/api/jobs/<id>/events`),
+`app/pipeline/screenplay.py` (comments, manual edits, JSON -> Markdown renderer).
+
 ## User Guide
 
 Run every `/...` command inside Claude Code (terminal or VS Code), opened at the project folder.
