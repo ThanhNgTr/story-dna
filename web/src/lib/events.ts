@@ -11,6 +11,7 @@ import { JOB_STATUS } from './format'
 export function useJobsStream() {
   const qc = useQueryClient()
   const prev = useRef<Map<string, Job['status']>>(new Map())
+  const imagesDone = useRef<Map<string, number>>(new Map())
 
   useEffect(() => {
     const es = new EventSource('/api/events')
@@ -25,6 +26,7 @@ export function useJobsStream() {
             qc.invalidateQueries({ queryKey: ['project', j.slug, j.session_id] })
             qc.invalidateQueries({ queryKey: ['episode', j.slug, j.session_id] })
             qc.invalidateQueries({ queryKey: ['doc', j.slug, j.session_id] })
+            qc.invalidateQueries({ queryKey: ['assets', j.slug, j.session_id] })
           }
           for (const k of [qk.projects, qk.skills, qk.analyses]) qc.invalidateQueries({ queryKey: k })
           const st = JOB_STATUS[j.status]
@@ -38,6 +40,12 @@ export function useJobsStream() {
         if (before !== 'running' && j.status === 'running' && j.slug && j.session_id) {
           qc.invalidateQueries({ queryKey: ['project', j.slug, j.session_id] })
         }
+        // Image jobs: refresh the looks pages as each image lands, not only at the end
+        const done = Number(j.steps.images?.done ?? 0)
+        if (j.kind === 'images' && j.slug && j.session_id && done !== (imagesDone.current.get(j.id) ?? done)) {
+          qc.invalidateQueries({ queryKey: ['assets', j.slug, j.session_id] })
+        }
+        imagesDone.current.set(j.id, done)
         seen.set(j.id, j.status)
       }
     })

@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { BookOpen, ExternalLink, FileText, History, Home, Lightbulb, ListOrdered, Shirt } from 'lucide-react'
+import { AlertTriangle, BookOpen, FileText, History, Home, Images, Lightbulb, ListOrdered, MapPin, Package, Shirt } from 'lucide-react'
 import { Link, NavLink, Outlet, useOutletContext, useParams } from 'react-router'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Skeleton } from '@/components/ui/skeleton'
-import { api, legacy, qk, type Project } from '@/lib/api'
+import { api, qk, type Project } from '@/lib/api'
 import { STEP_LABEL, fmtEta } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -68,9 +68,13 @@ export function ProjectLayout() {
             </SideLink>
           )) : <p className="px-2.5 text-sm text-muted-foreground">Chưa viết tập nào.</p>}
           <Group>Ngoại hình</Group>
-          <a href={legacy.project(slug, sid, 'chars')} className="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-foreground/80 hover:bg-muted">
-            <Shirt className="size-4 opacity-70" /> <span className="flex-1">Nhân vật, bối cảnh</span> <ExternalLink className="size-3 opacity-60" />
-          </a>
+          <SideLink to={`${base}/looks/characters`} icon={Shirt}>Nhân vật & trang phục</SideLink>
+          <SideLink to={`${base}/looks/locations`} icon={MapPin}>Bối cảnh</SideLink>
+          <SideLink to={`${base}/looks/props`} icon={Package}>Đạo cụ</SideLink>
+          <SideLink to={`${base}/looks/review`} icon={Images}
+            extra={p.assets?.counts.draft ? <span className="rounded-full bg-warning/15 px-1.5 text-[11px] text-warning">{p.assets.counts.draft}</span> : null}>Duyệt ảnh</SideLink>
+          <SideLink to={`${base}/looks/issues`} icon={AlertTriangle}
+            extra={p.assets?.issues ? <span className="text-[11px] text-muted-foreground">{p.assets.issues}</span> : null}>Lỗi liên tục</SideLink>
           <Group>Khác</Group>
           <SideLink to={`${base}/history`} icon={History} extra={p.iterations.length ?
             <span className="text-[11px] text-muted-foreground">{p.iterations.length}</span> : null}>Lịch sử góp ý</SideLink>

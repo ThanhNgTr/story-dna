@@ -6,7 +6,9 @@ import { toast } from 'sonner'
 import { AddCommentButton, CommentBubble, CommentComposer, CommentsPanel, useComments } from '@/components/screenplay/comments'
 import { EpisodeDiff } from '@/components/screenplay/diff'
 import { BeatEditor, countChanges } from '@/components/screenplay/editor'
-import { BeatRow, CharacterChip, Cliffhanger, SceneHeader, SceneTimeline, type ReadMode } from '@/components/screenplay/Screenplay'
+import { BeatRow, CharacterChip, Cliffhanger, SceneHeader, SceneTimeline, type ReadMode, type SceneLook } from '@/components/screenplay/Screenplay'
+import { approvedOf, thumb } from '@/components/looks/ImageTile'
+import { useLooks } from '@/components/looks/useLooks'
 import { castOf } from '@/components/screenplay/cast'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -143,7 +145,37 @@ export function EpisodePage() {
   const prev = p.episodes[idx - 1], next = p.episodes[idx + 1]
   const base = `/p/${p.slug}/${p.session_id}`
   const ep = view === 'edit' && draft ? draft : data?.data
-  const cast = useMemo(() => (data ? castOf(data.data as never) : new Map()), [data])
+  const looks = useLooks(p.slug, p.session_id)
+  const reg = looks.data?.registry?.reg
+  const cast = useMemo(() => {
+    const m = data ? castOf(data.data as never) : new Map()
+    for (const c of reg?.characters ?? []) {
+      const img = approvedOf(c._img)
+      if (img && m.has(c.char_id)) m.set(c.char_id, { ...m.get(c.char_id)!, photo: thumb(looks.data!.base, img.file, 160) })
+    }
+    return m
+  }, [data, reg, looks.data])
+  const sceneLooks = useMemo(() => {
+    const out = new Map<string, SceneLook>()
+    if (!reg || !data) return out
+    const lb = `/p/${p.slug}/${p.session_id}/looks`
+    for (const s of data.data.scenes) {
+      const row = reg.scene_map.find((m) => Number(m.episode) === n && m.scene === s.id)
+      const locId = s.loc_id ?? row?.loc_id
+      const variant = s.variant_id ?? row?.variant_id ?? undefined
+      const loc = reg.locations.find((l) => l.loc_id === locId)
+      const wear = s.cast ?? row?.characters ?? {}
+      out.set(s.id, {
+        location: loc ? { name: loc.name, href: `${lb}/locations#${variant ?? loc.loc_id}`, variant: loc.variants.find((v) => v.variant_id === variant)?.time_of_day } : undefined,
+        outfits: Object.entries(wear).map(([cid, oid]) => {
+          const c = reg.characters.find((x) => x.char_id === cid)
+          const o = c?.wardrobe.find((w) => w.outfit_id === oid)
+          return { charId: cid, label: `${c?.name ?? cid}: ${o?.name ?? oid.replace(`${cid}_`, '')}`, href: `${lb}/characters#${oid}` }
+        }),
+      })
+    }
+    return out
+  }, [reg, data, n, p.slug, p.session_id])
   const busy = !!p.job
 
   const jump = (id: string) => {
@@ -259,7 +291,7 @@ export function EpisodePage() {
             </div>
             {ep.scenes.map((s, si) => (
               <section key={s.id} id={`scene-${s.id}`} className="scroll-mt-28 overflow-hidden rounded-xl border bg-paper">
-                <SceneHeader scene={s} cast={cast} />
+                <SceneHeader scene={s} cast={cast} look={sceneLooks.get(s.id)} />
                 <div className="divide-y">
                   {s.beats.map((b, bi) => {
                     beatNo += 1

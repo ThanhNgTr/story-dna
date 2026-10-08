@@ -4,7 +4,7 @@ import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmAction } from '@/components/ConfirmAction'
 import { Button } from '@/components/ui/button'
-import { api, legacy, type Project } from '@/lib/api'
+import { api, type Project } from '@/lib/api'
 import { askNotificationPermission } from '@/lib/events'
 import { cn } from '@/lib/utils'
 import { useProject } from './ProjectLayout'
@@ -106,9 +106,9 @@ export function OverviewPage() {
               {' '}{p.assets.issues} lỗi liên tục.
             </p>
           ) : <p className="mt-2 text-muted-foreground">Chưa lập kho nhân vật & bối cảnh.</p>}
-          <a href={legacy.project(p.slug, p.session_id, p.assets ? 'chars' : '')} className="mt-3 inline-block text-primary hover:underline">
-            {p.assets ? 'Mở nhân vật & bối cảnh' : 'Lập kho'} →
-          </a>
+          <Link to={`${base}/looks/${p.assets?.counts.draft ? 'review' : 'characters'}`} className="mt-3 inline-block text-primary hover:underline">
+            {!p.assets ? 'Lập kho' : p.assets.counts.draft ? `Duyệt ${p.assets.counts.draft} ảnh` : 'Mở nhân vật & bối cảnh'} →
+          </Link>
         </div>
       </div>
 

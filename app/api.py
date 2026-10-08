@@ -104,6 +104,27 @@ class HideIn(BaseModel):
     item: str
 
 
+class ImagesIn(BaseModel):
+    kinds: list[str] = []
+    ids: list[str] = []
+    force: bool = False
+
+
+class ReviewIn(BaseModel):
+    files: list[str]
+    status: str
+
+
+class AssetsBuildIn(BaseModel):
+    feedback: str = ""
+
+
+class AssetsEdit(BaseModel):
+    base_file: str
+    data: dict
+    note: str = ""
+
+
 class EpisodeEdit(BaseModel):
     base_version: int
     data: dict
@@ -367,6 +388,61 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             raise HTTPException(409, "Claude đang làm việc với series này. Đợi xong rồi lưu, để không ghi đè lên nhau.")
         try:
             return screenplay.save_manual(d, n, body.data, body.base_version, body.note)
+        except ValueError as e:
+            raise HTTPException(409 if "phiên bản mới" in str(e) else 400, str(e))
+
+    # ---------- looks: asset registry + reference images ----------
+
+    @r.get("/projects/{slug}/{sid}/assets")
+    def assets_view(slug: str, sid: str):
+        d = session_or_404(slug, sid)["dir"]
+        vm = asset_images.view_model(d)
+        return {"registry": vm, "codex": bool(config.find_codex_bin()),
+                "base": f"/series/{slug}/{sid}/assets"}
+
+    @r.post("/projects/{slug}/{sid}/assets/images")
+    async def assets_images(slug: str, sid: str, body: ImagesIn):
+        d = session_or_404(slug, sid)["dir"]
+        try:
+            asset_images.latest_registry(d)
+        except RuntimeError as e:
+            raise HTTPException(400, str(e))
+        if not config.find_codex_bin():
+            raise HTTPException(400, "Không tìm thấy Codex CLI (cài extension ChatGPT/Codex hoặc đặt CODEX_BIN).")
+        if running_for(sid):
+            raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi tạo ảnh.")
+        kinds = [k for k in body.kinds if k in asset_images.KINDS] or list(asset_images.DEFAULT_KINDS)
+        if not asset_images.plan(d, tuple(kinds), set(body.ids) or None, body.force):
+            raise HTTPException(400, "Không còn ảnh nào cần tạo cho lựa chọn này.")
+        job = jobs.start("images", f"Tạo ảnh tham chiếu ({slug})",
+                         {"slug": slug, "session_id": sid, "kinds": kinds, "ids": body.ids, "force": body.force},
+                         job_funcs["images"])
+        return one(job)
+
+    @r.post("/projects/{slug}/{sid}/assets/review")
+    def assets_review(slug: str, sid: str, body: ReviewIn):
+        if body.status not in ("approved", "rejected", "draft"):
+            raise HTTPException(400, "Trạng thái không hợp lệ.")
+        n = asset_images.set_status_many(session_or_404(slug, sid)["dir"], body.files, body.status)
+        return {"updated": n}
+
+    @r.post("/projects/{slug}/{sid}/assets/build")
+    async def assets_build(slug: str, sid: str, body: AssetsBuildIn):
+        session_or_404(slug, sid)
+        if running_for(sid):
+            raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi cập nhật kho.")
+        title = "Sửa ngoại hình" if body.feedback.strip() else "Lập / cập nhật kho nhân vật & bối cảnh"
+        job = jobs.start("assets", f"{title} ({slug})",
+                         {"slug": slug, "session_id": sid, "feedback": body.feedback.strip()}, job_funcs["assets"])
+        return one(job)
+
+    @r.put("/projects/{slug}/{sid}/assets")
+    def assets_save(slug: str, sid: str, body: AssetsEdit):
+        d = session_or_404(slug, sid)["dir"]
+        if running_for(sid):
+            raise HTTPException(409, "Đang có việc chạy cho series này. Đợi xong rồi lưu.")
+        try:
+            return asset_images.save_registry_edit(d, body.base_file, body.data, body.note)
         except ValueError as e:
             raise HTTPException(409 if "phiên bản mới" in str(e) else 400, str(e))
 

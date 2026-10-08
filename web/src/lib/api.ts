@@ -177,6 +177,101 @@ export interface Analysis {
   job: Job | null
 }
 
+// ----- looks: asset registry (/series-assets) + reference images -----
+
+export interface AssetImage {
+  file: string
+  name: string
+  status: 'draft' | 'approved' | 'rejected' | 'old'
+  created_at: string
+  sec?: number
+  registry?: string
+  prompt?: string
+  refs?: string[]
+}
+
+export interface ImgSet { images: AssetImage[]; error: string | null }
+
+export interface Outfit {
+  outfit_id: string
+  name?: string
+  desc?: string
+  when?: string
+  episodes?: number[]
+  prompt_en?: string
+  _img: ImgSet
+  _default?: boolean
+}
+
+export interface RegCharacter {
+  char_id: string
+  name: string
+  tier?: string
+  age?: number
+  apparent_age?: string
+  face?: Record<string, string> | string
+  hair?: string
+  body?: Record<string, string> | string
+  signature_props?: string[]
+  invariants?: string[]
+  wardrobe: Outfit[]
+  prompt_en?: string
+  inferred?: string[]
+  _img: ImgSet
+  _matrix: string[]
+}
+
+export interface Variant { variant_id: string; time_of_day?: string; lighting?: string; prompt_en?: string; _img: ImgSet }
+
+export interface RegLocation {
+  loc_id: string
+  bible_id?: string | null
+  name: string
+  parent?: string | null
+  int_ext?: string
+  desc?: string
+  layout?: string
+  fixed_elements?: string[]
+  aliases?: string[]
+  variants: Variant[]
+  prompt_en?: string
+  _scenes: string[]
+}
+
+export interface RegProp { prop_id: string; name: string; desc?: string; owner?: string | null; episodes?: number[]; prompt_en?: string; _img: ImgSet }
+
+export interface SceneMapRow {
+  episode: number
+  scene: string
+  loc_id: string | null
+  variant_id?: string | null
+  characters?: Record<string, string>
+  referenced?: string[]
+  props?: string[]
+}
+
+export interface Issue { severity: 'high' | 'medium' | 'low'; type?: string; where?: string; problem?: string; fix?: string }
+
+export interface Registry {
+  series?: string
+  version: number
+  style?: Record<string, string>
+  characters: RegCharacter[]
+  locations: RegLocation[]
+  props: RegProp[]
+  scene_map: SceneMapRow[]
+  issues: Issue[]
+  [k: string]: unknown
+}
+
+export interface AssetsView {
+  registry: { reg: Registry; file: string; episodes: number[]; pending: Record<string, number>; counts: Record<string, number> } | null
+  codex: boolean
+  base: string
+}
+
+export type AssetKind = 'character' | 'outfit' | 'location' | 'prop'
+
 export interface NewProject { slug: string; title: string; idea: string; episodes: number; episode_sec: number }
 
 export class ApiError extends Error {
@@ -235,6 +330,16 @@ export const api = {
     request<Job>(`${p(slug, sid)}/comments/send`, { method: 'POST', body: JSON.stringify(body) }),
   saveEpisode: (slug: string, sid: string, n: number, body: { base_version: number; data: EpisodeData; note?: string }) =>
     request<SaveResult>(`${p(slug, sid)}/episodes/${n}`, { method: 'PUT', body: JSON.stringify(body) }),
+  assets: (slug: string, sid: string) => request<AssetsView>(`${p(slug, sid)}/assets`),
+  generateImages: (slug: string, sid: string, body: { kinds?: AssetKind[]; ids?: string[]; force?: boolean }) =>
+    request<Job>(`${p(slug, sid)}/assets/images`, { method: 'POST', body: JSON.stringify(body) }),
+  reviewImages: (slug: string, sid: string, files: string[], status: 'approved' | 'rejected' | 'draft') =>
+    request<{ updated: number }>(`${p(slug, sid)}/assets/review`, { method: 'POST', body: JSON.stringify({ files, status }) }),
+  buildAssets: (slug: string, sid: string, feedback = '') =>
+    request<Job>(`${p(slug, sid)}/assets/build`, { method: 'POST', body: JSON.stringify({ feedback }) }),
+  saveAssets: (slug: string, sid: string, base_file: string, data: Registry, note = '') =>
+    request<{ file: string; version: number; warnings: string[] }>(`${p(slug, sid)}/assets`,
+      { method: 'PUT', body: JSON.stringify({ base_file, data, note }) }),
   jobs: (limit = 30) => request<Job[]>(`/jobs?limit=${limit}`),
   job: (id: string) => request<JobDetail>(`/jobs/${id}`),
   cancelJob: (id: string) => request<{ ok: boolean }>(`/jobs/${id}/cancel`, { method: 'POST' }),
@@ -250,6 +355,7 @@ export const qk = {
   doc: (slug: string, sid: string, kind: string, v: number) => ['doc', slug, sid, kind, v] as const,
   episode: (slug: string, sid: string, n: number, v: number) => ['episode', slug, sid, n, v] as const,
   comments: (slug: string, sid: string) => ['comments', slug, sid] as const,
+  assets: (slug: string, sid: string) => ['assets', slug, sid] as const,
   jobs: ['jobs'] as const,
   job: (id: string) => ['job', id] as const,
 }

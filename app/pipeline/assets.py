@@ -268,6 +268,59 @@ def view_model(session: Path) -> dict | None:
     return {"reg": reg, "file": reg_path.name, "episodes": eps, "pending": pending, "counts": counts}
 
 
+def _strip_ui(x):
+    """Drop the view-model helper keys (_img, _matrix, ...) before a registry is written."""
+    if isinstance(x, dict):
+        return {k: _strip_ui(v) for k, v in x.items() if not k.startswith("_")}
+    if isinstance(x, list):
+        return [_strip_ui(v) for v in x]
+    return x
+
+
+def save_registry_edit(session: Path, base_file: str, data: dict, note: str = "") -> dict:
+    """Manual edit from the UI -> assets_v(N+1).json/.md, validated like a /series-assets run.
+
+    Refuses when the registry moved on since the page loaded (base_file is no longer the latest).
+    """
+    import subprocess
+    import sys
+    reg_path, _ = latest_registry(session)
+    if reg_path.name != base_file:
+        raise ValueError(f"Kho vừa có phiên bản mới ({reg_path.name}). Tải lại rồi sửa trên bản mới nhất.")
+    n = int(re.search(r"_v(\d+)", reg_path.name).group(1)) + 1
+    out = reg_path.with_name(f"assets_v{n}.json")
+    if out.exists():
+        raise ValueError(f"{out.name} đã tồn tại.")
+    reg = _strip_ui(data)
+    reg.update({"version": n, "created_at": now(),
+                "edited": {"by": "manual", "from": reg_path.name, "note": note}})
+    out.write_text(json.dumps(reg, ensure_ascii=False, indent=2), encoding="utf-8")
+    tool = config.SKILLS / "series-assets" / "_assets.py"
+    v = subprocess.run([sys.executable, str(tool), "validate", str(session), str(out)],
+                       capture_output=True, text=True, timeout=60)
+    if v.returncode != 0:
+        out.unlink()
+        errs = [l.removeprefix("ERROR ") for l in v.stdout.splitlines() if l.startswith("ERROR")]
+        raise ValueError("Kho không hợp lệ: " + "; ".join(errs[:5]))
+    subprocess.run([sys.executable, str(tool), "render", str(out)], capture_output=True, text=True, timeout=60)
+    from .screenplay import _log_round
+    _log_round(session, "assets_manual", note or f"Sửa tay kho ngoại hình -> {out.name}",
+               [f"assets/{out.name}", f"assets/{out.with_suffix('.md').name}"])
+    return {"file": out.name, "version": n,
+            "warnings": [l.removeprefix("WARN  ") for l in v.stdout.splitlines() if l.startswith("WARN")]}
+
+
+def set_status_many(session: Path, files: list[str], status: str) -> int:
+    done = 0
+    for f in files:
+        try:
+            set_status(session, f, status)
+            done += 1
+        except KeyError:
+            pass
+    return done
+
+
 def thumbnail(src: Path, width: int) -> Path:
     """Cached JPEG thumbnail under assets/.thumbs/ (sheets are ~2.5 MB PNGs)."""
     from PIL import Image

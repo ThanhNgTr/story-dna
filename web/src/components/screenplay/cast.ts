@@ -1,6 +1,6 @@
 import type { EpisodeData } from '@/lib/api'
 
-export interface CastMember { id: string; name: string; look?: string | null; offscreen?: boolean }
+export interface CastMember { id: string; name: string; look?: string | null; offscreen?: boolean; photo?: string }
 
 const VOICE_FALLBACK: Record<string, string> = {
   unknown_voice: 'Giọng trong loa',

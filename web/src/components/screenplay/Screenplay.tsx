@@ -1,4 +1,5 @@
-import { Camera, Clapperboard, Lightbulb, MapPin, Volume2 } from 'lucide-react'
+import { Camera, Clapperboard, Lightbulb, MapPin, Shirt, Volume2 } from 'lucide-react'
+import { Link } from 'react-router'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Beat, EpisodeData, Scene } from '@/lib/api'
 import { fmtTime } from '@/lib/format'
@@ -14,10 +15,16 @@ export function CharacterChip({ c, small }: { c: CastMember; small?: boolean }) 
   const hue = hueOf(c.id)
   const chip = (
     <span className={cn('inline-flex items-center gap-1.5 rounded-full border bg-card', small ? 'py-0 pr-2 pl-0.5 text-xs' : 'py-0.5 pr-2.5 pl-1 text-sm')}>
-      <span className={cn('flex items-center justify-center rounded-full font-semibold text-white', small ? 'size-4 text-[9px]' : 'size-6 text-[11px]')}
-        style={{ background: `oklch(0.6 0.13 ${hue})` }}>
-        {c.name.slice(0, 1).toUpperCase()}
-      </span>
+      {c.photo ? (
+        // Character sheets are landscape with the face close-up in the left third: zoom into it
+        <span role="img" aria-label={c.name} className={cn('rounded-full bg-muted bg-no-repeat', small ? 'size-4' : 'size-6')}
+          style={{ backgroundImage: `url(${c.photo})`, backgroundSize: '340%', backgroundPosition: '7% 30%' }} />
+      ) : (
+        <span className={cn('flex items-center justify-center rounded-full font-semibold text-white', small ? 'size-4 text-[9px]' : 'size-6 text-[11px]')}
+          style={{ background: `oklch(0.6 0.13 ${hue})` }}>
+          {c.name.slice(0, 1).toUpperCase()}
+        </span>
+      )}
       {c.name}
     </span>
   )
@@ -109,7 +116,13 @@ export function BeatRow({ beat, index, cast, mode, actions }: {
   )
 }
 
-export function SceneHeader({ scene, cast }: { scene: Scene; cast: Map<string, CastMember> }) {
+/** Where this scene's place and costumes live in the asset registry (from the scene or the registry's scene map). */
+export interface SceneLook {
+  location?: { name: string; href: string; variant?: string }
+  outfits: { charId: string; label: string; href: string }[]
+}
+
+export function SceneHeader({ scene, cast, look }: { scene: Scene; cast: Map<string, CastMember>; look?: SceneLook }) {
   const onScreen = scene.cast ? Object.keys(scene.cast)
     : [...new Set(scene.beats.flatMap((b) => b.characters ?? []))].filter((id) => cast.has(id) && !cast.get(id)?.offscreen)
   return (
@@ -120,10 +133,16 @@ export function SceneHeader({ scene, cast }: { scene: Scene; cast: Map<string, C
         <span className="ml-auto font-mono text-xs text-muted-foreground tabular-nums">{fmtTime(scene.start_sec)} – {fmtTime(scene.end_sec)}</span>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-        {scene.location && <span className="mr-1 inline-flex items-center gap-1"><MapPin className="size-3" />{scene.location}{scene.loc_id && <code className="ml-1 text-[10px]">{scene.loc_id}</code>}</span>}
+        {look?.location ? (
+          <Link to={look.location.href} className="mr-1 inline-flex items-center gap-1 rounded-md px-1 hover:bg-accent hover:text-accent-foreground" title="Mở bối cảnh trong kho ngoại hình">
+            <MapPin className="size-3" />{look.location.name}{look.location.variant && <span className="opacity-70">· {look.location.variant}</span>}
+          </Link>
+        ) : scene.location && <span className="mr-1 inline-flex items-center gap-1"><MapPin className="size-3" />{scene.location}</span>}
         {onScreen.map((id) => cast.get(id) && <CharacterChip key={id} c={cast.get(id)!} small />)}
-        {scene.cast && Object.entries(scene.cast).map(([id, o]) => (
-          <code key={id} className="text-[10px]">{id}:{o.replace(`${id}_`, '')}</code>
+        {look?.outfits.map((o) => (
+          <Link key={o.charId} to={o.href} className="inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 hover:bg-accent hover:text-accent-foreground" title="Mở trang phục trong kho">
+            <Shirt className="size-3" />{o.label}
+          </Link>
         ))}
       </div>
     </div>
