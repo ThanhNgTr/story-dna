@@ -32,6 +32,15 @@ Codex CLI on the user's ChatGPT login (built-in image_gen, no OpenAI API key)
   character, dialogue, setting + how it changes, climaxes, mysteries opened -> clued -> answered.
   Overrides style skills on conflict. `_story_check.py <session>` -> 0 errors; the web app runs it after
   outline / episodes / feedback / continue and lets Claude repair once (`/story-contract`).
+- **Story editor** (`.claude/skills/story-editor/`): judges DEPTH after the contract — 9 dimensions
+  (theme, protagonist, supporting cast, antagonist, dialogue/subtext, setup/payoff, stakes, emotion,
+  originality) scored 1-5 with quoted evidence -> `editor/review_vN.json/.md`; `--apply` writes next
+  versions for chosen findings (`editor/applied_vN.json`). Web: auto review after outline; page "Biên tập".
+- **Dialogue clarity** (`.claude/skills/dialogue-polish/`): `references/vi-dialogue.md` overrides style
+  word caps / "ambiguous line" rules (hide facts, not grammar; xưng hô per bible `address_matrix`;
+  `glossary`). `_dialogue_lint.py lint <session>` flags unclear lines; `/dialogue-polish` rewrites only
+  dialogue (next versions + `dialogue/polish_vN.json`). Manual edits feed `data/dialogue_examples.json`
+  (before/after) that writers imitate. Web: page "Lời thoại", button "Làm rõ thoại" per episode.
 - **Feedback loop**: `rule` feedback patches the skill (new version), `story` feedback edits only
   this series. Live SKILL.md = latest; immutable `versions/SKILL_vN.md`.
 
@@ -88,12 +97,13 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
 5. **Continue after production** (`/continue-series --session <dir> --canon <run>/dna.json --style write-series-<slug> --produced <k> --direction follow|new-arc --new-episodes <m>`)
    - Produced videos are analyzed with step 1, then reconciled with the scripts as CANON (video wins) -> `canon_vN`, bible/outline next version; approve -> only missing episodes are written
    - Works for series produced outside the app (no scripts: bible built from the videos)
-6. **Optional production**: `/script-to-shotlist final/epNN.md`, then `/direct-video`,
+6. **Optional production**: `/script-to-shotlist final/epNN.md` -> `final/shots/epNN/prompts.json`; web "Tải gói video"
+   (`app/pipeline/package.py`) zips per episode: shot prompts + approved refs + `subtitles.srt` + `edit_list.csv`. Then `/direct-video`,
    `/cinematographer-brief`, `/sound-design-brief`, `/production-design-brief`
 
 ## PROJECT RESET (new reference video)
 
-Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `series-assets`, `story-contract`, `script-to-shotlist`, the 4 brief
+Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `series-assets`, `story-contract`, `story-editor`, `dialogue-polish`, `script-to-shotlist`, the 4 brief
 skills, agents `video-analyst` + `story-merger` + `film-analyst`. Remove: generated `.claude/skills/write-series-*`,
 `data/analyses/*`, `data/series/*`, `data/skills-generated/*`.
 

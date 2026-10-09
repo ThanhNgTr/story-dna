@@ -204,7 +204,8 @@ With a registry:
 - Each shot lists `refs`: approved reference images from `assets/images.json` (status `approved`)
   for the characters (outfit image if one exists for the worn outfit, else the character sheet),
   the location variant and the props in the shot, as paths relative to the session. Empty when
-  none is approved yet.
+  none is approved yet. Every shot also carries `loc_id`, `variant_id` and `props` from its scene, so
+  the web app's "Tải gói video" zip (app/pipeline/package.py) can attach refs approved later.
 
 Every prompt that shows a character repeats its anchor text word-for-word. Same character must
 look identical in every shot; the outfit changes only where the scene `cast` changes it.
@@ -233,7 +234,7 @@ look identical in every shot; the outfit changes only where the scene `cast` cha
       "dialogue": [],
       "sfx": "heavy breathing, snapping branches",
       "camera": "handheld tracking MS, push-in",
-      "loc_id": "loc_02", "outfits": {"char_01": "char_01_o1"}, "refs": [],
+      "loc_id": "loc_02", "variant_id": "loc_02_night", "props": [], "outfits": {"char_01": "char_01_o1"}, "refs": [],
       "video_prompt": "Night, dense foggy pine forest. teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant, runs toward camera in panic, glances back over her shoulder. Handheld tracking medium shot, slow push-in. Torch light from behind, desaturated teal, volumetric fog. Sound: heavy breathing, snapping branches. 3 seconds, 9:16."
     },
     {

@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils'
 type Source = 'disk' | 'upload'
 interface Existing { message: string; partial: boolean; existing: { id: string; title: string | null; sources: string[]; done: boolean }[] }
 
-function Browser({ picked, onPick }: { picked: string; onPick: (path: string) => void }) {
+export function Browser({ picked, onPick }: { picked: string; onPick: (path: string) => void }) {
   const [path, setPath] = useState('')
   const { data, isLoading } = useQuery({ queryKey: ['browse', path], queryFn: () => api.browse(path) })
   if (isLoading || !data) return <Skeleton className="h-64" />
@@ -54,7 +54,7 @@ function Browser({ picked, onPick }: { picked: string; onPick: (path: string) =>
   )
 }
 
-function Uploader({ onDone }: { onDone: (path: string) => void }) {
+export function Uploader({ onDone }: { onDone: (path: string) => void }) {
   const [folder, setFolder] = useState('')
   const [files, setFiles] = useState<{ file: File; pct: number; done: boolean; error?: string }[]>([])
   const [over, setOver] = useState(false)
@@ -117,7 +117,7 @@ function Uploader({ onDone }: { onDone: (path: string) => void }) {
   )
 }
 
-function ProbePanel({ probe }: { probe: ProbeResult }) {
+export function ProbePanel({ probe }: { probe: ProbeResult }) {
   return (
     <div className="space-y-3 rounded-lg border bg-muted/30 p-4 text-sm">
       <div className="font-medium">{probe.items.length} video · tổng {probe.minutes} phút</div>

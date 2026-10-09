@@ -42,6 +42,7 @@ export function AppShell() {
           <nav className="flex items-center gap-1">
             <NavItem to="/">Dự án</NavItem>
             <NavItem to="/videos/new">Học video mẫu</NavItem>
+            <NavItem to="/guide">Hướng dẫn</NavItem>
           </nav>
           <div className="ml-auto flex items-center gap-1">
             {!onHome && <Button render={<NavLink to="/new" />} size="sm" className="mr-1 hidden gap-1 sm:inline-flex"><Plus className="size-3.5" />Series mới</Button>}

@@ -1,0 +1,19 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - link [ref=e6] [cursor=pointer]:
+          - /url: /ui
+        - navigation [ref=e13]:
+          - link "Dự án" [ref=e14] [cursor=pointer]:
+            - /url: /ui
+          - link "Học video mẫu" [ref=e15] [cursor=pointer]:
+            - /url: /ui/videos/new
+          - link "Hướng dẫn" [ref=e16] [cursor=pointer]:
+            - /url: /ui/guide
+        - generic [ref=e17]:
+          - button "Series mới" [ref=e18] [cursor=pointer]
+          - button "Việc" [ref=e19]
+          - 'button "Giao diện: Theo máy" [ref=e20]'
+    - main [ref=e21]
+  - region "Notifications alt+T"

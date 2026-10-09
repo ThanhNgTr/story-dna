@@ -8,6 +8,10 @@ import { NewVideoPage } from '@/pages/videos/NewVideoPage'
 import { VideoPage } from '@/pages/videos/VideoPage'
 import { DocPage } from '@/pages/project/DocPage'
 import { EpisodePage } from '@/pages/project/EpisodePage'
+import { DialoguePage } from '@/pages/project/DialoguePage'
+import { EditorPage } from '@/pages/project/EditorPage'
+import { ContinuePage } from '@/pages/ContinuePage'
+import { GuidePage } from '@/pages/GuidePage'
 import { HistoryPage } from '@/pages/project/HistoryPage'
 import { LooksPage } from '@/pages/project/looks/LooksPage'
 import { OverviewPage } from '@/pages/project/OverviewPage'
@@ -19,6 +23,8 @@ export default function App() {
       <Route element={<AppShell />}>
         <Route index element={<HomePage />} />
         <Route path="new" element={<NewSeriesPage />} />
+        <Route path="guide" element={<GuidePage />} />
+        <Route path="continue" element={<ContinuePage />} />
         <Route path="videos/new" element={<NewVideoPage />} />
         <Route path="videos/:id" element={<VideoPage />} />
         <Route path="styles/:slug" element={<StylePage />} />
@@ -27,6 +33,8 @@ export default function App() {
           <Route path="doc/:kind" element={<DocPage />} />
           <Route path="ep/:n" element={<EpisodePage />} />
           <Route path="history" element={<HistoryPage />} />
+          <Route path="editor" element={<EditorPage />} />
+          <Route path="dialogue" element={<DialoguePage />} />
           <Route path="looks" element={<Navigate to="characters" replace />} />
           <Route path="looks/:tab" element={<LooksPage />} />
         </Route>

@@ -182,7 +182,10 @@ export function HomePage() {
             <h1 className="text-2xl font-semibold tracking-tight">Dự án của bạn</h1>
             <p className="mt-1 text-muted-foreground">Mỗi dự án là một series: ý tưởng, bible, outline, kịch bản và ngoại hình.</p>
           </div>
-          <Button render={<Link to="/new" />} className="gap-1.5" disabled={!!noSkills}><Plus className="size-4" /> Series mới</Button>
+          <div className="flex gap-2">
+            <Button render={<Link to="/continue" />} variant="outline" disabled={!!noSkills}>Viết tiếp từ video đã quay</Button>
+            <Button render={<Link to="/new" />} className="gap-1.5" disabled={!!noSkills}><Plus className="size-4" /> Series mới</Button>
+          </div>
         </div>
 
         {running.length > 0 && (

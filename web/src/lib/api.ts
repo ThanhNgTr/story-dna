@@ -26,6 +26,24 @@ export interface Job {
 
 export interface JobDetail extends Job { log: string[]; last_reply: string | null }
 
+export interface ContinueBody {
+  slug: string
+  sid: string
+  title: string
+  episode_sec: number
+  canon_mode: 'transcript' | 'none' | 'full'
+  source: 'videos' | 'run'
+  video_path: string
+  run_id: string
+  language: string
+  produced_upto: number
+  new_episodes: number
+  direction: 'follow' | 'new-arc'
+  idea: string
+  notes: string
+  update_skill: boolean
+}
+
 export interface ProjectSummary {
   slug: string
   session_id: string
@@ -50,6 +68,7 @@ export interface EpisodeInfo {
   duration_sec: number | null
   cliffhanger_type: string | null
   produced: boolean
+  has_prompts: boolean
 }
 
 export interface Iteration {
@@ -81,7 +100,81 @@ export interface Project {
   assets: { file: string; counts: Record<string, number>; issues: number } | null
   iterations: Iteration[]
   story_check: StoryCheck | null
+  editor: EditorSummary | null
   job: Job | null
+}
+
+export type EditorDim = 'theme' | 'protagonist' | 'supporting_cast' | 'antagonist' | 'dialogue'
+  | 'setup_payoff' | 'stakes' | 'emotion' | 'originality'
+
+export interface EditorSummary {
+  file: string
+  stage: 'outline' | 'episodes'
+  verdict: 'pass' | 'revise'
+  average: number
+  stale: boolean
+  scores: Partial<Record<EditorDim, number>>
+  findings: { high: number; medium: number; low: number }
+  applied: number
+}
+
+export interface EditorFinding {
+  id: string
+  dimension: EditorDim
+  severity: 'high' | 'medium' | 'low'
+  where: { file: string; episode?: number | null; scene?: string | null; field?: string | null }
+  evidence: string
+  problem: string
+  fix: string
+  affects?: string[]
+}
+
+export interface EditorReview {
+  file: string
+  versions: number[]
+  stage: 'outline' | 'episodes'
+  created_at: string
+  summary: string
+  theme_statement: string
+  scores: Record<EditorDim, { score: number; why: string; evidence: string[] }>
+  average: number
+  verdict: 'pass' | 'revise'
+  setup_payoff_map?: { plant: string; plant_ep?: number | null; payoff?: string | null; payoff_ep?: number | null }[]
+  findings: EditorFinding[]
+  strengths: string[]
+  applied: string[]
+  stale: boolean
+}
+
+export interface DialogueItem {
+  episode: number
+  scene: string | null
+  character: string | null
+  voiceover?: boolean
+  line: string | null
+  issues: string[]
+  note?: string
+  name?: string | null
+}
+
+export interface DialogueChange {
+  episode: number
+  scene?: string
+  character?: string
+  voiceover?: boolean
+  before: string
+  after: string
+  why?: string
+  name?: string | null
+}
+
+export interface DialogueView {
+  checked_at: string
+  counts: Record<string, number>
+  items: DialogueItem[]
+  episodes: Record<string, { lines: number; short_pct: number }>
+  last_polish: { file: string; created_at?: string; episodes?: number[]; changes: DialogueChange[] } | null
+  examples: number
 }
 
 export interface StoryCheck { ok: boolean; stage: 'outline' | 'episodes'; checked_at: string; errors: string[]; warnings: string[] }
@@ -377,6 +470,8 @@ export const api = {
   createProject: (body: NewProject) =>
     request<{ slug: string; session_id: string; job: Job }>('/projects', { method: 'POST', body: JSON.stringify(body) }),
   skills: () => request<Skill[]>('/skills'),
+  continueSeries: (body: ContinueBody) =>
+    request<{ slug: string; session_id: string; job: Job }>('/continue', { method: 'POST', body: JSON.stringify(body) }),
   analyses: () => request<Analysis[]>('/analyses'),
   hide: (kind: 'runs' | 'series' | 'jobs' | 'skills', item: string) =>
     request<{ ok: boolean }>('/hide', { method: 'POST', body: JSON.stringify({ kind, item }) }),
@@ -406,6 +501,15 @@ export const api = {
     request<Job>(`${p(slug, sid)}/assets/images`, { method: 'POST', body: JSON.stringify(body) }),
   reviewImages: (slug: string, sid: string, files: string[], status: 'approved' | 'rejected' | 'draft') =>
     request<{ updated: number }>(`${p(slug, sid)}/assets/review`, { method: 'POST', body: JSON.stringify({ files, status }) }),
+  editor: (slug: string, sid: string) => request<EditorReview>(`${p(slug, sid)}/editor`),
+  runEditor: (slug: string, sid: string, body: { mode: 'review' | 'apply'; ids?: string[]; rereview?: boolean }) =>
+    request<Job>(`${p(slug, sid)}/editor`, { method: 'POST', body: JSON.stringify(body) }),
+  dialogue: (slug: string, sid: string) => request<DialogueView>(`${p(slug, sid)}/dialogue`),
+  polishDialogue: (slug: string, sid: string, episodes: number[] = []) =>
+    request<Job>(`${p(slug, sid)}/dialogue/polish`, { method: 'POST', body: JSON.stringify({ episodes }) }),
+  makeShotlist: (slug: string, sid: string, episodes: number[] = [], force = false) =>
+    request<Job>(`${p(slug, sid)}/shotlist`, { method: 'POST', body: JSON.stringify({ episodes, force }) }),
+  packageUrl: (slug: string, sid: string, n: number) => `/api${p(slug, sid)}/episodes/${n}/package`,
   fixStory: (slug: string, sid: string) => request<Job>(`${p(slug, sid)}/story/fix`, { method: 'POST' }),
   buildAssets: (slug: string, sid: string, feedback = '') =>
     request<Job>(`${p(slug, sid)}/assets/build`, { method: 'POST', body: JSON.stringify({ feedback }) }),
@@ -440,6 +544,8 @@ export const qk = {
   episode: (slug: string, sid: string, n: number, v: number) => ['episode', slug, sid, n, v] as const,
   comments: (slug: string, sid: string) => ['comments', slug, sid] as const,
   assets: (slug: string, sid: string) => ['assets', slug, sid] as const,
+  editor: (slug: string, sid: string) => ['editor', slug, sid] as const,
+  dialogue: (slug: string, sid: string) => ['dialogue', slug, sid] as const,
   analysis: (id: string) => ['analysis', id] as const,
   skill: (slug: string) => ['skill', slug] as const,
   jobs: ['jobs'] as const,

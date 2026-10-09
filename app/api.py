@@ -14,14 +14,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from . import config, eta, hidden
 from .jobs import Job, JobManager
 from .pipeline import assets as asset_images
-from .pipeline import analyze, screenplay, series, summary
+from .pipeline import analyze, package, screenplay, series, summary
 
 DOC_KINDS = ("adaptation", "bible", "outline", "canon")
 
@@ -91,6 +91,24 @@ class SendCommentsIn(BaseModel):
     general: str = ""
 
 
+class ContinueIn(BaseModel):
+    slug: str
+    sid: str = ""              # empty = series produced outside the app
+    title: str = ""
+    episode_sec: int = 90
+    canon_mode: str = "transcript"   # transcript | full | none
+    source: str = "videos"           # videos | run
+    video_path: str = ""
+    run_id: str = ""
+    language: str = ""
+    produced_upto: int = 1
+    new_episodes: int = 6
+    direction: str = "follow"
+    idea: str = ""
+    notes: str = ""
+    update_skill: bool = False
+
+
 class NewProjectIn(BaseModel):
     slug: str
     title: str = ""
@@ -117,6 +135,21 @@ class ReviewIn(BaseModel):
 
 class AssetsBuildIn(BaseModel):
     feedback: str = ""
+
+
+class EditorIn(BaseModel):
+    mode: str = "review"
+    ids: list[str] = []
+    rereview: bool = False
+
+
+class PolishIn(BaseModel):
+    episodes: list[int] = []
+
+
+class ShotlistIn(BaseModel):
+    episodes: list[int] = []
+    force: bool = False
 
 
 class AssetsEdit(BaseModel):
@@ -152,6 +185,17 @@ class SummaryIn(BaseModel):
 
 
 UPLOAD_MAX = 8 * 1024 ** 3  # 8 GB per file
+
+
+def _editor_summary(view: dict | None) -> dict | None:
+    if not view:
+        return None
+    sev = [f.get("severity") for f in view.get("findings") or []]
+    return {"file": view["file"], "stage": view.get("stage"), "verdict": view.get("verdict"),
+            "average": view.get("average"), "stale": view.get("stale"),
+            "scores": {k: v.get("score") for k, v in (view.get("scores") or {}).items()},
+            "findings": {s: sev.count(s) for s in ("high", "medium", "low")},
+            "applied": len(view.get("applied") or [])}
 
 
 def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tuple[str, str]],
@@ -199,6 +243,45 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             out.append({**s, "stage": {"label": label, "tone": tone}, "created_at": inp.get("created_at"),
                         "episode_sec": inp.get("episode_sec")})
         return out
+
+    @r.post("/continue")
+    async def continue_create(body: ContinueIn):
+        """Continue a series from its produced videos (same job as the old /series/continue form)."""
+        mode = body.canon_mode if body.canon_mode in ("none", "transcript", "full") else "transcript"
+        source = body.source
+        if mode == "none":
+            if not body.sid:
+                raise HTTPException(400, "Series làm ngoài app không có kịch bản: cần chọn video (mức Nhanh hoặc Kỹ).")
+            source = "none"
+        elif source == "videos":
+            if not body.video_path or not video.videos_in(Path(body.video_path).expanduser()):
+                raise HTTPException(400, "Chưa chọn video đã làm.")
+        elif source == "run":
+            if not body.run_id or not (config.ANALYSES / body.run_id).exists():
+                raise HTTPException(400, "Chưa chọn bản phân tích.")
+        else:
+            raise HTTPException(400, "Nguồn video không hợp lệ.")
+        if body.slug not in series.list_series_skills():
+            raise HTTPException(400, "Không có phong cách này (có thể đang bị ẩn).")
+        sid, direction = body.sid, body.direction if body.direction in ("follow", "new-arc") else "follow"
+        produced, new = max(1, body.produced_upto), max(1, min(20, body.new_episodes))
+        if sid:
+            session_or_404(body.slug, sid)
+            if running_for(sid):
+                raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi viết tiếp.")
+        else:  # produced elsewhere: a new session holds the canon, bible and the next episodes
+            sid = series.new_session(body.slug, "(Series produced outside this app; continue from the produced videos.)",
+                                     produced + new, max(60, min(120, body.episode_sec)),
+                                     body.title.strip() or "Series viết tiếp")
+            direction = "new-arc"
+        job = jobs.start("continue", f"Viết tiếp từ video đã làm ({body.slug})",
+                         {"slug": body.slug, "session_id": sid,
+                          "video_path": body.video_path if source == "videos" else None,
+                          "run_id": body.run_id if source == "run" else None, "language": body.language or None,
+                          "chunk_sec": 120, "max_frames": 40, "produced_upto": produced, "new_episodes": new,
+                          "direction": direction, "idea": body.idea, "notes": body.notes, "canon_mode": mode,
+                          "update_skill": body.update_skill and mode == "full"}, job_funcs["continue"])
+        return {"slug": body.slug, "session_id": sid, "job": one(job)}
 
     @r.post("/projects")
     async def project_create(body: NewProjectIn):
@@ -293,6 +376,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                 "title": ep.get("title"), "logline": ep.get("logline"),
                 "duration_sec": ep.get("total_duration_sec"), "cliffhanger_type": ep.get("cliffhanger_type"),
                 "produced": n <= st["produced_upto"],
+                "has_prompts": package.prompts_file(d, n) is not None,
             })
         summary = {"session_id": sid, "episodes": len(st["episodes"]), "final": st["final_complete"],
                    "has_outline": st["outline"] is not None, "missing": st["missing"], "produced": st["produced_upto"]}
@@ -313,6 +397,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             "assets": {"file": av["file"], "counts": av["counts"], "issues": len(av["reg"].get("issues", []))} if av else None,
             "iterations": st["iterations"],
             "story_check": series.story_check_view(slug, sid) if not job else None,
+            "editor": _editor_summary(series.editor_view(slug, sid)),
             "job": one(job) if job else None,
         }
 
@@ -414,7 +499,9 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
         if running_for(sid):
             raise HTTPException(409, "Claude đang làm việc với series này. Đợi xong rồi lưu, để không ghi đè lên nhau.")
         try:
-            return screenplay.save_manual(d, n, body.data, body.base_version, body.note)
+            out = screenplay.save_manual(d, n, body.data, body.base_version, body.note)
+            series.refresh_dialogue_examples()  # hand-edited lines teach the next writing rounds
+            return out
         except ValueError as e:
             raise HTTPException(409 if "phiên bản mới" in str(e) else 400, str(e))
 
@@ -452,6 +539,78 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             raise HTTPException(400, "Trạng thái không hợp lệ.")
         n = asset_images.set_status_many(session_or_404(slug, sid)["dir"], body.files, body.status)
         return {"updated": n}
+
+    @r.get("/projects/{slug}/{sid}/editor")
+    def editor(slug: str, sid: str):
+        session_or_404(slug, sid)
+        view = series.editor_view(slug, sid)
+        if not view:
+            raise HTTPException(404, "Chưa có bản biên tập.")
+        md = series.session_dir(slug, sid) / "editor" / view["file"].replace(".json", ".md")
+        return {**view, "markdown": md.read_text(encoding="utf-8") if md.exists() else None}
+
+    @r.post("/projects/{slug}/{sid}/editor")
+    async def editor_run(slug: str, sid: str, body: EditorIn):
+        st = session_or_404(slug, sid)
+        if running_for(sid):
+            raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi biên tập.")
+        if st["outline"] is None:
+            raise HTTPException(400, "Chưa có outline để biên tập.")
+        if body.mode == "apply":
+            if not series.editor_view(slug, sid):
+                raise HTTPException(400, "Chưa có bản biên tập.")
+            if not body.ids:
+                raise HTTPException(400, "Chọn ít nhất một điểm cần sửa.")
+            title = f"Áp dụng {len(body.ids)} sửa của biên tập"
+        else:
+            title = "Biên tập kịch bản"
+        job = jobs.start("editor", f"{title} ({slug})",
+                         {"slug": slug, "session_id": sid, "mode": "apply" if body.mode == "apply" else "review",
+                          "ids": body.ids, "rereview": body.rereview}, job_funcs["editor"])
+        return one(job)
+
+    @r.get("/projects/{slug}/{sid}/dialogue")
+    def dialogue(slug: str, sid: str):
+        session_or_404(slug, sid)
+        view = series.dialogue_view(slug, sid)
+        if view is None:
+            raise HTTPException(404, "Chưa có tập nào.")
+        return view
+
+    @r.post("/projects/{slug}/{sid}/dialogue/polish")
+    async def dialogue_polish(slug: str, sid: str, body: PolishIn):
+        st = session_or_404(slug, sid)
+        if running_for(sid):
+            raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi làm rõ thoại.")
+        if not st["episodes"]:
+            raise HTTPException(400, "Chưa có tập nào.")
+        what = f"tập {', '.join(map(str, body.episodes))}" if body.episodes else "tất cả các tập"
+        job = jobs.start("dialogue", f"Làm rõ thoại {what} ({slug})",
+                         {"slug": slug, "session_id": sid, "episodes": body.episodes}, job_funcs["dialogue"])
+        return one(job)
+
+    @r.post("/projects/{slug}/{sid}/shotlist")
+    async def shotlist(slug: str, sid: str, body: ShotlistIn):
+        st = session_or_404(slug, sid)
+        if running_for(sid):
+            raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi tạo prompt.")
+        if not (st["dir"] / "final").exists():
+            raise HTTPException(400, "Chốt season trước: prompt video được tạo từ bản cuối (final/).")
+        what = f"tập {', '.join(map(str, body.episodes))}" if body.episodes else "các tập chưa có prompt"
+        job = jobs.start("shotlist", f"Tạo prompt video {what} ({slug})",
+                         {"slug": slug, "session_id": sid, "episodes": body.episodes, "force": body.force},
+                         job_funcs["shotlist"])
+        return one(job)
+
+    @r.get("/projects/{slug}/{sid}/episodes/{n}/package")
+    def episode_package(slug: str, sid: str, n: int, background: BackgroundTasks):
+        st = session_or_404(slug, sid)
+        try:
+            path, name = package.build_episode_package(st["dir"], n, st["input"].get("title") or "")
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e))
+        background.add_task(path.unlink, missing_ok=True)
+        return FileResponse(path, media_type="application/zip", filename=name)
 
     @r.post("/projects/{slug}/{sid}/story/fix")
     async def story_fix(slug: str, sid: str):

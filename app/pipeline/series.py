@@ -277,6 +277,160 @@ async def enforce_story_contract(job: Job, d: Path, stage: str) -> dict:
     return rep
 
 
+EDITOR = config.SKILLS / "story-editor" / "_editor.py"
+
+
+def _editor_files(d: Path, stem: str) -> list[Path]:
+    return sorted((d / "editor").glob(f"{stem}_v*.json"), key=_version)
+
+
+def editor_view(slug: str, session_id: str) -> dict | None:
+    """Latest editor review (+ which of its findings were applied) for the UI."""
+    d = session_dir(slug, session_id)
+    reviews = _editor_files(d, "review")
+    if not reviews:
+        return None
+    try:
+        r = json.loads(reviews[-1].read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    applied: set[str] = set()
+    for a in _editor_files(d, "applied"):
+        try:
+            x = json.loads(a.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if x.get("review") == reviews[-1].name:
+            applied |= set(x.get("applied") or [])
+    # Newer bible/outline/episodes than the review -> it may be out of date
+    newest = max((f.stat().st_mtime for f in [*d.glob("bible_v*.json"), *d.glob("outline_v*.json"),
+                                               *(d / "episodes").glob("ep*_v*.json")]), default=0)
+    return {**r, "file": reviews[-1].name, "versions": [_version(x) for x in reviews],
+            "applied": sorted(applied), "stale": newest > reviews[-1].stat().st_mtime}
+
+
+async def editor_review(job: Job, d: Path) -> bool:
+    """/story-editor review: scores depth, writes editor/review_vN.json. Never fails the job."""
+    before = len(_editor_files(d, "review"))
+    job.step("editor", "running")
+    try:
+        await _claude(job, f"/story-editor --session {d}\n\nReview mode. Run non-interactively: do not ask "
+                           "questions." + UI_NOTE, "editor", 3600)
+    except RuntimeError as e:
+        job.log(f"[editor] {e}")
+    files = _editor_files(d, "review")
+    ok = len(files) > before
+    if ok:
+        r = json.loads(files[-1].read_text(encoding="utf-8"))
+        job.step("editor", "done", verdict=r.get("verdict"), average=r.get("average"),
+                 findings=len(r.get("findings") or []))
+    else:
+        job.step("editor", "failed")
+    return ok
+
+
+async def run_editor(job: Job) -> dict:
+    """Web job: mode=review (new editor review) or mode=apply (apply findings `ids`, then re-check)."""
+    p = job.data["params"]
+    slug, sid = p["slug"], p["session_id"]
+    d = session_dir(slug, sid)
+    _check(session_state(slug, sid)["outline"] is not None, "no outline yet")
+    if p.get("mode") == "apply":
+        review = _editor_files(d, "review")
+        _check(bool(review), "no editor review yet")
+        before = len(_editor_files(d, "applied"))
+        ids = ",".join(p.get("ids") or [])
+        job.step("editor_apply", "running")
+        await _claude(job, f"/story-editor --session {d} --apply {ids}\n\nRun non-interactively: do not ask "
+                           "questions; apply exactly these findings of " + review[-1].name + "." + UI_NOTE,
+                      "editor_apply", 7200)
+        _check(len(_editor_files(d, "applied")) > before, "editor/applied_vN.json was not written")
+        job.step("editor_apply", "done")
+        st = session_state(slug, sid)
+        await enforce_story_contract(job, d, "episodes" if st["episodes"] else "outline")
+        if p.get("rereview"):
+            await editor_review(job, d)
+    else:
+        _check(await editor_review(job, d), "editor review was not written")
+    return {"slug": slug, "session_id": sid}
+
+
+DIALOGUE_LINT = config.SKILLS / "dialogue-polish" / "_dialogue_lint.py"
+
+
+def _dialogue_lint(d: Path) -> dict:
+    import subprocess
+    subprocess.run(["python3", str(DIALOGUE_LINT), "lint", str(d)], cwd=str(config.ROOT),
+                   capture_output=True, text=True, timeout=120)
+    try:
+        return json.loads((d / "dialogue_check.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"counts": {}, "items": [], "episodes": {}}
+
+
+def refresh_dialogue_examples():
+    """Re-collect lines reviewers edited by hand (data/dialogue_examples.json). Cheap; never raises."""
+    import subprocess
+    try:
+        subprocess.run(["python3", str(DIALOGUE_LINT), "examples"], cwd=str(config.ROOT),
+                       capture_output=True, text=True, timeout=60)
+    except Exception:
+        pass
+
+
+def dialogue_view(slug: str, session_id: str) -> dict | None:
+    """Flagged lines (fresh lint) + the latest polish round's before/after, for the UI."""
+    st = session_state(slug, session_id)
+    if not st["episodes"]:
+        return None
+    d = st["dir"]
+    rep = _dialogue_lint(d)
+    polishes = sorted((d / "dialogue").glob("polish_v*.json"), key=_version)
+    last = None
+    if polishes:
+        try:
+            last = {**json.loads(polishes[-1].read_text(encoding="utf-8")), "file": polishes[-1].name}
+        except (OSError, json.JSONDecodeError):
+            pass
+    ex = config.DATA / "dialogue_examples.json"
+    try:
+        examples = json.loads(ex.read_text(encoding="utf-8")).get("count", 0) if ex.exists() else 0
+    except (OSError, json.JSONDecodeError):
+        examples = 0
+    names = {}
+    bible = latest(d.glob("bible_v*.json"))
+    try:
+        b = json.loads(bible.read_text(encoding="utf-8")) if bible else {}
+        names = {c.get("character_id"): c.get("name") for c in b.get("cast") or b.get("characters") or [] if isinstance(c, dict)}
+    except (OSError, json.JSONDecodeError):
+        pass
+    items = [{**it, "name": names.get(it.get("character"))} for it in rep.get("items", [])]
+    if last:
+        last["changes"] = [{**c, "name": names.get(c.get("character"))} for c in last.get("changes") or []]
+    return {"checked_at": rep.get("checked_at"), "counts": rep.get("counts", {}), "items": items,
+            "episodes": rep.get("episodes", {}), "last_polish": last, "examples": examples}
+
+
+async def run_polish(job: Job) -> dict:
+    """Web job: /dialogue-polish on the given episodes (all when empty), then re-check the story."""
+    p = job.data["params"]
+    slug, sid = p["slug"], p["session_id"]
+    st = session_state(slug, sid)
+    _check(bool(st["episodes"]), "no episodes yet")
+    d = st["dir"]
+    refresh_dialogue_examples()
+    before = len(list((d / "dialogue").glob("polish_v*.json")))
+    eps = [int(n) for n in p.get("episodes") or []]
+    job.step("dialogue", "running")
+    await _claude(job, f"/dialogue-polish --session {d}" + (f" --episodes {','.join(map(str, eps))}" if eps else "")
+                  + "\n\nRun non-interactively: do not ask questions." + UI_NOTE, "dialogue", 7200)
+    _check(len(list((d / "dialogue").glob("polish_v*.json"))) > before, "dialogue/polish_vN.json was not written")
+    rep = _dialogue_lint(d)
+    job.step("dialogue", "done", flagged=len(rep.get("items", [])))
+    await enforce_story_contract(job, d, "episodes")
+    return {"slug": slug, "session_id": sid}
+
+
 async def create_skill(job: Job) -> dict:
     p = job.data["params"]
     run_dir, slug = Path(p["run_dir"]), p["slug"]
@@ -324,6 +478,7 @@ async def write_outline(job: Job) -> dict:
     _check(st["outline"] is not None, "outline was not written")
     job.step("outline", "done")
     await enforce_story_contract(job, d, "outline")
+    await editor_review(job, d)
     return {"slug": slug, "session_id": sid}
 
 

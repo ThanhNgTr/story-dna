@@ -23,7 +23,7 @@ from . import api, config, hidden
 from .jobs import JobManager
 from .pipeline import analyze, series
 from .pipeline import assets as asset_images
-from .pipeline import summary
+from .pipeline import package, summary
 
 APP_DIR = Path(__file__).parent
 app = FastAPI(title="story-dna")
@@ -36,7 +36,8 @@ jobs = JobManager()
 JOB_FUNCS = {"analysis": analyze.run_analysis, "skill": series.create_skill,
              "outline": series.write_outline, "refine": series.refine, "continue": series.continue_series,
              "images": asset_images.run_images_job, "assets": series.build_assets, "summary": summary.run_summary_job,
-             "story": series.fix_story}
+             "story": series.fix_story, "shotlist": package.run_shotlist_job,
+             "editor": series.run_editor, "dialogue": series.run_polish}
 
 LANGUAGES = [("", "Tự nhận diện"), ("vi", "Tiếng Việt"), ("en", "Tiếng Anh"), ("zh", "Tiếng Trung"),
              ("ko", "Tiếng Hàn"), ("ja", "Tiếng Nhật"), ("th", "Tiếng Thái")]
@@ -54,6 +55,10 @@ STEPS = {"extract": "Dò cắt cảnh, chia đoạn, lấy khung hình", "transc
          "images": "Tạo ảnh tham chiếu bằng Codex (nhân vật, trang phục, bối cảnh)",
          "assets": "Lập / cập nhật kho nhân vật, trang phục, bối cảnh",
          "summary": "Tóm tắt tiếng Việt",
+         "dialogue": "Làm rõ lời thoại (giữ nguyên cảnh, thời lượng)",
+         "editor": "Biên tập kịch bản: chấm chiều sâu, đề xuất sửa",
+         "editor_apply": "Áp dụng các sửa của biên tập",
+         "shotlist": "Tạo prompt video từng shot (script-to-shotlist)",
          "story_check": "Kiểm tra cốt truyện (mở đầu → kết, nhân vật, bối cảnh, cao trào, bí ẩn)"}
 STEP_FIELDS = {"units": "đoạn", "total": "tổng", "shots": "shot", "done": "xong", "language": "ngôn ngữ",
                "segments": "câu thoại", "phase": "giai đoạn", "skill": "skill", "version": "phiên bản",

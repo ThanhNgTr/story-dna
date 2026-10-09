@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Check, CheckCircle2, Clock, Film, ListChecks, Shirt, X } from 'lucide-react'
+import { Check, CheckCircle2, Clock, Download, Film, ListChecks, PenLine, Shirt, X } from 'lucide-react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
 import { ConfirmAction } from '@/components/ConfirmAction'
@@ -49,6 +49,15 @@ function NextAction({ p }: { p: Project }) {
     },
     onError: (e) => toast.error((e as Error).message),
   })
+  const shots = useMutation({
+    mutationFn: () => api.makeShotlist(p.slug, p.session_id),
+    onSuccess: () => {
+      askNotificationPermission()
+      toast.success('Claude đang tạo prompt video. Nút tải hiện ở từng tập khi xong.')
+      qc.invalidateQueries({ queryKey: ['project', p.slug, p.session_id] })
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
   const busy = !!p.job
   const range = p.missing.length ? `tập ${p.missing[0]}${p.missing.length > 1 ? `–${p.missing.at(-1)}` : ''}` : ''
 
@@ -57,9 +66,21 @@ function NextAction({ p }: { p: Project }) {
     title = 'Đang xử lý'
     body = 'Có việc đang chạy cho series này. Khi xong trang sẽ tự cập nhật.'
   } else if (p.final_complete) {
+    const noPrompts = p.episodes.filter((e) => e.in_final && !e.has_prompts).length
     title = 'Season đã chốt'
-    body = 'Bản cuối nằm trong thư mục final/. Có thể tải file biên kịch, hoặc lập kho ngoại hình để sản xuất.'
-    action = <Button render={<a href={`/series/${p.slug}/${p.session_id}/export`} />} variant="outline">Tải file biên kịch .md</Button>
+    body = noPrompts
+      ? <>Bước tiếp: tạo prompt video cho {noPrompts} tập (Claude chia mỗi tập thành shot 1–5s, mỗi shot một prompt kèm ảnh tham chiếu đã duyệt). Xong, mỗi thẻ tập có nút “Tải gói video”.</>
+      : 'Mọi tập đã có prompt video: tải gói video ở từng thẻ tập bên dưới.'
+    action = (
+      <div className="flex flex-wrap gap-2">
+        {noPrompts > 0 && (
+          <ConfirmAction trigger={<Button>Tạo prompt video ({noPrompts} tập)</Button>} title="Tạo prompt video?"
+            description={<>Claude tạo shotlist + prompt cho {noPrompts} tập chưa có (khoảng {Math.ceil(noPrompts / 4) * 5}–{Math.ceil(noPrompts / 4) * 10} phút). Nên duyệt ảnh nhân vật / bối cảnh trước để prompt gắn ảnh tham chiếu.</>}
+            confirmLabel="Tạo" pending={shots.isPending} onConfirm={() => shots.mutateAsync()} />
+        )}
+        <Button render={<a href={`/series/${p.slug}/${p.session_id}/export`} />} variant="outline">Tải file biên kịch .md</Button>
+      </div>
+    )
   } else if (p.docs.outline.length && p.missing.length) {
     title = 'Đọc outline rồi duyệt'
     body = <>Duyệt xong, Claude viết {range} theo outline (khoảng {p.missing.length * 2}–{p.missing.length * 3} phút). Chưa ổn thì góp ý ở trang Outline.</>
@@ -174,13 +195,28 @@ export function OverviewPage() {
 
       <StoryCheckCard p={p} />
 
+      {p.editor && (
+        <Link to={`${base}/editor`} className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-5 text-sm transition hover:border-primary/40">
+          <PenLine className="size-4" />
+          <span className="font-medium">Biên tập kịch bản</span>
+          <span className={cn('font-semibold tabular-nums', p.editor.verdict === 'pass' ? 'text-success' : 'text-warning')}>
+            {p.editor.average.toFixed(1)}/5 · {p.editor.verdict === 'pass' ? 'Đạt' : 'Cần sửa'}
+          </span>
+          <span className="text-muted-foreground">
+            {p.editor.findings.high} nặng, {p.editor.findings.medium} vừa, {p.editor.findings.low} nhẹ
+            {p.editor.applied ? ` · đã sửa ${p.editor.applied}` : ''}{p.editor.stale ? ' · kịch bản đã đổi, nên biên tập lại' : ''}
+          </span>
+          <span className="ml-auto text-primary">Mở →</span>
+        </Link>
+      )}
+
       <section>
         <h2 className="mb-3 text-base font-semibold">Các tập</h2>
         {p.episodes.length ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {p.episodes.map((e) => (
-              <Link key={e.n} to={`${base}/ep/${e.n}`}
-                className="group rounded-xl border bg-card p-4 transition hover:border-primary/40 hover:shadow-sm">
+              <div key={e.n} className="flex flex-col rounded-xl border bg-card transition hover:border-primary/40 hover:shadow-sm">
+              <Link to={`${base}/ep/${e.n}`} className="group flex-1 p-4">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span className="font-medium tabular-nums">TẬP {String(e.n).padStart(2, '0')}</span>
                   <span className="flex items-center gap-2">
@@ -193,6 +229,13 @@ export function OverviewPage() {
                 <h3 className="mt-1.5 font-semibold group-hover:text-primary">{e.title ?? `Tập ${e.n}`}</h3>
                 {e.logline && <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{e.logline}</p>}
               </Link>
+              {e.has_prompts && (
+                <a href={api.packageUrl(p.slug, p.session_id, e.n)} download
+                  className="inline-flex items-center gap-1 border-t px-4 py-2 text-xs text-primary hover:underline">
+                  <Download className="size-3" /> Tải gói video (Higgsfield)
+                </a>
+              )}
+              </div>
             ))}
           </div>
         ) : <p className="text-sm text-muted-foreground">Chưa có tập nào. Duyệt outline để Claude bắt đầu viết.</p>}

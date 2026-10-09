@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Clock, GitCompare, MessageSquare, PencilLine } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clapperboard, Clock, Download, Sparkles, GitCompare, MessageSquare, PencilLine } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -10,6 +10,7 @@ import { BeatRow, CharacterChip, Cliffhanger, SceneHeader, SceneTimeline, type R
 import { approvedOf, thumb } from '@/components/looks/ImageTile'
 import { useLooks } from '@/components/looks/useLooks'
 import { castOf } from '@/components/screenplay/cast'
+import { ConfirmAction } from '@/components/ConfirmAction'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
@@ -73,6 +74,55 @@ function selectionIn(el: HTMLElement | null): string {
   const sel = window.getSelection()
   if (!el || !sel || sel.isCollapsed || !sel.anchorNode || !el.contains(sel.anchorNode)) return ''
   return sel.toString().trim().slice(0, 300)
+}
+
+function PolishEpisodeButton({ n, busy }: { n: number; busy: boolean }) {
+  const p = useProject()
+  const qc = useQueryClient()
+  const run = useMutation({
+    mutationFn: () => api.polishDialogue(p.slug, p.session_id, [n]),
+    onSuccess: () => {
+      toast.success(`Claude đang làm rõ thoại tập ${n}. Xong, bấm “So sánh phiên bản” để xem câu nào đổi.`)
+      qc.invalidateQueries({ queryKey: ['project', p.slug, p.session_id] })
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
+  return (
+    <ConfirmAction trigger={<Button variant="outline" size="sm" className="gap-1.5" disabled={busy}><Sparkles className="size-3.5" /> Làm rõ thoại</Button>}
+      title={`Làm rõ thoại tập ${n}?`} confirmLabel="Làm rõ" pending={run.isPending} onConfirm={() => run.mutateAsync()}
+      description="Claude viết lại thoại và lời dẫn cho dễ hiểu, tự nhiên (theo quy tắc thoại tiếng Việt và cách bạn từng sửa tay). Chỉ đổi câu chữ; cảnh, thời lượng giữ nguyên. Kết quả là phiên bản mới, bản cũ vẫn giữ (khoảng 3–6 phút)." />
+  )
+}
+
+function VideoPackageButton({ n, busy }: { n: number; busy: boolean }) {
+  const p = useProject()
+  const qc = useQueryClient()
+  const ep = p.episodes.find((e) => e.n === n)
+  const make = useMutation({
+    mutationFn: () => api.makeShotlist(p.slug, p.session_id, [n]),
+    onSuccess: () => {
+      toast.success(`Claude đang tạo prompt video tập ${n} (khoảng 3–8 phút).`)
+      qc.invalidateQueries({ queryKey: ['project', p.slug, p.session_id] })
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
+  if (!ep) return null
+  if (ep.has_prompts) {
+    return (
+      <Button variant="outline" size="sm" className="gap-1.5" render={<a href={api.packageUrl(p.slug, p.session_id, n)} download />}
+        title="Gói zip cho Higgsfield: prompt từng shot, ảnh tham chiếu, phụ đề .srt, danh sách dựng .csv">
+        <Download className="size-3.5" /> Tải gói video
+      </Button>
+    )
+  }
+  return (
+    <Button variant="outline" size="sm" className="gap-1.5" disabled={busy || !ep.in_final || make.isPending}
+      onClick={() => make.mutate()}
+      title={!ep.in_final ? 'Chốt season trước: prompt video tạo từ bản cuối' : busy ? 'Đang có việc chạy cho series này'
+        : 'Chia tập thành shot 1–5s và viết prompt video cho từng shot'}>
+      <Clapperboard className="size-3.5" /> Tạo prompt video
+    </Button>
+  )
 }
 
 export function EpisodePage() {
@@ -239,6 +289,8 @@ export function EpisodePage() {
                   <GitCompare className="size-3.5" /> {view === 'compare' ? 'Thoát so sánh' : 'So sánh phiên bản'}
                 </Button>
               )}
+              {view !== 'edit' && <PolishEpisodeButton n={n} busy={busy} />}
+              {view !== 'edit' && <VideoPackageButton n={n} busy={busy} />}
               {view !== 'edit' ? (
                 <Button variant="outline" size="sm" className="gap-1.5" disabled={busy} onClick={startEdit}
                   title={busy ? 'Đang có việc chạy cho series này' : 'Sửa chữ trực tiếp, lưu thành phiên bản mới'}>

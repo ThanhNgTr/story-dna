@@ -1,6 +1,6 @@
 ---
 name: write-series-urban-fantasy-romance
-version: v3
+version: v4
 description: |
   Turn a rough or fragmented story idea into a 10-20 episode vertical micro-drama series
   (60-120s episodes) told the way an urban-fantasy dragon-shifter romance melodrama is told:
@@ -85,6 +85,9 @@ Save `input.json` first (raw idea text, all flags, resolved defaults, ISO timest
   `assets/assets_v1.md/.json`: fixed face/hair/body per character, default + planned outfits,
   canonical locations with day/night variants, key props. Show it together with the outline; look
   feedback goes to `/series-assets --feedback`.
+- **Dialogue setup**: the bible also has `address_matrix` (xưng hô per character pair) and
+  `glossary` (world terms + plain explanation + first episode), and `voice.style` in the
+  screenplay's language (see `.claude/skills/dialogue-polish/references/vi-dialogue.md`).
 - **Story contract (outline)**: bible + outline carry the contract fields (`main_plot`, `ending`,
   `relation_to_main`, `arc`, `setting_timeline`, `climaxes`, ledger `tier` + `answer`; outline
   `act`, `main_plot_step`, `locations`, `setting_change`, `climax`). Then
@@ -106,6 +109,8 @@ Save `input.json` first (raw idea text, all flags, resolved defaults, ISO timest
   callbacks, timecodes adding up to `--episode-sec` per episode.
 - Then `python3 .claude/skills/series-assets/_assets.py lint <session-dir>` -> 0 errors, and
   `/series-assets --session <session-dir>` (scene map, `new_assets` get real IDs, drift report).
+- Dialogue: `python3 .claude/skills/dialogue-polish/_dialogue_lint.py lint <session-dir>`; rewrite
+  flagged lines that fail `.claude/skills/dialogue-polish/references/vi-dialogue.md` before reporting done.
 - Story contract: `python3 .claude/skills/story-contract/_story_check.py <session-dir>` -> 0 errors
   (dialogue in every episode, ledger as planned, last episode carries `ending` and resolves the
   central question on screen).
@@ -319,6 +324,16 @@ the aftermath of power; one class-contrast prop (a key, a patched window, a coat
 
 **Language**: write the screenplay in the language of the user's idea unless told otherwise.
 
+### Dialogue language (overrides the numbers and lines above on conflict)
+
+Vietnamese (or any non-English) screenplay: follow `.claude/skills/dialogue-polish/references/vi-dialogue.md`. Clarity first: the viewer watches
+once on a phone; hide facts, not grammar. The reference lines above show ATTITUDE only: never
+translate their sentence shape. Line lengths above are averages, not caps: a line may run to ~18
+words when it needs to be clear. No chains of noun fragments, no riddle lines, at most 1-2 VO
+metaphors per episode, xưng hô fixed by the bible `address_matrix`, world terms explained plainly
+the first time (`glossary`). Imitate the newest hand edits in `data/dialogue_examples.json` when it
+exists (how this reviewer rewrites lines).
+
 ## Visual Guidance
 
 ### Camera
@@ -447,6 +462,8 @@ Before reporting Stage 3 complete:
 - [ ] The cold lead's warmth is shown only through involuntary tells, never a confession
 - [ ] Story contract: `_story_check.py` reports 0 errors (complete plot, happy/bad ending shown,
       main + supporting cast, dialogue, setting timeline, climaxes, every mystery answered but <=1)
+- [ ] Dialogue reads as natural spoken language: no noun-fragment chains or riddle lines, xưng hô
+      per `address_matrix`, terms explained once; `_dialogue_lint.py` flags fixed or justified
 
 ## Data limits
 
@@ -482,3 +499,4 @@ Before reporting Stage 3 complete:
   bible-only registry at Stage 2, scene IDs + outfits per Stage 3 episode-contract, lint in the
   continuity pass. No story/style rule changed.
 - v3 (2026-10-08T09:41:01Z): story contract (story-contract skill): complete plot to a happy/bad ending shown in the last episode, main_plot / ending / setting_timeline / climaxes / ledger answers in bible + outline, _story_check.py at Stage 2 and 3. Finale and unanswered-question rules now apply to episodes 1..N-1 only (drift from the reference's open ending, requested by the user).
+- v4 (2026-10-09T03:52:39Z): dialogue clarity: Vietnamese dialogue guide (.claude/skills/dialogue-polish/references/vi-dialogue.md) overrides word caps and 'ambiguous line' rules; bible address_matrix + glossary; _dialogue_lint.py in Stage 3; imitate reviewer hand edits. Reason: user reported unclear, riddle-like Vietnamese lines needing heavy edits.

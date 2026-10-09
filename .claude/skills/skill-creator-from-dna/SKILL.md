@@ -122,6 +122,7 @@ Session dir: data/series/<slug>/<session-id>/ (session-id = UTC YYYYMMDD-HHMMSS)
 - Outline: one row per episode — title, logline, beats, which Story Template beat(s) it carries (% position), reveal/clue, cliffhanger type, characters.
 - Spread: map Story Template % positions onto episodes (beat at p% -> episode ceil(p/100 * N)).
 - Looks: after the bible, run /series-assets --session <session-dir> (bible-only) -> assets/assets_v1.md/.json (fixed faces, default + planned outfits, canonical locations with variants, key props). Show it with the outline.
+- Dialogue setup: bible also has address_matrix (xưng hô per pair) + glossary (world terms) per .claude/skills/dialogue-polish/references/vi-dialogue.md.
 - Story contract: bible + outline carry the fields of .claude/skills/story-contract/references/story-contract.md (main_plot, ending, setting_timeline, climaxes, ledger tier + answer; outline act, main_plot_step, locations, setting_change, climax); python3 .claude/skills/story-contract/_story_check.py <session-dir> --stage outline -> 0 errors.
 - STOP and show the outline unless --auto. User approves with /refine-skill <slug> --approve outline or gives feedback.
 
@@ -131,6 +132,7 @@ Session dir: data/series/<slug>/<session-id>/ (session-id = UTC YYYYMMDD-HHMMSS)
 - N > 6: write in parallel with general-purpose subagents, 3-4 episodes each; give each the bible, outline, this SKILL.md path and its episode numbers.
 - Continuity pass after all episodes: names, visual signatures (verbatim), ledger timing, callbacks, timecodes adding up.
 - Then python3 .claude/skills/series-assets/_assets.py lint <session-dir> -> 0 errors, and /series-assets --session <session-dir> (scene map, new_assets get real IDs, drift report).
+- python3 .claude/skills/dialogue-polish/_dialogue_lint.py lint <session-dir>; rewrite flagged lines that fail the dialogue guide.
 - python3 .claude/skills/story-contract/_story_check.py <session-dir> -> 0 errors.
 - Write series.md (index + all episodes) and reply with: outline table, open threads, file paths.
 
@@ -164,6 +166,10 @@ want vs need, voice pattern, arc pattern, Ref (name in reference)>
 
 ## Tone & Voice Guidelines
 <tone; dialogue: speech share, wpm -> words per episode, line length, VO share; 3-5 reference lines as style examples>
+
+### Dialogue language
+<copy the "Dialogue language" paragraph from write-series-hollow-pine verbatim: the vi
+dialogue guide overrides word caps; reference lines show attitude only, never translated shape>
 
 ## Visual Guidance
 ### Camera

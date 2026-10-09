@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, BookOpen, FileText, History, Home, Images, Lightbulb, ListOrdered, MapPin, Package, Shirt } from 'lucide-react'
+import { AlertTriangle, BookOpen, FileText, History, MessageSquareQuote, PenLine, RefreshCw, Home, Images, Lightbulb, ListOrdered, MapPin, Package, Shirt } from 'lucide-react'
 import { Link, NavLink, Outlet, useOutletContext, useParams } from 'react-router'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -60,6 +60,14 @@ export function ProjectLayout() {
           {p.docs.canon.length > 0 && <SideLink to={`${base}/doc/canon`} icon={FileText}>Đối chiếu video</SideLink>}
           {p.docs.bible.length > 0 && <SideLink to={`${base}/doc/bible`} icon={BookOpen}>Series bible</SideLink>}
           {p.docs.outline.length > 0 && <SideLink to={`${base}/doc/outline`} icon={ListOrdered}>Outline</SideLink>}
+          {p.docs.outline.length > 0 && (
+            <SideLink to={`${base}/editor`} icon={PenLine} extra={p.editor ? (
+              <span className={cn('text-xs tabular-nums', p.editor.verdict === 'pass' ? 'text-success' : 'text-warning')}>
+                {p.editor.average.toFixed(1)}
+              </span>
+            ) : undefined}>Biên tập</SideLink>
+          )}
+          {p.episodes.length > 0 && <SideLink to={`${base}/dialogue`} icon={MessageSquareQuote}>Lời thoại</SideLink>}
           <Group>Kịch bản</Group>
           {p.episodes.length ? p.episodes.map((e) => (
             <SideLink key={e.n} to={`${base}/ep/${e.n}`}
@@ -76,6 +84,7 @@ export function ProjectLayout() {
           <SideLink to={`${base}/looks/issues`} icon={AlertTriangle}
             extra={p.assets?.issues ? <span className="text-[11px] text-muted-foreground">{p.assets.issues}</span> : null}>Lỗi liên tục</SideLink>
           <Group>Khác</Group>
+          <SideLink to={`/continue?slug=${encodeURIComponent(slug)}&sid=${encodeURIComponent(sid)}`} icon={RefreshCw}>Viết tiếp từ video đã quay</SideLink>
           <SideLink to={`${base}/history`} icon={History} extra={p.iterations.length ?
             <span className="text-[11px] text-muted-foreground">{p.iterations.length}</span> : null}>Lịch sử góp ý</SideLink>
         </nav>

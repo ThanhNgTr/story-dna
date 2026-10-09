@@ -50,6 +50,10 @@ export const STEP_LABEL: Record<string, string> = {
   diff: 'So lời thoại kịch bản với video',
   images: 'Tạo ảnh tham chiếu bằng Codex',
   assets: 'Lập / cập nhật kho nhân vật, bối cảnh',
+  shotlist: 'Tạo prompt video từng shot',
+  editor: 'Biên tập kịch bản: chấm chiều sâu',
+  dialogue: 'Làm rõ lời thoại',
+  editor_apply: 'Áp dụng sửa của biên tập',
   story_check: 'Kiểm tra cốt truyện (mở đầu → kết, nhân vật, bối cảnh, cao trào, bí ẩn)',
 }
 
