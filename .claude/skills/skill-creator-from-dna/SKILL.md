@@ -30,11 +30,13 @@ After `/analyze-videos` produced `dna.json` + `story.md`. Rare step: once per re
 | `update` | More reference for an EXISTING skill | Same skill, vN+1, DNA merged |
 
 Slug exists and no `--update` -> stop, ask: new slug or update. Never overwrite silently.
+Headless ("Run non-interactively"): never overwrite; create `<slug>-2` (next free suffix) and say so.
 
 `update`:
 1. Snapshot live SKILL.md -> `versions/SKILL_vN.md` (and `references/` -> `versions/references_vN/`).
 2. Merge: keep rules both DNAs agree on; add new patterns/roles; on conflict prefer new DNA and log it.
-3. Keep rules added by `/refine-skill` (see `## Changelog`) unless new DNA contradicts them -> ask user.
+3. Keep rules added by `/refine-skill` (see `## Changelog`) unless new DNA contradicts them -> ask user
+   (headless: keep the refine-skill rule and list the conflict in the changelog line).
 4. Bump version, changelog line, metadata `write-series-<slug>_vN+1.json` with `dna_sources: [old, new]`.
 
 ## What to Generate
@@ -61,7 +63,9 @@ So the skill stores the reference plot twice:
 
 Derive the Story Template from `story.acts`, `story.plot_timeline`, `story.mystery_ledger`,
 `story.subplots`, `story.character_arcs`, `story.episode_break_candidates`. Express positions in %
-of runtime so they scale to any season length (10-20 episodes).
+of runtime so they scale to any season length (10-20 episodes). The reference may have 4-5 acts; the
+outline's `act` field is the story contract's 1-3: write the mapping in the skill
+("Outline `act` field: style act 1 -> 1, ... -> 3")
 
 Derive the Episode Template from `episode_break_candidates` spacing, `craft.storytelling.reveal_rhythm_sec`,
 `craft.pacing`, and the strongest hook patterns. Target 60-120s episodes.
@@ -122,7 +126,7 @@ Session dir: data/series/<slug>/<session-id>/ (session-id = UTC YYYYMMDD-HHMMSS)
 - Outline: one row per episode — title, logline, beats, which Story Template beat(s) it carries (% position), reveal/clue, cliffhanger type, characters.
 - Spread: map Story Template % positions onto episodes (beat at p% -> episode ceil(p/100 * N)).
 - Looks: after the bible, run /series-assets --session <session-dir> (bible-only) -> assets/assets_v1.md/.json (fixed faces, default + planned outfits, canonical locations with variants, key props). Show it with the outline.
-- Dialogue setup: bible also has address_matrix (xưng hô per pair) + glossary (world terms) per .claude/skills/dialogue-polish/references/vi-dialogue.md.
+- Dialogue setup: bible also has address_matrix (xưng hô per pair) + glossary (ONLY invented/unusual terms and how a character or sign makes them clear; never everyday words) per .claude/skills/dialogue-polish/references/vi-dialogue.md.
 - Story contract: bible + outline carry the fields of .claude/skills/story-contract/references/story-contract.md (main_plot, ending, setting_timeline, climaxes, ledger tier + answer; outline act, main_plot_step, locations, setting_change, climax); python3 .claude/skills/story-contract/_story_check.py <session-dir> --stage outline -> 0 errors.
 - STOP and show the outline unless --auto. User approves with /refine-skill <slug> --approve outline or gives feedback.
 
@@ -132,7 +136,7 @@ Session dir: data/series/<slug>/<session-id>/ (session-id = UTC YYYYMMDD-HHMMSS)
 - N > 6: write in parallel with general-purpose subagents, 3-4 episodes each; give each the bible, outline, this SKILL.md path and its episode numbers.
 - Continuity pass after all episodes: names, visual signatures (verbatim), ledger timing, callbacks, timecodes adding up.
 - Then python3 .claude/skills/series-assets/_assets.py lint <session-dir> -> 0 errors, and /series-assets --session <session-dir> (scene map, new_assets get real IDs, drift report).
-- python3 .claude/skills/dialogue-polish/_dialogue_lint.py lint <session-dir>; rewrite flagged lines that fail the dialogue guide.
+- python3 .claude/skills/dialogue-polish/_dialogue_lint.py lint <session-dir>; rewrite flagged lines that fail the dialogue guide. definition / narrates_action flags must be 0 (a line that explains a word or retells the shot is cut, shown, or turned into speech between the characters on screen).
 - python3 .claude/skills/story-contract/_story_check.py <session-dir> -> 0 errors.
 - Write series.md (index + all episodes) and reply with: outline table, open threads, file paths.
 
@@ -165,11 +169,19 @@ want vs need, voice pattern, arc pattern, Ref (name in reference)>
 <measured numbers: avg/median shot, cuts/min, shots per episode-length, by act>
 
 ## Tone & Voice Guidelines
-<tone; dialogue: speech share, wpm -> words per episode, line length, VO share; 3-5 reference lines as style examples>
+<tone; dialogue: speech share, wpm -> words per episode (reference measure; the limit is vi-dialogue.md "Speech rate"), line length, VO share; 3-5 reference lines as style examples>
 
 ### Dialogue language
-<copy the "Dialogue language" paragraph from write-series-hollow-pine verbatim: the vi
-dialogue guide overrides word caps; reference lines show attitude only, never translated shape>
+Write this paragraph (adapt only the screenplay language):
+Vietnamese (or any non-English) screenplay: follow `.claude/skills/dialogue-polish/references/vi-dialogue.md`
+(it overrides the numbers and lines above on conflict). Clarity first: the viewer watches once on a
+phone; hide facts, not grammar. The reference lines above show ATTITUDE only: never translate their
+sentence shape. Line lengths are averages, not caps. Xưng hô fixed by the bible `address_matrix`.
+Lines are speech, not description: characters talk TO each other for a reason; VO says what the
+image cannot (never retells the shot, never defines a word); invented terms become clear in use,
+everyday words are never explained; every scene with 2+ characters on screen has a spoken exchange.
+The reference's VO share is a measured average, not a target: after an opening pitch, VO stays
+<= ~50% of lines. Imitate the newest hand edits in `data/dialogue_examples.json` when it exists.
 
 ## Visual Guidance
 ### Camera
@@ -231,7 +243,8 @@ Logline: ... | Story beats: <template beats> | Cliffhanger: <type>
 {
   "skill": "write-series-<slug>", "skill_version": "v1", "session": "<session-id>",
   "episode": 3, "title": "...", "total_duration_sec": 90, "aspect_ratio": "9:16",
-  "characters": {"char_01": {"name": "...", "visual_signature": "..."}},
+  "logline": "...", "story_beats": "<template beats + %>", "cliffhanger_type": "<hook pattern name>",
+  "characters": {"char_01": {"name": "...", "visual_signature": "<bible, verbatim>", "outfits": ["char_01_o1"]}},
   "scenes": [{"id": "SC1", "start_sec": 0, "end_sec": 12, "location": "<registry name>", "loc_id": "loc_01", "variant_id": "loc_01_night",
     "cast": {"char_01": "char_01_o1"}, "referenced": [], "props": ["prop_01"], "int_ext": "EXT", "time_of_day": "night",
     "beats": [{"start_sec": 0, "end_sec": 1.8, "shot_size": "ECU", "characters": ["char_01"], "action": "...",

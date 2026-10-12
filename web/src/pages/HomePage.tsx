@@ -3,6 +3,7 @@ import { ArrowRight, Clapperboard, EyeOff, Film, MoreHorizontal, Palette, Plus, 
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { toast } from 'sonner'
+import { ConfirmAction } from '@/components/ConfirmAction'
 import { JobRow } from '@/components/JobCenter'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
@@ -76,7 +77,7 @@ function ProjectCard({ p, onHide }: { p: ProjectSummary; onHide: () => void }) {
   )
 }
 
-function SkillCard({ s }: { s: Skill }) {
+function SkillCard({ s, onHide }: { s: Skill; onHide: () => Promise<unknown> }) {
   return (
     <div className="flex flex-col rounded-xl border bg-card p-5">
       <div className="flex items-center gap-2">
@@ -95,6 +96,13 @@ function SkillCard({ s }: { s: Skill }) {
       <div className="mt-4 flex flex-wrap gap-2">
         <Button render={<Link to={`/new?skill=${s.slug}`} />} variant="outline" size="sm">Viết series</Button>
         <Button render={<Link to={`/styles/${s.slug}`} />} variant="ghost" size="sm">Xem luật</Button>
+        <ConfirmAction
+          trigger={<Button variant="ghost" size="sm" className="ml-auto gap-1 text-muted-foreground"><EyeOff className="size-3.5" />Ẩn</Button>}
+          title={`Ẩn phong cách ${s.slug}?`}
+          description={<>Phong cách được cất vào <code>data/archive/skills/</code>: không bị xóa, nhưng trong lúc ẩn Claude không dùng được nó
+            (không viết series mới, không sửa{s.projects ? `, ${s.projects} series đang dùng phong cách này cũng không gửi góp ý được` : ''}).
+            Khôi phục ở “Mục đã ẩn” cuối trang.</>}
+          confirmLabel="Ẩn phong cách" onConfirm={onHide} />
       </div>
     </div>
   )
@@ -246,7 +254,7 @@ export function HomePage() {
           </div>
         </div>
         {skills.data?.length ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{skills.data.map((s) => <SkillCard key={s.slug} s={s} />)}</div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{skills.data.map((s) => <SkillCard key={s.slug} s={s} onHide={() => hide.mutateAsync({ kind: 'skills', item: s.slug }).catch(() => {})} />)}</div>
         ) : skills.isLoading ? <Skeleton className="h-40 rounded-xl" />
           : skills.error ? <p className="text-sm text-muted-foreground">Chưa tải được.</p>
           : <p className="text-sm text-muted-foreground">Chưa có phong cách nào. Học một video mẫu rồi tạo phong cách từ kết quả.</p>}

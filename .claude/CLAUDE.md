@@ -36,10 +36,14 @@ Codex CLI on the user's ChatGPT login (built-in image_gen, no OpenAI API key)
   (theme, protagonist, supporting cast, antagonist, dialogue/subtext, setup/payoff, stakes, emotion,
   originality) scored 1-5 with quoted evidence -> `editor/review_vN.json/.md`; `--apply` writes next
   versions for chosen findings (`editor/applied_vN.json`). Web: auto review after outline; page "Biên tập".
+  Apply is planned by `_editor.py plan` (`editor/apply_plan.json`: source/target per file, episode packages),
+  bible/outline + `editor/apply_notes.json` (per-episode decisions) first, then one subagent per package in
+  parallel; md via `_editor.py render`.
 - **Dialogue clarity** (`.claude/skills/dialogue-polish/`): `references/vi-dialogue.md` overrides style
   word caps / "ambiguous line" rules (hide facts, not grammar; xưng hô per bible `address_matrix`;
-  `glossary`). `_dialogue_lint.py lint <session>` flags unclear lines; `/dialogue-polish` rewrites only
-  dialogue (next versions + `dialogue/polish_vN.json`). Manual edits feed `data/dialogue_examples.json`
+  `glossary` = invented terms only; lines are speech, not description: no definitions, VO never retells the shot). `_dialogue_lint.py lint <session>` flags unclear lines; `/dialogue-polish` rewrites only
+  dialogue (next versions + `dialogue/polish_vN.json`). Speech rate (one limit for every skill): vi-dialogue.md "Speech rate",
+  Vietnamese <= 5.0 syllables/s, lint flag `too_fast`. Manual edits feed `data/dialogue_examples.json`
   (before/after) that writers imitate. Web: page "Lời thoại", button "Làm rõ thoại" per episode.
 - **Feedback loop**: `rule` feedback patches the skill (new version), `story` feedback edits only
   this series. Live SKILL.md = latest; immutable `versions/SKILL_vN.md`.
@@ -97,7 +101,8 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
 5. **Continue after production** (`/continue-series --session <dir> --canon <run>/dna.json --style write-series-<slug> --produced <k> --direction follow|new-arc --new-episodes <m>`)
    - Produced videos are analyzed with step 1, then reconciled with the scripts as CANON (video wins) -> `canon_vN`, bible/outline next version; approve -> only missing episodes are written
    - Works for series produced outside the app (no scripts: bible built from the videos)
-6. **Optional production**: `/script-to-shotlist final/epNN.md` -> `final/shots/epNN/prompts.json`; web "Tải gói video"
+6. **Optional production**: `/script-to-shotlist final/epNN.md` -> `final/shots/epNN/prompts.json` (`"unit": "clip"`: one
+   prompt per 10-15s clip with timed cuts + timed lines; older per-shot files count as `prompts_stale`); web "Tải gói video"
    (`app/pipeline/package.py`) zips per episode: shot prompts + approved refs + `subtitles.srt` + `edit_list.csv`. Then `/direct-video`,
    `/cinematographer-brief`, `/sound-design-brief`, `/production-design-brief`
 
@@ -114,6 +119,12 @@ skills, agents `video-analyst` + `story-merger` + `film-analyst`. Remove: genera
 - Users run the app locally (handoff). Priority of the migration: screenplay reading/review first.
 - After changing `web/`: `cd web && npm run build`, commit `app/static/ui/`. shadcn here uses Base UI: `render={<X />}`, not `asChild`.
 - Manual episode edits and comments never call Claude; they write the next `epNN_vK` / `comments.json`.
+- `final/` can go stale: any draft (bible, outline, epNN, `assets/assets_vN`) newer AND different from its
+  `final/` copy -> `final_stale`, stage "Có sửa sau khi chốt"; "Chốt lại" (`series.refinalize`, no Claude, fresh
+  mtimes) copies it and rebuilds `final/series.md`; prompts built from an older `final/epNN.json` or
+  `final/assets.json` are `prompts_stale`. Shotlist API refuses stale episodes / stale assets.
+- Tests: `.venv/bin/python -m pytest -q` (`tests/`, no Claude/network; `requirements-dev.txt`). Run after touching
+  the check scripts, `app/pipeline/series.py`, `package.py` or the project API payload.
 
 ## OUTPUT STYLE
 
@@ -129,6 +140,8 @@ skills, agents `video-analyst` + `story-merger` + `film-analyst`. Remove: genera
 2. **Evidence**: DNA rules cite time / scene / quoted line. Never invent; mark inferences.
 3. **Versioning**: never overwrite `versions/SKILL_vN.md` or `*_vK` files; metadata `write-series-<slug>_vN.json`
 4. **History**: `data/series/<slug>/<session-id>/iterations.json` logs every feedback round
+   (`{session, slug, rounds: [...]}`; old sessions are a plain list: app code reads/writes ONLY via
+   `app/pipeline/iterations.py`, skills append to `rounds` and never replace earlier rounds)
 5. **Error recovery**: no audio -> visual-only dialogue (`inferred`); detection fails -> uniform frames; agent fails -> re-run that unit only
 
 ## ARCHITECTURE PATTERNS

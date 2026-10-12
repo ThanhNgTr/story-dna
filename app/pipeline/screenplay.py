@@ -52,8 +52,23 @@ def _dialogue(ep: dict, beat: dict) -> str:
     return "<br>".join(parts) or "—"
 
 
+TIME_VI = {"day": "NGÀY", "night": "ĐÊM", "dawn": "BÌNH MINH", "dusk": "CHẠNG VẠNG", "morning": "SÁNG",
+           "noon": "TRƯA", "afternoon": "CHIỀU", "evening": "TỐI"}
+
+
+def _heading(sc: dict) -> str:
+    """'INT. PLACE — ĐÊM': the scene heading of the skill's Output Format, time of day included."""
+    head = sc.get("heading") or f"{sc.get('int_ext', '')}. {str(sc.get('location', '')).upper()}".strip(". ")
+    tod = str(sc.get("time_of_day") or "").strip()
+    word = TIME_VI.get(tod.lower(), tod.upper())
+    if word and word.lower() not in head.lower():
+        head = f"{head} — {word}"
+    return head
+
+
 def render_md(ep: dict) -> str:
-    """Episode JSON -> the skill's Markdown screenplay (header, cast, one table per scene, cliffhanger, ledger)."""
+    """Episode JSON -> the skill's Markdown screenplay (style skill "Output Format"): header, cast, one table
+    per scene with its heading, IDs and props, then new assets, cliffhanger, ending and ledger."""
     head = [f"# EP{int(ep.get('episode', 0)):02d} — {ep.get('title', '')} ({ep.get('total_duration_sec', '?')}s)"]
     meta = [f"Logline: {ep.get('logline', '')}"]
     if ep.get("story_beats"):
@@ -65,25 +80,33 @@ def render_md(ep: dict) -> str:
     cast = [f"{c.get('name', cid)} ({cid}) — {c.get('visual_signature')}"
             for cid, c in (ep.get("characters") or {}).items() if c.get("visual_signature")]
     out = head + ["", "Nhân vật: " + "; ".join(cast), ""] if cast else head + [""]
-    n = 0
     for sc in ep.get("scenes", []):
         ids = ""
         if sc.get("loc_id") or sc.get("cast"):
             who = ", ".join(f"{c}:{o.removeprefix(c + '_')}" for c, o in (sc.get("cast") or {}).items())
-            ids = "  {" + " · ".join(x for x in (sc.get("loc_id"), who) if x) + "}"
-        heading = sc.get("heading") or f"{sc.get('int_ext', '')}. {str(sc.get('location', '')).upper()}"
-        out += [f"### {sc.get('id')} [{_t(sc.get('start_sec', 0))}-{_t(sc.get('end_sec', 0))}] {heading}{ids}",
-                "| # | Time | Shot | Action | Dialogue / VO | Camera | Light/Color | Sound |",
-                "|---|---|---|---|---|---|---|---|"]
+            ids = "  {" + " · ".join(x for x in (sc.get("loc_id"), sc.get("variant_id"), who) if x) + "}"
+        out.append(f"### {sc.get('id')} [{_t(sc.get('start_sec', 0))}-{_t(sc.get('end_sec', 0))}] {_heading(sc)}{ids}")
+        if sc.get("props"):
+            out.append("Props: " + ", ".join(map(str, sc["props"])))
+        out += ["| Time | Shot | Action | Dialogue / VO | Camera | Light/Color | Sound |",
+                "|---|---|---|---|---|---|---|"]
         for b in sc.get("beats", []):
-            n += 1
             dur = float(b.get("end_sec", 0)) - float(b.get("start_sec", 0))
             shot = _cell(b.get("shot_size")) + (f" **[GIỮ {dur:.0f}s]**" if dur >= HELD_SEC else "")
-            out.append(f"| {n} | {b.get('start_sec')}-{b.get('end_sec')} | {shot} | {_cell(b.get('action'))} | "
+            out.append(f"| {b.get('start_sec')}-{b.get('end_sec')} | {shot} | {_cell(b.get('action'))} | "
                        f"{_dialogue(ep, b)} | {_cell(b.get('camera'))} | {_cell(b.get('lighting_color'))} | {_cell(b.get('sound'))} |")
         out.append("")
+    new_assets = [a for a in ep.get("new_assets") or [] if isinstance(a, dict)]
+    if new_assets:
+        out += ["**Tài sản mới đề xuất:** " + "; ".join(
+            f"{a.get('id') or a.get('temp_id') or '?'} ({a.get('kind', '')}): {a.get('desc') or a.get('description') or ''}".strip()
+            for a in new_assets), ""]
     if ep.get("cliffhanger"):
-        out += [f"**Cliffhanger:** {ep['cliffhanger']}", ""]
+        kind = f" ({ep['cliffhanger_type']})" if ep.get("cliffhanger_type") else ""
+        out += [f"**Cliffhanger{kind}:** {ep['cliffhanger']}", ""]
+    end = ep.get("ending")
+    if isinstance(end, dict) and end.get("type"):
+        out += [f"**Kết ({end['type']}):** {end.get('central_question_answer') or end.get('what_happens') or ''}", ""]
     led = ep.get("ledger") or {}
     if led:
         fmt = lambda xs: ", ".join(map(str, xs)) if xs else "—"  # noqa: E731
@@ -149,20 +172,10 @@ def save_manual(session: Path, n: int, data: dict, base_version: int, note: str 
 
 
 def _log_round(session: Path, stage: str, text: str, files: list[str]):
-    p = session / "iterations.json"
-    try:
-        doc = json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
-    except json.JSONDecodeError:
-        doc = None
-    if isinstance(doc, dict):
-        rounds = doc.setdefault("rounds", [])
-    else:
-        rounds = doc if isinstance(doc, list) else []
-        doc = {"session": session.name, "slug": session.parent.name, "rounds": rounds}
-    rounds.append({"round": len(rounds) + 1, "timestamp": now(), "stage": stage, "feedback_raw": text,
-                   "items": [{"text": text, "scope": "story", "target": stage, "change": text}],
-                   "files_written": files, "status": "done"})
-    p.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    from . import iterations
+    iterations.append(session, {"stage": stage, "feedback_raw": text,
+                                "items": [{"text": text, "scope": "story", "target": stage, "change": text}],
+                                "files_written": files, "status": "done"})
 
 
 # ---------- comments ----------

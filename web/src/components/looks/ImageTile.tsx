@@ -45,6 +45,7 @@ function Lightbox({ images, index, base, label, looks, onClose }: {
       <DialogContent className="max-h-[95vh] w-[min(96vw,1400px)] max-w-none overflow-y-auto sm:max-w-none">
         <DialogTitle className="flex flex-wrap items-center gap-2 pr-8">
           {label} <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+          {img.outdated && <StatusBadge tone="warn">Mô tả đã đổi sau ảnh này: nên tạo lại</StatusBadge>}
           <span className="text-xs font-normal text-muted-foreground">{img.name} · {fmtDate(img.created_at)}{img.sec ? ` · ${img.sec}s` : ''}</span>
         </DialogTitle>
         <div className={cn('grid gap-3', compare && other && 'md:grid-cols-2')}>
@@ -120,6 +121,7 @@ export function ImageSet({ id, kind, set, base, label, looks, busy, codex, aspec
               </button>
               <figcaption className="flex items-center gap-1.5 px-2 py-1.5">
                 <StatusBadge tone={st.tone}>{st.label}</StatusBadge>
+                {img.outdated && <span className="text-[11px] text-warning" title="Mô tả nhân vật / bối cảnh đã đổi sau khi tạo ảnh này">mô tả đã đổi</span>}
                 <span className="ml-auto flex gap-0.5">
                   {img.status !== 'approved' && (
                     <Button size="icon-xs" variant="ghost" title="Duyệt" onClick={() => looks.review.mutate({ files: [img.file], status: 'approved' })}>

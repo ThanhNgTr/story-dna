@@ -13,6 +13,7 @@ const STEPS = ['Outline', 'Duyệt outline', 'Viết & góp ý từng tập', 'C
 
 function currentStep(p: Project): number {
   if (p.final_complete) return 4
+  if (p.final_stale?.length) return 3
   if (p.episodes.length && !p.missing.length) return 2
   if (p.docs.outline.length) return 1
   return 0
@@ -58,24 +59,64 @@ function NextAction({ p }: { p: Project }) {
     },
     onError: (e) => toast.error((e as Error).message),
   })
+  const refresh = useMutation({
+    mutationFn: () => api.refreshFinal(p.slug, p.session_id),
+    onSuccess: (r) => {
+      toast.success(`Đã chốt lại ${r.copied.length} file.`)
+      qc.invalidateQueries({ queryKey: ['project', p.slug, p.session_id] })
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
+  const rewrite = useMutation({
+    mutationFn: () => api.archiveEpisodes(p.slug, p.session_id, { rewrite: true }),
+    onSuccess: (r) => {
+      askNotificationPermission()
+      toast.success(`Đã cất ${r.archived.length} tập cũ vào ${r.dir}. Claude đang viết lại từ tập 1.`)
+      qc.invalidateQueries({ queryKey: ['project', p.slug, p.session_id] })
+      qc.invalidateQueries({ queryKey: ['projects'] })
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
   const busy = !!p.job
+  // Drafts only: finalized or produced episodes are never taken out
+  const canRewrite = p.episodes.length > 0 && !p.episodes.some((e) => e.in_final || e.produced)
+  const planned = p.planned || p.episodes.length
+  const rewriteAction = canRewrite && (
+    <ConfirmAction trigger={<Button variant="outline">Xóa các tập đã viết, viết lại từ tập 1</Button>}
+      title="Viết lại toàn bộ các tập?"
+      description={<>Các tập {p.episodes.map((e) => e.n).join(', ')} được cất vào thư mục lưu trữ của series (không mất, khôi phục
+        bằng tay được), góp ý trên các tập đó không dùng nữa. Claude viết lại {planned} tập liền mạch từ tập 1 theo outline
+        hiện tại và phong cách mới nhất (khoảng {planned * 2}–{planned * 3} phút).</>}
+      confirmLabel="Xóa và viết lại" pending={rewrite.isPending} onConfirm={() => rewrite.mutateAsync()} />
+  )
   const range = p.missing.length ? `tập ${p.missing[0]}${p.missing.length > 1 ? `–${p.missing.at(-1)}` : ''}` : ''
 
   let title: string, body: React.ReactNode, action: React.ReactNode = null
   if (busy) {
     title = 'Đang xử lý'
     body = 'Có việc đang chạy cho series này. Khi xong trang sẽ tự cập nhật.'
+  } else if (p.final_stale?.length) {
+    const eps = p.final_stale.filter((x): x is number => typeof x === 'number')
+    const docs = p.final_stale.filter((x) => typeof x === 'string').map((x) => (x === 'assets' ? 'bộ ngoại hình' : x))
+    title = 'Có sửa sau khi chốt season'
+    body = <>Bản chốt (dùng để tạo prompt video) đang cũ hơn bản đang sửa: {[...docs, ...(eps.length ? [`tập ${eps.join(', ')}`] : [])].join(', ')}.
+      Đọc lại các tập này; ổn thì bấm “Chốt lại” để đưa bản mới vào bản chốt. Prompt video của các tập đó sẽ được đánh dấu cần tạo lại{p.final_stale.includes('assets') ? ' (bộ ngoại hình đổi: mọi tập)' : ''}.</>
+    action = (
+      <ConfirmAction trigger={<Button>Chốt lại {p.final_stale.length} mục</Button>} title="Chốt lại các thay đổi?"
+        description="Bản mới nhất của các mục trên được chép vào bản chốt (final/). Không gọi Claude, xong ngay. Bản chốt cũ được thay bằng bản mới; các phiên bản nháp vẫn giữ nguyên."
+        confirmLabel="Chốt lại" pending={refresh.isPending} onConfirm={() => refresh.mutateAsync()} />
+    )
   } else if (p.final_complete) {
-    const noPrompts = p.episodes.filter((e) => e.in_final && !e.has_prompts).length
+    const noPrompts = p.episodes.filter((e) => e.in_final && (!e.has_prompts || e.prompts_stale)).length
     title = 'Season đã chốt'
     body = noPrompts
-      ? <>Bước tiếp: tạo prompt video cho {noPrompts} tập (Claude chia mỗi tập thành shot 1–5s, mỗi shot một prompt kèm ảnh tham chiếu đã duyệt). Xong, mỗi thẻ tập có nút “Tải gói video”.</>
+      ? <>Bước tiếp: tạo prompt video cho {noPrompts} tập (Claude chia mỗi tập thành các clip 10–15s, mỗi clip một prompt có sẵn các cảnh cắt bên trong, kèm ảnh tham chiếu đã duyệt). Xong, mỗi thẻ tập có nút “Tải gói video”.</>
       : 'Mọi tập đã có prompt video: tải gói video ở từng thẻ tập bên dưới.'
     action = (
       <div className="flex flex-wrap gap-2">
         {noPrompts > 0 && (
           <ConfirmAction trigger={<Button>Tạo prompt video ({noPrompts} tập)</Button>} title="Tạo prompt video?"
-            description={<>Claude tạo shotlist + prompt cho {noPrompts} tập chưa có (khoảng {Math.ceil(noPrompts / 4) * 5}–{Math.ceil(noPrompts / 4) * 10} phút). Nên duyệt ảnh nhân vật / bối cảnh trước để prompt gắn ảnh tham chiếu.</>}
+            description={<>Claude tạo shotlist + prompt cho {noPrompts} tập chưa có hoặc có prompt cũ (khoảng {Math.ceil(noPrompts / 4) * 5}–{Math.ceil(noPrompts / 4) * 10} phút). Nên duyệt ảnh nhân vật / bối cảnh trước để prompt gắn ảnh tham chiếu.</>}
             confirmLabel="Tạo" pending={shots.isPending} onConfirm={() => shots.mutateAsync()} />
         )}
         <Button render={<a href={`/series/${p.slug}/${p.session_id}/export`} />} variant="outline">Tải file biên kịch .md</Button>
@@ -89,6 +130,7 @@ function NextAction({ p }: { p: Project }) {
         description={<>Claude sẽ viết {range}. Tập đã có không bị viết lại. Sau đó vẫn góp ý từng tập được.</>}
         confirmLabel="Duyệt và viết" pending={run.isPending} onConfirm={() => run.mutateAsync('outline')} />
     )
+    if (rewriteAction) action = <div className="flex flex-wrap gap-2">{action}{rewriteAction}</div>
   } else if (p.episodes.length && !p.missing.length) {
     title = 'Đọc và góp ý từng tập'
     body = 'Mở từng tập ở cột trái. Khi mọi tập đã ổn, chốt season để lưu bản cuối.'
@@ -97,6 +139,7 @@ function NextAction({ p }: { p: Project }) {
         description="Bản mới nhất của mọi tập được lưu thành bản cuối (final/)." confirmLabel="Chốt season"
         pending={run.isPending} onConfirm={() => run.mutateAsync('final')} />
     )
+    if (rewriteAction) action = <div className="flex flex-wrap gap-2">{action}{rewriteAction}</div>
   } else {
     title = 'Chưa có outline'
     body = 'Claude đang hoặc chưa viết outline cho series này.'
@@ -231,8 +274,8 @@ export function OverviewPage() {
               </Link>
               {e.has_prompts && (
                 <a href={api.packageUrl(p.slug, p.session_id, e.n)} download
-                  className="inline-flex items-center gap-1 border-t px-4 py-2 text-xs text-primary hover:underline">
-                  <Download className="size-3" /> Tải gói video (Higgsfield)
+                  className={cn('inline-flex items-center gap-1 border-t px-4 py-2 text-xs hover:underline', e.prompts_stale ? 'text-warning' : 'text-primary')}>
+                  <Download className="size-3" /> {e.prompts_stale ? 'Gói video (prompt cũ, nên tạo lại)' : 'Tải gói video (Higgsfield)'}
                 </a>
               )}
               </div>

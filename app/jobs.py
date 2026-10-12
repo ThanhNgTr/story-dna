@@ -77,6 +77,9 @@ class JobManager:
 
     def start(self, kind: str, title: str, params: dict,
               fn: Callable[[Job], Awaitable[dict | None]], job: Job | None = None) -> Job:
+        # Jobs run as tasks on the server's event loop: a sync endpoint (threadpool) has none, and the job
+        # would be saved as "running" while never starting. Fail before saving anything.
+        asyncio.get_running_loop()
         if job is None:
             job = Job({"id": datetime.now().strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4],
                        "kind": kind, "title": title, "params": params, "status": "queued",

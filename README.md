@@ -16,12 +16,18 @@ What you get:
   craft rules. Content (names, places, events) is never copied.
 - **Your series**: a fragmented idea in any language becomes an adaptation map, a series bible, a season outline
   and 10-20 vertical micro-drama episodes of 60-120 s, written in the idea's language.
+- **Quality checks**: a **story contract** (complete plot to a happy or bad ending, main + supporting cast,
+  dialogue, setting changes, climaxes, mysteries opened -> clued -> answered) checked automatically; a **script
+  editor** that scores depth (theme, characters, antagonist, subtext, setup/payoff, stakes, emotion,
+  originality) with quoted evidence and fixes; a **dialogue pass** that makes Vietnamese lines clear and
+  natural and learns from your own hand edits.
 - **Review loop**: comment on a beat, edit in place, compare versions, approve; general feedback improves the
   style for the next series.
 - **Looks registry**: fixed faces, costumes per episode, locations with day/night variants, props, and the
   continuity errors between episodes; reference images generated with Codex.
-- **Production helpers** (optional): shot lists with one video prompt per 1-5 s shot, director / camera / sound /
-  design briefs.
+- **Production helpers**: shot lists, one multi-shot video prompt per 10-15 s clip (faces and dialogue stay consistent), and a per-episode **video package**
+  (zip: prompt per shot, approved reference images, subtitles `.srt`, edit list `.csv`) for Higgsfield or any
+  video tool; director / camera / sound / design briefs.
 
 Everything runs on your own machine. The browser app is the main way to use it; every step also works as a
 Claude Code command.
@@ -86,8 +92,8 @@ Linux and macOS. The Claude CLI is found via `CLAUDE_BIN`, `PATH` or the VS Code
 Open **http://127.0.0.1:8765/ui/**. The server listens on this machine only. Jobs run in the background:
 you can close the tab, and you get a notification when a job finishes.
 
-The older pages are still at http://127.0.0.1:8765/ (same data). Use them for the one flow not moved yet:
-continuing a series after some episodes were produced. Shot lists and production briefs are commands for now
+**Hướng dẫn** in the top bar explains the whole workflow in Vietnamese. The older pages are still at
+http://127.0.0.1:8765/ (same data); every flow now exists in the new UI. Production briefs are commands
 (see [Command line](#command-line-claude-code)).
 
 ## Using the app, step by step
@@ -125,13 +131,19 @@ Kết: chưa nghĩ ra, muốn có twist.
 ```
 
 Claude writes the adaptation map (how your idea fits the style's story structure), the series bible and the
-season outline, then **stops for your review**. Empty parts are filled from the style and marked; where your
+season outline, checks the **story contract** (and repairs what is missing once), runs the **script editor**,
+then **stops for your review**. Empty parts are filled from the style and marked; where your
 idea and the style disagree, your idea wins.
 
 ### 4. Review the outline, then write the episodes
 
 Read the bible and outline in the project. Not right yet: send feedback. Right: **Duyệt outline → viết tập**.
 Claude writes every episode (about 2 minutes per episode).
+
+The overview shows **Kiểm tra cốt truyện** (7 requirements, pass/fail, **Sửa tự động**). **Biên tập** in the
+sidebar shows the editor's 9 scores with evidence and a list of findings: tick the ones to fix and press
+**Áp dụng**; Claude writes new versions and re-checks. Switches on that page turn the automatic editor pass
+on/off after the outline and after the episodes (cost and time).
 
 ### 5. Read, comment, edit, compare
 
@@ -142,6 +154,10 @@ view or a "full technical" view (camera, light, sound).
   then **Gửi N góp ý cho Claude sửa** sends them as one round with exact positions.
 - **Edit directly**: **Sửa trực tiếp** to change words yourself; saved as the next version, no Claude call.
 - **Compare**: word-level diff between any two versions.
+- **Dialogue** (**Lời thoại** in the sidebar, or **Làm rõ thoại** on an episode): lines that are hard to follow
+  (noun-fragment chains, stacked metaphors, pronoun switches, machine-style clock times) are flagged;
+  Claude rewrites only the wording (scenes and timing stay) following `.claude/skills/dialogue-polish/references/vi-dialogue.md`.
+  Every line you change with **Sửa trực tiếp** is kept as a before/after example that the next writing rounds imitate.
 
 Feedback that is about this series changes only this series. Feedback that applies to any series ("every
 cliffhanger feels the same") also improves the style, as a new style version.
@@ -165,15 +181,23 @@ cliffhanger feels the same") also improves the style, as a new style version.
 **Chốt season** copies the latest bible, outline, episodes and looks registry into `final/`. Download the whole
 screenplay as one `.md` from the project overview.
 
+Changed something after finalizing (feedback, editor fixes, dialogue pass, a hand edit)? The project shows
+**Có sửa sau khi chốt** with what changed; **Chốt lại** copies those into `final/` (no Claude). Video prompts
+built from the older `final/` are marked to be made again.
+
 ### 8. After production
 
-- **Continue a series** (older pages: series page → "Viết tiếp từ video đã làm") whose first episodes are
-  already made into videos: the produced videos are checked
+- **Continue a series** (**Viết tiếp từ video đã quay** on the projects page or in a series sidebar) whose
+  first episodes are already made into videos: the produced videos are checked
   against the scripts (video wins), the bible is updated, and the next episodes are outlined, either following
   the old plan or as a new arc. Three checking levels, cheapest first: skip (your notes only), quick
   (transcript + line-by-line diff), full (frames analyzed like a reference video).
-- **Shot list, video prompts and production briefs** per approved episode (commands):
-  see [PRODUCTION_PIPELINE.md](PRODUCTION_PIPELINE.md).
+- **Video prompts**: **Tạo prompt video** (overview, all episodes; or one episode) splits each finalized
+  episode into 10-15 s clips (one generation each, timed cuts inside, every line timed); **Xem prompt video** on
+  an episode shows them with copy buttons and reference images. Then **Tải gói video** per episode: a zip with
+  `prompts/clip_NN.txt` (prompt, cuts, dialogue, which reference images to upload in order), `refs/`, `clips/`
+  (save each generated video as `clip_NN.mp4`), `subtitles.srt` and `edit_list.csv`.
+- **Production briefs** per approved episode (commands): see [PRODUCTION_PIPELINE.md](PRODUCTION_PIPELINE.md).
 
 ## Command line (Claude Code)
 
@@ -187,6 +211,9 @@ extension). Results land in the same folders, so the app shows them too.
 | Write a series | `/write-series-<slug> --idea-file data/input/idea.md --episodes 12 --episode-sec 90` |
 | Feedback / approve | `/refine-skill <slug> --feedback "..."`, `--approve outline`, `--approve` |
 | Looks registry | `/series-assets --session data/series/<slug>/<session-id> [--feedback "..."]` |
+| Story contract | `/story-contract --session <session-dir>` (check + repair); check only: `python3 .claude/skills/story-contract/_story_check.py <session-dir>` |
+| Script editor | `/story-editor --session <session-dir>` (review), `--apply F1,F3` or `--apply all` |
+| Dialogue | `/dialogue-polish --session <session-dir> [--episodes 3,4]`; flags only: `python3 .claude/skills/dialogue-polish/_dialogue_lint.py lint <session-dir>` |
 | Reference images | `.venv/bin/python -m app.pipeline.assets plan\|generate\|status\|approve\|reject --session <session-dir>` |
 | Continue after production | `/continue-series --session <dir> --canon <run>/dna.json --style write-series-<slug> --produced <k> --direction follow\|new-arc --new-episodes <m>` |
 | Shot list + video prompts | `/script-to-shotlist data/series/<slug>/<session-id>/final/ep01.md` |
@@ -218,11 +245,16 @@ finished jobs and shows "time left" for running ones.
 | Bible + outline | 5-10 min | |
 | Episodes | ~2 min per episode | |
 | Feedback round | 3-10 min | |
+| Story contract check | seconds | repair (when needed) 5-15 min |
+| Script editor | 5-15 min | ≈ $1-2 per review; applying fixes 5-20 min |
+| Dialogue pass | 2-4 min per episode | |
+| Video prompts | 3-8 min per episode | 4 episodes at once |
 | Looks registry | 5-10 min | |
 | Reference image (Codex) | 1-4 min each | one at a time; ~25 images for a 10-episode series |
 | Vietnamese summary | ~1 min | ≈ $0.2 (Sonnet) |
 
-On a Claude subscription the cost shown per job reflects usage, not a bill.
+On a Claude subscription the cost shown per job reflects usage, not a bill. The project header shows the sum
+for that series.
 
 ## Configuration
 
@@ -260,9 +292,14 @@ data/
 │   ├── episodes/epNN_vK.md/.json       # every version of every episode
 │   ├── assets/assets_vN.md/.json       # looks registry
 │   ├── assets/characters|locations|props/, images.json   # reference images + review state
+│   ├── story_check.json, dialogue_check.json   # latest automatic checks
+│   ├── editor/review_vN.json/.md, applied_vN.json  # script editor rounds
+│   ├── dialogue/polish_vN.json         # dialogue pass: every before/after line
 │   ├── comments.json                   # review comments
 │   ├── iterations.json                 # every feedback / approval / edit round
 │   └── final/                          # approved season: bible, outline, epNN, assets, series.md
+│       └── shots/epNN/                 # shotlist + prompts.json/.md for the video package
+├── dialogue_examples.json              # lines reviewers rewrote by hand (writers imitate them)
 ├── skills-generated/                   # style metadata per version + Vietnamese summaries
 ├── jobs/<id>.json + .log               # background jobs (resume after a restart)
 ├── archive/skills/                     # hidden styles (restorable)
@@ -280,6 +317,9 @@ data/
     ├── refine-skill/                   # feedback, approve
     ├── series-assets/                  # looks registry, _assets.py scan/validate/render/lint
     ├── continue-series/                # continue after production
+    ├── story-contract/                 # complete-story requirements + _story_check.py
+    ├── story-editor/                   # depth rubric + _editor.py
+    ├── dialogue-polish/                # Vietnamese dialogue guide + _dialogue_lint.py
     ├── script-to-shotlist/             # shots + video prompts
     └── direct-video/, cinematographer-brief/, sound-design-brief/, production-design-brief/
 app/                                    # FastAPI backend + older pages
@@ -305,6 +345,11 @@ web/                                    # React UI source (built into app/static
   npm run build     # writes app/static/ui/ - commit it
   ```
   Without the backend the dev UI shows a red "Không kết nối được máy chủ" banner and reconnects by itself.
+- **Unit tests** (no Claude, no network) cover the deterministic checks and the app's file logic:
+  ```bash
+  uv pip install --python .venv/bin/python -r requirements-dev.txt   # once
+  .venv/bin/python -m pytest -q
+  ```
 - **Browser tests** (system Chrome via `playwright-core`): `web/scripts/e2e-*.mjs`. They write data, so run them
   against a copy of a session (the scripts say which), never on real work.
 - Headless Claude cannot write inside `.claude/`; style edits go through `data/skills-staging/` and are installed

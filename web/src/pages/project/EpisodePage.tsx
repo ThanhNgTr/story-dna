@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Clapperboard, Clock, Download, Sparkles, GitCompare, MessageSquare, PencilLine } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clapperboard, Clock, Download, Sparkles, GitCompare, MessageSquare, PencilLine, ScrollText } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -11,6 +11,7 @@ import { approvedOf, thumb } from '@/components/looks/ImageTile'
 import { useLooks } from '@/components/looks/useLooks'
 import { castOf } from '@/components/screenplay/cast'
 import { ConfirmAction } from '@/components/ConfirmAction'
+import { PromptsView } from '@/components/screenplay/PromptsView'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
@@ -21,7 +22,7 @@ import { cn } from '@/lib/utils'
 import { useProject } from './ProjectLayout'
 
 const MODE_KEY = 'story-dna-read-mode'
-type View = 'read' | 'edit' | 'compare'
+type View = 'read' | 'edit' | 'compare' | 'prompts'
 
 function useReadMode() {
   const [mode, setMode] = useState<ReadMode>(() => {
@@ -107,7 +108,7 @@ function VideoPackageButton({ n, busy }: { n: number; busy: boolean }) {
     onError: (e) => toast.error((e as Error).message),
   })
   if (!ep) return null
-  if (ep.has_prompts) {
+  if (ep.has_prompts && !ep.prompts_stale) {
     return (
       <Button variant="outline" size="sm" className="gap-1.5" render={<a href={api.packageUrl(p.slug, p.session_id, n)} download />}
         title="Gói zip cho Higgsfield: prompt từng shot, ảnh tham chiếu, phụ đề .srt, danh sách dựng .csv">
@@ -119,8 +120,8 @@ function VideoPackageButton({ n, busy }: { n: number; busy: boolean }) {
     <Button variant="outline" size="sm" className="gap-1.5" disabled={busy || !ep.in_final || make.isPending}
       onClick={() => make.mutate()}
       title={!ep.in_final ? 'Chốt season trước: prompt video tạo từ bản cuối' : busy ? 'Đang có việc chạy cho series này'
-        : 'Chia tập thành shot 1–5s và viết prompt video cho từng shot'}>
-      <Clapperboard className="size-3.5" /> Tạo prompt video
+        : 'Chia tập thành các clip 10–15s và viết prompt video cho từng clip'}>
+      <Clapperboard className="size-3.5" /> {ep.prompts_stale ? 'Tạo lại prompt video' : 'Tạo prompt video'}
     </Button>
   )
 }
@@ -194,6 +195,7 @@ export function EpisodePage() {
   const idx = p.episodes.findIndex((e) => e.n === n)
   const prev = p.episodes[idx - 1], next = p.episodes[idx + 1]
   const base = `/p/${p.slug}/${p.session_id}`
+  const hasPrompts = !!p.episodes.find((e) => e.n === n)?.has_prompts
   const ep = view === 'edit' && draft ? draft : data?.data
   const looks = useLooks(p.slug, p.session_id)
   const reg = looks.data?.registry?.reg
@@ -289,7 +291,13 @@ export function EpisodePage() {
                   <GitCompare className="size-3.5" /> {view === 'compare' ? 'Thoát so sánh' : 'So sánh phiên bản'}
                 </Button>
               )}
-              {view !== 'edit' && <PolishEpisodeButton n={n} busy={busy} />}
+              {view !== 'edit' && hasPrompts && (
+                <Button variant={view === 'prompts' ? 'secondary' : 'outline'} size="sm" className="gap-1.5"
+                  onClick={() => setView(view === 'prompts' ? 'read' : 'prompts')}>
+                  <ScrollText className="size-3.5" /> {view === 'prompts' ? 'Về kịch bản' : 'Xem prompt video'}
+                </Button>
+              )}
+              {view !== 'edit' && view !== 'prompts' && <PolishEpisodeButton n={n} busy={busy} />}
               {view !== 'edit' && <VideoPackageButton n={n} busy={busy} />}
               {view !== 'edit' ? (
                 <Button variant="outline" size="sm" className="gap-1.5" disabled={busy} onClick={startEdit}
@@ -321,7 +329,9 @@ export function EpisodePage() {
           )}
         </header>
 
-        {view === 'compare' ? (
+        {view === 'prompts' ? (
+          <PromptsView slug={p.slug} sid={p.session_id} n={n} />
+        ) : view === 'compare' ? (
           <>
             <div className="flex flex-wrap items-center gap-3 rounded-lg border bg-card px-4 py-2.5 text-sm">
               <span>So bản</span>

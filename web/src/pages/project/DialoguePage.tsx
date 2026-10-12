@@ -18,10 +18,13 @@ const ISSUE: Record<string, { label: string; hint: string }> = {
   pronoun: { label: 'Xưng hô lẫn', hint: 'Lời dẫn của cùng một người lúc xưng "tao" lúc xưng "tôi"' },
   clock: { label: 'Giờ kiểu máy', hint: 'Nhân vật nói "hai mươi hai giờ" thay vì "mười giờ tối"' },
   short_heavy: { label: 'Quá nhiều câu cực ngắn', hint: 'Hơn 55% câu thoại trong tập chỉ 1–3 từ' },
+  definition: { label: 'Câu giải nghĩa', hint: 'Câu giảng nghĩa một từ cho khán giả ("Giàn giáo là khung ống thép...", "tức là", "gọi là"): người thật không nói vậy với nhau' },
+  narrates_action: { label: 'Kể lại hình', hint: 'Lời dẫn kể đúng việc hình đang chiếu; lời dẫn chỉ nên nói điều hình không thể hiện (suy nghĩ, cảm xúc, bí mật)' },
 }
 const WHY: Record<string, string> = {
   telegraphic: 'câu cụt', riddle: 'câu đố', pronoun: 'xưng hô', term: 'thuật ngữ chưa giải thích', calque: 'dịch từ tiếng Anh',
-  referent: '"nó / cái đó" không rõ', clock: 'cách nói giờ', other: 'khác',
+  referent: '"nó / cái đó" không rõ', clock: 'cách nói giờ', definition: 'câu giải nghĩa',
+  narrates_action: 'kể lại hình', other: 'khác',
 }
 
 function PolishButton({ episodes, label, variant = 'default', size = 'default' }: {

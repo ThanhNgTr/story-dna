@@ -3,7 +3,8 @@ name: dialogue-polish
 description: |
   Rewrite the dialogue and voiceover of a series session so it is clear, natural spoken Vietnamese
   (or the screenplay's language): no riddle lines, no telegraphic noun fragments, fixed xung ho per
-  character pair, world terms explained once, particles and rhythm of real speech. Changes ONLY
+  character pair, lines that are speech (no word definitions, no VO retelling the shot), particles
+  and rhythm of real speech. Changes ONLY
   dialogue text (and delivery), never scenes, timing, actions or IDs; writes the next episode
   versions plus a before/after list. Learns from lines reviewers edited by hand
   (data/dialogue_examples.json). Triggers on: "polish dialogue", "lam ro thoai", "thoai kho hieu",
@@ -36,8 +37,13 @@ undercuts).
    - Rewrite only `dialogue[].line` (and `delivery` if needed). Keep every scene, beat, time,
      shot, action, `loc_id`, `cast`, character IDs, `voiceover` flags. Do not add or remove beats.
      A line may move to a neighbour beat of the same scene only when it no longer fits.
-   - Fit: spoken words <= beat duration x 3.5 (VO may run over the next beat of the same scene).
-     Keep the episode's total words within +-15% of before.
+   - Description lines (`definition`, `narrates_action`, guide rules 14-16): the one exception to
+     "keep speaker and flag". Such a line may be (a) rewritten as VO that says what the image cannot,
+     (b) given to a character who is on screen in that scene (`cast`) as speech to someone there
+     (`voiceover: false`), or (c) cut when the shot already shows it. Log the old and new speaker.
+   - Fit: the guide's Speech rate (Vietnamese <= 5.0 syllables/s; on-screen lines fit their beat,
+     VO may run over cuts inside the scene). `too_fast` lint flags must be 0.
+     Keep the episode's total words within +-15% of before (cutting description lines may go lower).
    - Keep the meaning and the plot information of every line; clarity may ADD the missing piece
      (who / what / why) but never a new plot fact. Mystery answers stay hidden.
    - Same xung ho as `address_matrix` everywhere; VO one pronoun all season.
@@ -48,8 +54,8 @@ undercuts).
 6. Write `dialogue/polish_vN.json` (N = next free): `{"created_at", "episodes": [3, 4],
    "files_written": [...], "changes": [{"episode": 3, "scene": "SC2", "character": "char_01",
    "voiceover": true, "before": "...", "after": "...", "why": "telegraphic | riddle | pronoun |
-   term | calque | referent | clock | other"}], "bible_added": ["address_matrix", "glossary"]}`.
-7. Append to `iterations.json`: `{"round", "timestamp", "stage": "dialogue_polish",
+   term | calque | referent | clock | definition | narrates_action | other", "speaker_before"?: "char_01"}], "bible_added": ["address_matrix", "glossary"]}`.
+7. Log the round (`iterations.json` is `{"session", "slug", "rounds": [...]}`: append one object to `rounds` (older sessions hold a plain list: append to that list; never replace the file's other rounds)): `{"round", "timestamp", "stage": "dialogue_polish",
    "feedback_raw": "làm rõ thoại tập ...", "files_written", "status": "awaiting_review"}`.
    Update `series.md` if it exists.
 8. Reply: lines changed per episode, 5 representative before/after pairs.

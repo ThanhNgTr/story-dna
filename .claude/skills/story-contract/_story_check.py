@@ -247,6 +247,7 @@ def check_outline(o: dict, b: dict, n: int, r: Report):
     if missing:
         r.err(2, f"outline missing episodes {missing}")
     locs = {l.get("id") for l in (b.get("world") or {}).get("locations") or []}
+    never = {q.get("id") if isinstance(q, dict) else q for q in b.get("never_answered") or []}
     plan = {q.get("id"): q for q in b.get("ledger_plan") or []}
     climaxes = {x.get("episode"): x.get("level") for x in b.get("climaxes") or []}
     mains = {c.get("character_id") for c in b.get("cast") or [] if c.get("tier") == "main"}
@@ -271,7 +272,7 @@ def check_outline(o: dict, b: dict, n: int, r: Report):
         for qid, q in plan.items():
             if q.get("open_ep") == e and qid not in (led.get("opened") or []):
                 r.err(7, f"{k}: ledger.opened misses {qid}")
-            if q.get("answer_ep") == e and qid not in (led.get("answered") or []):
+            if q.get("answer_ep") == e and qid not in never and qid not in (led.get("answered") or []):
                 r.err(7, f"{k}: ledger.answered misses {qid}")
         for qid in led.get("answered") or []:
             if qid in plan and plan[qid].get("answer_ep") != e:

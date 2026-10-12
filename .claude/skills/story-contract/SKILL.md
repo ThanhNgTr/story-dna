@@ -34,5 +34,5 @@ python3 .claude/skills/story-contract/_story_check.py <session> [--stage outline
    - A bible/outline change that moves beats -> re-write only the episodes it touches.
    - Episodes keep `.claude/skills/series-assets/references/episode-contract.md` when `assets/` exists.
 4. Re-run `_story_check.py` until 0 errors (max 3 rounds; then list what is left and why).
-5. Append to `iterations.json`: `{"round", "timestamp", "stage": "story_check", "errors_before",
+5. Log the round (`iterations.json` is `{"session", "slug", "rounds": [...]}`: append one object to `rounds` (older sessions hold a plain list: append to that list; never replace the file's other rounds)): `{"round", "timestamp", "stage": "story_check", "errors_before",
    "errors_after", "files_written"}`.

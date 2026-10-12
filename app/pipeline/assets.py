@@ -95,9 +95,124 @@ def _style(reg: dict, plate: bool) -> str:
     return f"{st.get('medium', 'photoreal cinematic still')}, fine film grain"
 
 
+# Descriptive fields per item. A manual edit that changes these but not prompt_en makes prompt_en stale
+# (it no longer says what the user wrote): save_registry_edit sets "prompt_stale" and prompts fall back to
+# the Vietnamese fields, which are always the source of truth.
+DESC_FIELDS = {
+    "character": ("age", "apparent_age", "face", "hair", "body", "invariants"),
+    "outfit": ("desc", "name"),
+    "location": ("desc", "layout", "fixed_elements", "int_ext", "name"),
+    "variant": ("lighting", "time_of_day"),
+    "prop": ("desc", "name"),
+}
+
+
+def _text(item: dict) -> str:
+    """English prompt when in sync, else the Vietnamese description."""
+    if item.get("prompt_en") and not item.get("prompt_stale"):
+        return item["prompt_en"]
+    return item.get("desc") or item.get("prompt_en") or ""
+
+
+def _subject(c: dict) -> str:
+    if c.get("prompt_en") and not c.get("prompt_stale"):
+        return c["prompt_en"]
+    face = c.get("face") or {}
+    body = c.get("body") or {}
+    parts = [f"{c.get('name', '')}, {c.get('apparent_age') or c.get('age') or ''}",
+             ", ".join(str(v) for v in (face.values() if isinstance(face, dict) else [face]) if v),
+             f"tóc: {c.get('hair', '')}" if c.get("hair") else "",
+             ", ".join(str(v) for v in (body.values() if isinstance(body, dict) else [body]) if v),
+             "luôn có: " + "; ".join(c.get("invariants") or []) if c.get("invariants") else ""]
+    return " | ".join(x for x in parts if x.strip(" ,|"))
+
+
+def _place(l: dict) -> str:
+    out = "" if l.get("prompt_stale") or not l.get("prompt_en") else f"Place: {l['prompt_en']}\n"
+    if l.get("desc"):
+        out += f"Description: {l['desc']}\n"
+    if l.get("layout"):
+        out += f"Layout (where things are): {l['layout']}\n"
+    if l.get("fixed_elements"):
+        out += "Fixed elements (all must be in frame): " + "; ".join(l["fixed_elements"]) + "\n"
+    return out
+
+
+def mark_stale_prompts(old: dict, new: dict) -> list[str]:
+    """Set prompt_stale on items whose description changed while prompt_en did not (manual edits).
+    Clears it when prompt_en was rewritten. Returns the ids marked."""
+    marked = []
+
+    def walk(kind, olds, news, key):
+        before = {x.get(key): x for x in olds or []}
+        for x in news or []:
+            o = before.get(x.get(key))
+            if o is None:
+                continue
+            if x.get("prompt_en") != o.get("prompt_en"):
+                x.pop("prompt_stale", None)
+            elif any(x.get(f) != o.get(f) for f in DESC_FIELDS[kind]) or o.get("prompt_stale"):
+                x["prompt_stale"] = True
+                marked.append(x.get(key))
+
+    walk("character", old.get("characters"), new.get("characters"), "char_id")
+    for c in new.get("characters", []):
+        oc = next((x for x in old.get("characters", []) if x.get("char_id") == c.get("char_id")), {})
+        walk("outfit", oc.get("wardrobe"), c.get("wardrobe"), "outfit_id")
+    walk("location", old.get("locations"), new.get("locations"), "loc_id")
+    for l in new.get("locations", []):
+        ol = next((x for x in old.get("locations", []) if x.get("loc_id") == l.get("loc_id")), {})
+        walk("variant", ol.get("variants"), l.get("variants"), "variant_id")
+    walk("prop", old.get("props"), new.get("props"), "prop_id")
+    return marked
+
+
+def _item_snapshot(reg: dict, key: str):
+    """The registry data an image of `key` depends on (for outdated-image detection)."""
+    drop = ("evidence", "inferred", "refs", "prompt_stale", "episodes", "signature_props")
+    clean = lambda x: {k: v for k, v in x.items() if k not in drop and k != "wardrobe" and k != "variants"}
+    for c in reg.get("characters", []):
+        if c.get("char_id") == key:
+            base = _default_outfit(c)
+            return [clean(c), clean(base) if base else None]
+        for o in c.get("wardrobe", []):
+            if o.get("outfit_id") == key:
+                return [clean(o)]
+    for l in reg.get("locations", []):
+        for v in l.get("variants", []):
+            if v.get("variant_id") == key:
+                return [clean(l), clean(v)]
+    for p in reg.get("props", []):
+        if p.get("prop_id") == key:
+            return [clean(p)]
+    return None
+
+
+def _with_stale_flags(session: Path, reg_path: Path, reg: dict) -> dict:
+    """Mark prompt_stale against the newest registry Claude wrote (prompt_en in sync there), so manual
+    edits made before stale-marking existed are caught too. Works on a copy; nothing is written."""
+    if (reg.get("edited") or {}).get("by") != "manual":
+        return reg
+    versions = sorted(((int(m.group(1)), q) for q in (session / "assets").glob("assets_v*.json")
+                       if (m := re.fullmatch(r"assets_v(\d+)\.json", q.name))), reverse=True)
+    for _, q in versions:
+        if q == reg_path:
+            continue
+        try:
+            base = json.loads(q.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (base.get("edited") or {}).get("by") != "manual":
+            reg = json.loads(json.dumps(reg))
+            mark_stale_prompts(base, reg)
+            return reg
+    return reg
+
+
 def plan(session: Path, kinds=DEFAULT_KINDS, ids: set[str] | None = None, force: bool = False) -> list[dict]:
     """Ordered tasks: sheets before the outfits that attach them, first variant before the others."""
     reg_path, reg = latest_registry(session)
+    reg = _with_stale_flags(session, reg_path, reg)
     index = load_index(session)
     tasks: list[dict] = []
 
@@ -119,8 +234,8 @@ def plan(session: Path, kinds=DEFAULT_KINDS, ids: set[str] | None = None, force:
                     "Layout: landscape. One large face close-up on the left; three full-body views on the right "
                     "(front, three-quarter, side). Same person in every view. Plain light grey studio backdrop, "
                     "even soft light, no text, no labels, no watermark.\n"
-                    f"Subject: {c.get('prompt_en', '')}\n"
-                    + (f"Outfit: {base.get('prompt_en') or base.get('desc', '')}\n" if base else "")
+                    f"Subject: {_subject(c)}\n"
+                    + (f"Outfit: {_text(base)}\n" if base else "")
                     + f"Style: {_style(reg, plate=False)}."))
             if "outfit" in kinds:
                 for o in c.get("wardrobe", []):
@@ -131,7 +246,7 @@ def plan(session: Path, kinds=DEFAULT_KINDS, ids: set[str] | None = None, force:
                         "Image 1 is the identity reference: keep the SAME person (face, hair, build).\n"
                         "Layout: landscape, two full-body views (front, three-quarter) on a plain light grey "
                         "studio backdrop, even soft light, no text, no watermark.\n"
-                        f"Outfit ({o.get('when', '')}): {o.get('prompt_en') or o.get('desc', '')}\n"
+                        f"Outfit ({o.get('when', '')}): {_text(o)}\n"
                         f"Style: {_style(reg, plate=False)}."), refs_from=[cid], owner=cid)
 
     if "location" in kinds:
@@ -144,10 +259,13 @@ def plan(session: Path, kinds=DEFAULT_KINDS, ids: set[str] | None = None, force:
                     "Use case: empty location plate (set reference) for a film.\n"
                     + ("Image 1 is the same place at another time: keep layout, architecture and every fixed "
                        "element identical; change only time of day and light.\n" if same else "")
-                    + f"Place: {l.get('prompt_en', '')}\n"
-                    f"Fixed elements: {', '.join(l.get('fixed_elements', []))}\n"
-                    f"Time and light: {v.get('prompt_en') or (v.get('time_of_day', '') + ', ' + v.get('lighting', ''))}\n"
-                    "No people, no text overlays, no watermark. Wide establishing framing.\n"
+                    + _place(l)
+                    + f"Time and light: {v.get('prompt_en') or (v.get('time_of_day', '') + ', ' + v.get('lighting', ''))}\n"
+                    "Every fixed element must be clearly visible and placed exactly as the layout says, at a "
+                    "believable scale and distance; fog, darkness or the time of day must never hide, shrink or "
+                    "push them away. Where lines disagree, Layout and Fixed elements win over Place.\n"
+                    "No people, no text overlays, no watermark. Wide establishing framing that shows how the "
+                    "fixed elements relate to each other.\n"
                     f"Style: {_style(reg, plate=True)}."),
                     refs_from=[first] if same else [], owner=l["loc_id"])
 
@@ -155,7 +273,7 @@ def plan(session: Path, kinds=DEFAULT_KINDS, ids: set[str] | None = None, force:
         for p in reg.get("props", []):
             add(p["prop_id"], "prop", "props", (
                 "Use case: prop reference for a film.\n"
-                f"Prop: {p.get('prompt_en') or p.get('desc', '')}\n"
+                f"Prop: {_text(p)}\n"
                 "The prop alone, centred, on a neutral dark surface, soft key light; any text or numbers on "
                 "it exactly as written above. No hands, no watermark.\n"
                 f"Style: {_style(reg, plate=False)}."))
@@ -234,10 +352,24 @@ def view_model(session: Path) -> dict | None:
     if not reg:
         return None
     index = load_index(session)
+    regs: dict[str, dict] = {reg_path.name: reg}
+
+    def outdated(key: str, img: dict) -> bool:
+        """The image was made from a registry version where this item looked different."""
+        src = img.get("registry")
+        if not src or src == reg_path.name:
+            return False
+        if src not in regs:
+            try:
+                regs[src] = json.loads((session / "assets" / src).read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                regs[src] = {}
+        return _item_snapshot(regs[src], key) != _item_snapshot(reg, key)
 
     def images(key):
         item = index["items"].get(key, {})
-        imgs = [dict(i, name=Path(i["file"]).name) for i in item.get("images", []) if i["status"] != "old"]
+        imgs = [dict(i, name=Path(i["file"]).name, outdated=outdated(key, i))
+                for i in item.get("images", []) if i["status"] != "old"]
         return {"images": list(reversed(imgs)), "error": (item.get("last_error") or {}).get("error")}
 
     eps = sorted({int(m["episode"]) for m in reg.get("scene_map", [])})
@@ -292,6 +424,7 @@ def save_registry_edit(session: Path, base_file: str, data: dict, note: str = ""
     if out.exists():
         raise ValueError(f"{out.name} đã tồn tại.")
     reg = _strip_ui(data)
+    marked = mark_stale_prompts(json.loads(reg_path.read_text(encoding="utf-8")), reg)
     reg.update({"version": n, "created_at": now(),
                 "edited": {"by": "manual", "from": reg_path.name, "note": note}})
     out.write_text(json.dumps(reg, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -306,8 +439,11 @@ def save_registry_edit(session: Path, base_file: str, data: dict, note: str = ""
     from .screenplay import _log_round
     _log_round(session, "assets_manual", note or f"Sửa tay kho ngoại hình -> {out.name}",
                [f"assets/{out.name}", f"assets/{out.with_suffix('.md').name}"])
-    return {"file": out.name, "version": n,
-            "warnings": [l.removeprefix("WARN  ") for l in v.stdout.splitlines() if l.startswith("WARN")]}
+    warnings = [l.removeprefix("WARN  ") for l in v.stdout.splitlines() if l.startswith("WARN")]
+    if marked:
+        warnings.append("Mô tả của " + ", ".join(marked) + " đã đổi: ảnh mới sẽ dùng mô tả tiếng Việt; "
+                        "ảnh cũ được đánh dấu 'mô tả đã đổi', nên tạo lại.")
+    return {"file": out.name, "version": n, "warnings": warnings}
 
 
 def set_status_many(session: Path, files: list[str], status: str) -> int:

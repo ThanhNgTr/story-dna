@@ -1,0 +1,4 @@
+# Development only (tests). Install into the app venv:
+#   uv pip install --python .venv/bin/python -r requirements-dev.txt
+pytest>=8
+httpx2

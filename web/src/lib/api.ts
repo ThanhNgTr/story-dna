@@ -44,6 +44,22 @@ export interface ContinueBody {
   update_skill: boolean
 }
 
+export interface PromptShot {
+  shot_number: number; scene: string; start_sec: number; end_sec: number; duration_sec: number
+  action: string; camera: string; sfx: string; loc_id: string; video_prompt: string
+  dialogue: { character: string; line: string; delivery?: string; voiceover?: boolean; start_sec?: number; end_sec?: number }[]
+  characters: { id: string; name: string }[]; pace_warning: string[]; refs: string[]
+  continuity_in?: string
+  cuts: { cut: number; start_sec: number; end_sec: number; camera?: string; action?: string }[]
+}
+export interface PromptsData {
+  unit: 'clip' | 'shot'
+  aspect_ratio: string; total_duration_sec: number; style_suffix: string; stale: boolean; built_at: string
+  names: Record<string, string>; shots: PromptShot[]
+  check: { errors: string[]; warnings: string[] } | null
+}
+export interface SeriesSettings { auto_editor_outline: boolean; auto_editor_episodes: boolean }
+
 export interface ProjectSummary {
   slug: string
   session_id: string
@@ -69,6 +85,7 @@ export interface EpisodeInfo {
   cliffhanger_type: string | null
   produced: boolean
   has_prompts: boolean
+  prompts_stale: boolean
 }
 
 export interface Iteration {
@@ -95,6 +112,9 @@ export interface Project {
   missing: number[]
   outline_approved: boolean
   final_complete: boolean
+  final_stale: (number | 'bible' | 'outline' | 'assets')[]
+  settings: SeriesSettings
+  cost_usd: number
   docs: Record<'adaptation' | 'bible' | 'outline' | 'canon', number[]>
   episodes: EpisodeInfo[]
   assets: { file: string; counts: Record<string, number>; issues: number } | null
@@ -287,6 +307,7 @@ export interface AssetImage {
   registry?: string
   prompt?: string
   refs?: string[]
+  outdated?: boolean
 }
 
 export interface ImgSet { images: AssetImage[]; error: string | null }
@@ -509,8 +530,15 @@ export const api = {
     request<Job>(`${p(slug, sid)}/dialogue/polish`, { method: 'POST', body: JSON.stringify({ episodes }) }),
   makeShotlist: (slug: string, sid: string, episodes: number[] = [], force = false) =>
     request<Job>(`${p(slug, sid)}/shotlist`, { method: 'POST', body: JSON.stringify({ episodes, force }) }),
+  saveSettings: (slug: string, sid: string, body: Partial<SeriesSettings>) =>
+    request<SeriesSettings>(`${p(slug, sid)}/settings`, { method: 'PUT', body: JSON.stringify(body) }),
+  refreshFinal: (slug: string, sid: string) =>
+    request<{ copied: string[]; items: (number | string)[] }>(`${p(slug, sid)}/final/refresh`, { method: 'POST' }),
+  prompts: (slug: string, sid: string, n: number) => request<PromptsData>(`${p(slug, sid)}/episodes/${n}/prompts`),
   packageUrl: (slug: string, sid: string, n: number) => `/api${p(slug, sid)}/episodes/${n}/package`,
   fixStory: (slug: string, sid: string) => request<Job>(`${p(slug, sid)}/story/fix`, { method: 'POST' }),
+  archiveEpisodes: (slug: string, sid: string, body: { episodes?: number[]; rewrite?: boolean }) =>
+    request<{ archived: number[]; dir: string; files: number; job?: Job }>(`${p(slug, sid)}/episodes/archive`, { method: 'POST', body: JSON.stringify(body) }),
   buildAssets: (slug: string, sid: string, feedback = '') =>
     request<Job>(`${p(slug, sid)}/assets/build`, { method: 'POST', body: JSON.stringify({ feedback }) }),
   saveAssets: (slug: string, sid: string, base_file: string, data: Registry, note = '') =>

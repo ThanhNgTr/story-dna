@@ -422,7 +422,7 @@ def main(argv: list[str]) -> int:
     elif cmd == "render":
         render(args[0])
     elif cmd == "lint":
-        return lint(args[0], {int(x) for x in argv[2:]})
+        return lint(args[0], {int(x) for a in argv[2:] for x in a.split(",") if x.strip()})
     else:
         print(__doc__)
         return 2

@@ -81,7 +81,9 @@ previous bible" list at the top.
 ### C3 — Outline → `outline_vN.md` (+ `.json`)
 
 - Episodes 1..k: one row each, marked `PRODUCED (canon)` with a one-line on-screen summary. Do not
-  rewrite them.
+  rewrite them. They still carry the story-contract outline fields as seen on screen (`act`,
+  `main_plot_step`, `locations`, `climax`, `ledger`, `cliffhanger_type`, `characters`), so
+  `_story_check.py --stage outline` passes on the whole season.
 - Episodes k+1..k+m, in the style skill's outline format (title, logline, beats, Story Template
   beats carried, reveal/clue, cliffhanger type, characters):
   - `follow`: take the remaining episodes of the old outline; keep their beats where canon allows;

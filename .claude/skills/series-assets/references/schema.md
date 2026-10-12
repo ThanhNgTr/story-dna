@@ -2,6 +2,13 @@
 
 One file per version in `<session>/assets/`. Text in `desc`/`name` fields is in the series language;
 `prompt_en` fields are English (image models follow English more reliably).
+`prompt_en` is a faithful translation of the Vietnamese fields (`desc`, `layout`, `fixed_elements`, face/hair/
+body, `lighting`), never a separate idea: it names every fixed element and says WHERE each one is relative to
+the others and how far ("the two-storey villa stands right behind the gate, ~20 m up the path, its facade
+filling the upper half of a wide shot"). Atmosphere (fog, darkness) may soften the background but must never
+hide, shrink or push away a fixed element: never write "fog swallows everything beyond" when a building is a
+fixed element. When a run rewrites `prompt_en`, remove `prompt_stale` from that item (the app sets it when a
+manual edit changed the Vietnamese fields but not `prompt_en`; prompts then fall back to the Vietnamese).
 
 ```json
 {
@@ -15,7 +22,7 @@ One file per version in `<session>/assets/`. Text in `desc`/`name` fields is in 
   "style": {
     "aspect_ratio": "9:16",
     "medium": "photoreal live-action, cinematic still",
-    "palette_rule": "from bible world.color_rule, one line",
+    "palette_rule": "one line: the style skill's Color and lighting rule applied to this series (bible world.color_rule if present)",
     "prompt_suffix_en": "appended to every image prompt: lens/grade/film look"
   },
   "characters": [{
@@ -48,7 +55,7 @@ One file per version in `<session>/assets/`. Text in `desc`/`name` fields is in 
     "parent": null,
     "int_ext": "EXT",
     "desc": "",
-    "layout": "where things are relative to each other, entrances, camera-useful axes",
+    "layout": "where things are relative to each other (behind / left of / ~20 m up the slope), entrances, camera-useful axes; every fixed element is placed here",
     "fixed_elements": ["things that must appear the same every time"],
     "aliases": ["every raw script location string mapped here"],
     "variants": [{"variant_id": "loc_01_night", "time_of_day": "night", "lighting": "light + palette",

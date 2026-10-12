@@ -52,6 +52,7 @@ export function ProjectLayout() {
         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <StatusBadge tone={p.stage.tone}>{p.stage.label}</StatusBadge>
           <span>{p.input.episodes} tập × {p.input.episode_sec}s</span>
+          {p.cost_usd > 0 && <span title="Tổng chi phí Claude của các việc đã chạy cho series này">· ${p.cost_usd.toFixed(2)}</span>}
         </div>
         <nav className="mt-4">
           <SideLink to={base} end icon={Home}>Tổng quan</SideLink>

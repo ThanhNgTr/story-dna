@@ -12,6 +12,12 @@ Flags (see references/vi-dialogue.md):
                 lines may change pronoun with the listener, see the bible address_matrix)
   clock         24h time ("hai mươi hai giờ") from a character who is not a machine/announcement voice
   short_heavy   more than 55% of an episode's lines are <= 3 words
+  definition    the line defines a word ("X là khung ống thép...", "tức là", "gọi là", "nghĩa là"): people
+                do not explain everyday words to each other; a scene shows what a thing is
+  too_fast      over the Speech rate in references/vi-dialogue.md: more than 5.0 syllables/s in a scene,
+                or an on-screen line longer than its beat + the next beat can hold
+  narrates_action  VO retells what the same beat's `action` already shows (most of the action's content
+                words are in the line): VO says what the image cannot (thought, feeling, past, secret)
 """
 
 from __future__ import annotations
@@ -27,6 +33,15 @@ MACHINE = re.compile(r"(voice|unknown|loa|speaker|system|may|announce|intercom|r
 SENT = re.compile(r"[^.!?…]+[.!?…]*")
 CLOCK = re.compile(r"\b(mười (ba|bốn|lăm|năm|sáu|bảy|tám|chín)|hai mươi( mốt| hai| ba| tư)?) giờ\b", re.I)
 FIGURE = re.compile(r"(^|[\s,.])(như|như thể|tựa như)\s", re.I)
+DEFINE = re.compile(r"(^|[\s,(])(tức là|(?<!cuộc )gọi là|nghĩa là|có nghĩa là)(?=[\s,:])", re.I)
+# "<thing> là <kind of thing> ..." at the start of a sentence: "Giàn giáo là khung ống thép..." (not identity
+# lines like "Anh là người kéo tôi ra", which use người/cái)
+DEFINE_IS = re.compile(r"(^|[.!?…]\s+)[^.!?…,]{2,30}\s+là\s+(khung|nơi|dãy|lễ|tờ|loại|kiểu|nghề|thanh|ống|bộ phận|"
+                       r"giấy|dụng cụ|thiết bị)\s", re.I)
+# Words that carry no content when comparing a VO line with the beat's action
+STOP = set("""và của là một những các cái chiếc con người đi ra vào lên xuống có không đã đang sẽ thì mà cho với ở
+trên dưới trong ngoài này đó kia ấy tôi anh chị em cô ông bà nó họ mình hai ba bốn năm lại rồi còn cũng vẫn được bị
+từ tới đến qua sau trước khi lúc hôm nay ngày đêm sáng chiều tối thật rất quá nhìn thấy đứng ngồi""".split())
 
 
 def _load(p: Path):
@@ -55,6 +70,69 @@ def _lines(ep: dict):
                     yield sc.get("id"), bi, di, d
 
 
+def _content(s: str) -> set[str]:
+    return {w for w in re.findall(r"\w+", s.lower()) if w not in STOP and not w.isdigit()}
+
+
+def _narrates(line: str, action: str) -> bool:
+    """VO shares most of the action's content words: it describes what is already on screen."""
+    act = _content(action)
+    shared = act & _content(line)
+    return len(act) >= 3 and len(shared) >= 3 and len(shared) * 3 >= len(act)
+
+
+def _glossary_terms(session: Path) -> list[str]:
+    """Terms of the latest bible's glossary: "<term> là ..." in a line is a definition."""
+    bibles = [p for p in session.glob("bible_v*.json") if re.fullmatch(r"bible_v\d+\.json", p.name)]
+    if not bibles:
+        return []
+    try:
+        b = _load(max(bibles, key=lambda p: int(re.search(r"\d+", p.name).group())))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [str(g.get("term")).strip().lower() for g in b.get("glossary") or [] if isinstance(g, dict) and g.get("term")]
+
+
+def _defines(text: str, terms: list[str]) -> bool:
+    if DEFINE.search(text) or DEFINE_IS.search(text):
+        return True
+    low = text.lower()
+    return any(re.search(rf"(^|[.!?…]\s+|,\s*){re.escape(t)}\s+là\s", low) for t in terms)
+
+
+MAX_SYL_PER_SEC = 5.0  # vi-dialogue.md "Speech rate", hard limit
+
+
+def _syllables(s: str) -> int:
+    return len(re.findall(r"\w+", s))
+
+
+def _too_fast(ep: dict) -> list[tuple[str, int, str, str]]:
+    """(scene, beat index, line, note) over the speech rate: a scene's lines / its time, and each on-screen
+    line / (its beat + the next beat of the same scene)."""
+    out = []
+    for sc in ep.get("scenes") or []:
+        beats = sc.get("beats") or []
+        a = float(sc.get("start_sec", beats[0].get("start_sec", 0) if beats else 0))
+        b = float(sc.get("end_sec", beats[-1].get("end_sec", 0) if beats else 0))
+        total = sum(_syllables(d.get("line") or "") for bt in beats for d in bt.get("dialogue") or [])
+        if b > a and total / (b - a) > MAX_SYL_PER_SEC:
+            out.append((sc.get("id"), -1, "", f"scene {total} syllables in {b - a:.1f}s = {total / (b - a):.1f}/s"))
+        for i, bt in enumerate(beats):
+            room = float(bt.get("end_sec", 0)) - float(bt.get("start_sec", 0))
+            if i + 1 < len(beats):
+                room += float(beats[i + 1].get("end_sec", 0)) - float(beats[i + 1].get("start_sec", 0))
+            for d in bt.get("dialogue") or []:
+                n = _syllables(d.get("line") or "")
+                if not d.get("voiceover") and room > 0 and n / room > MAX_SYL_PER_SEC:
+                    out.append((sc.get("id"), i, d["line"], f"{n} syllables, {room:.1f}s on screen"))
+    return out
+
+
+def _beats(ep: dict) -> dict:
+    return {(sc.get("id"), bi): b for sc in ep.get("scenes") or [] for bi, b in enumerate(sc.get("beats") or [])}
+
+
 def _words(s: str) -> int:
     return len(re.findall(r"\w+", s))
 
@@ -62,11 +140,13 @@ def _words(s: str) -> int:
 def lint(session: Path, only: set[int]) -> int:
     items, per_ep, self_pron = [], {}, {}
     files = _latest_eps(session)
+    terms = _glossary_terms(session)
     for n, f in files.items():
         ep = _load(f)
         lines = list(_lines(ep))
+        beats = _beats(ep)
         figures, short = 0, 0
-        for scene, _, _, d in lines:
+        for scene, bi, _, d in lines:
             text, who = d["line"].strip(), str(d.get("character") or "")
             issues = []
             # Shouts and short questions ("Ra đây! Vũ!", "Ông nghe chưa?") are natural; machine voices are
@@ -80,6 +160,10 @@ def lint(session: Path, only: set[int]) -> int:
                     issues.append("figure")
             if CLOCK.search(text) and not MACHINE.search(who):
                 issues.append("clock")
+            if _defines(text, terms):
+                issues.append("definition")
+            if d.get("voiceover") and _narrates(text, str((beats.get((scene, bi)) or {}).get("action") or "")):
+                issues.append("narrates_action")
             if _words(text) <= 3:
                 short += 1
             if d.get("voiceover"):
@@ -90,6 +174,10 @@ def lint(session: Path, only: set[int]) -> int:
             if issues and (not only or n in only):
                 items.append({"episode": n, "scene": scene, "character": who, "voiceover": bool(d.get("voiceover")),
                               "line": text, "issues": issues})
+        for scene, _, line, note in _too_fast(ep):
+            if not only or n in only:
+                items.append({"episode": n, "scene": scene, "character": None, "line": line or None,
+                              "issues": ["too_fast"], "note": note})
         per_ep[n] = {"lines": len(lines), "short_pct": round(100 * short / len(lines)) if lines else 0}
         if lines and short / len(lines) > 0.55 and (not only or n in only):
             items.append({"episode": n, "scene": None, "character": None, "line": None,
@@ -155,7 +243,7 @@ def main(argv: list[str]) -> int:
     if argv[:1] == ["examples"]:
         return examples()
     if len(argv) >= 2 and argv[0] == "lint":
-        return lint(Path(argv[1]), {int(x) for x in argv[2:]})
+        return lint(Path(argv[1]), {int(x) for a in argv[2:] for x in a.split(",") if x.strip()})
     print(__doc__)
     return 2
 

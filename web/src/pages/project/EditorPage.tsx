@@ -6,7 +6,7 @@ import { toast } from 'sonner'
 import { ConfirmAction } from '@/components/ConfirmAction'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { api, qk, type EditorDim, type EditorFinding, type EditorReview } from '@/lib/api'
+import { api, qk, type EditorDim, type EditorFinding, type EditorReview, type SeriesSettings } from '@/lib/api'
 import { askNotificationPermission } from '@/lib/events'
 import { fmtDate } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -83,6 +83,36 @@ function FindingCard({ f, checked, applied, onToggle }: {
       <p className="mt-1.5 text-sm"><span className="font-medium text-primary">Cách sửa: </span>{f.fix}</p>
       {f.affects?.length ? <p className="mt-2 text-xs text-muted-foreground">Sẽ viết lại: {f.affects.join(', ')}</p> : null}
     </li>
+  )
+}
+
+function AutoSettings() {
+  const p = useProject()
+  const qc = useQueryClient()
+  const save = useMutation({
+    mutationFn: (body: Partial<SeriesSettings>) => api.saveSettings(p.slug, p.session_id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.project(p.slug, p.session_id) }),
+    onError: (e) => toast.error((e as Error).message),
+  })
+  const rows: [keyof SeriesSettings, string, string][] = [
+    ['auto_editor_outline', 'Tự biên tập sau khi viết outline', 'Khoảng 5–15 phút, ~$1–2 mỗi lần.'],
+    ['auto_editor_episodes', 'Tự biên tập sau khi viết các tập', 'Bắt được lỗi thoại và cảm xúc chỉ lộ ra khi đã có tập. Thêm 10–20 phút, ~$2–3.'],
+  ]
+  return (
+    <section className="rounded-xl border bg-card p-5 text-sm">
+      <h2 className="font-semibold">Tự động</h2>
+      <ul className="mt-3 space-y-2">
+        {rows.map(([k, label, hint]) => (
+          <li key={k}>
+            <label className="flex cursor-pointer items-start gap-2">
+              <input type="checkbox" className="mt-1 accent-primary" checked={p.settings[k]} disabled={save.isPending}
+                onChange={(e) => save.mutate({ [k]: e.target.checked })} />
+              <span>{label}<span className="block text-xs text-muted-foreground">{hint}</span></span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 
@@ -213,6 +243,8 @@ function Review({ r }: { r: EditorReview }) {
         </section>
       ) : null}
 
+      <AutoSettings />
+
       {r.strengths?.length ? (
         <section className="rounded-xl border bg-card p-6">
           <h2 className="font-semibold">Điểm mạnh nên giữ</h2>
@@ -243,6 +275,7 @@ export function EditorPage() {
           (tập, cảnh, câu thoại) và cách sửa cụ thể; bạn chọn điểm nào thì Claude sửa điểm đó.
         </p>
         <div className="mt-4">{p.job ? <p className="text-sm text-muted-foreground">Đang có việc chạy cho series này.</p> : <RunReview label="Biên tập ngay" />}</div>
+        <div className="mt-6"><AutoSettings /></div>
       </div>
     )
   }

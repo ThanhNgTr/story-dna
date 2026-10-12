@@ -75,11 +75,12 @@ const STEPS: Step[] = [
   },
   {
     n: 6, icon: Clapperboard, title: 'Sản xuất video',
-    what: 'Chia mỗi tập đã chốt thành các shot 1–5 giây, mỗi shot một prompt video tự đủ nghĩa, rồi tải gói đem sang Higgsfield.',
-    you: ['Bấm "Tạo prompt video" (trang Tổng quan hoặc trang tập)', 'Bấm "Tải gói video" ở từng tập',
-      'Với mỗi shot: upload ảnh tham chiếu, dán prompt, tải clip về', 'Ghép clip theo thứ tự, thêm phụ đề'],
-    claude: ['Chia shot, viết prompt tiếng Anh cho model video (thoại giữ nguyên ngôn ngữ)', 'Gắn ảnh tham chiếu đã duyệt cho từng shot'],
-    out: ['Gói zip mỗi tập: prompt từng shot, ảnh tham chiếu, phụ đề .srt, danh sách dựng .csv'],
+    what: 'Chia mỗi tập đã chốt thành các clip 10–15 giây, mỗi clip một prompt video có sẵn các cảnh cắt bên trong (nhân vật và hội thoại liền mạch), rồi tải gói đem sang Higgsfield.',
+    you: ['Có sửa kịch bản sau khi chốt? Bấm "Chốt lại" trước, để prompt dùng bản mới nhất',
+      'Bấm "Tạo prompt video" (trang Tổng quan hoặc trang tập)', 'Bấm "Tải gói video" ở từng tập',
+      'Với mỗi clip: upload ảnh tham chiếu, dán prompt, tải video về', 'Ghép clip theo thứ tự, thêm phụ đề'],
+    claude: ['Chia clip, viết prompt tiếng Anh cho model video (thoại giữ nguyên ngôn ngữ, có mốc thời gian từng câu)', 'Gắn ảnh tham chiếu đã duyệt cho từng clip'],
+    out: ['Gói zip mỗi tập: prompt từng clip, ảnh tham chiếu, phụ đề .srt, danh sách dựng .csv'],
     time: '3–8 phút mỗi tập', freq: 'Sau khi chốt season',
   },
 ]
@@ -108,6 +109,7 @@ const TERMS: [string, string][] = [
   ['Chốt season', 'Lưu bản mới nhất của mọi tập thành bản cuối (final/), dùng cho sản xuất.'],
   ['Kho ngoại hình', 'Mô tả cố định của từng nhân vật, trang phục, bối cảnh, đạo cụ để mọi tập khớp nhau.'],
   ['Shot', 'Một cú máy 1–5 giây. Mỗi tập 60–120 giây có khoảng 25–50 shot.'],
+  ['Clip', 'Một lần tạo video 10–15 giây, gồm vài shot cắt liền nhau. Mỗi tập khoảng 6–10 clip.'],
   ['Canon', 'Những gì đã lên hình ở các tập đã quay. Khi viết tiếp, canon thắng kịch bản cũ.'],
 ]
 

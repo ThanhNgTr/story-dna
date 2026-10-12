@@ -54,7 +54,7 @@ data/skills-generated/write-series-<slug>_vN.json
 ### Step 1 - Load state
 - Live SKILL.md + version N; session files; `iterations.json`; stage (`outline` if no approved
   outline yet, else `episodes`).
-- No session -> ask which one. Do not guess.
+- No session -> ask which one. Do not guess. (Headless/web runs always pass `--session`.)
 
 ### Step 2 - Classify feedback
 Split into items. Each item gets a **scope** and a **target**:
@@ -84,7 +84,8 @@ Rule items -> SKILL.md section:
 | camera, color | Visual Guidance |
 | music, sfx, silence | Sound Guidance |
 
-Ambiguous item -> one short question.
+Ambiguous item -> one short question. Headless ("Run non-interactively"): pick the most reasonable
+reading, apply it as `story` scope (never a rule change on a guess), and log the reading in the round's `items[].note`.
 
 ### Step 3 - Patch skill (only if any `rule` item)
 1. Copy live SKILL.md -> `versions/SKILL_vN.md` (if missing).
@@ -96,7 +97,7 @@ Ambiguous item -> one short question.
 ### Step 4 - Re-generate only what is affected
 - Bible change -> update bible vK+1; flag episodes whose content depends on it.
 - Outline change -> outline vK+1; list episodes whose beats moved; if episodes already exist,
-  re-write only those (ask first if more than 5).
+  re-write only those (ask first if more than 5; headless: re-write them all and list them in the reply).
 - Episode change -> epNN vK+1 for the targeted episodes; keep neighbors consistent (check the
   episode before and after for continuity).
 - Every re-written episode follows `.claude/skills/series-assets/references/episode-contract.md`
@@ -114,7 +115,7 @@ Ambiguous item -> one short question.
 - Show a change summary: file -> what changed -> which feedback item.
 
 ### Step 5 - Log
-Append to `iterations.json`:
+`iterations.json` is `{"session", "slug", "rounds": [...]}`: append one object to `rounds` (older sessions hold a plain list: append to that list; never replace the file's other rounds). The round:
 ```json
 {
   "round": 3, "timestamp": "ISO 8601", "stage": "episodes",

@@ -8,7 +8,7 @@ crew or an AI video tool. Run it per episode.
 
 ```
 final/epNN.md (+ .json)
-  └─ [1] /script-to-shotlist ──▶ shotlist.md/.json + prompts.md/.json   (1-5s shots, one video prompt each)
+  └─ [1] /script-to-shotlist ──▶ shotlist.md/.json + prompts.md/.json   (1-5s cuts; one video prompt per 10-15s clip)
        └─ [2] /direct-video ──▶ production_guide.md/.json               (blocking, actor cues, lighting, sound sync)
             ├─ [3] /cinematographer-brief ──▶ cinematography_brief.md/.json  (lens, movement, framing, DOF)
             ├─ [4] /sound-design-brief ──▶ audio_brief.md + audio_cue_sheet.json (music, foley, dialogue sync)

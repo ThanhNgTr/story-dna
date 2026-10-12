@@ -4,6 +4,9 @@
   next     <session>              -> prints the next free review version N
   validate <review_vN.json>       -> shape + score/verdict consistency, exit 1 on errors
   latest   <session>              -> prints the latest editor/review_vN.json path (empty if none)
+  plan     <session> [F1,F3|all]  -> writes editor/apply_plan.json for --apply: chosen findings, source and
+                                     target file per bible/outline/episode, episode packages for subagents
+  render   <epNN_vK.json>...      -> writes the .md screenplay next to each episode JSON (app's renderer)
 """
 
 from __future__ import annotations
@@ -13,6 +16,8 @@ import re
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[3]
+MAX_PACKAGES = 4  # parallel subagents in apply mode
 DIMENSIONS = ("theme", "protagonist", "supporting_cast", "antagonist", "dialogue",
               "setup_payoff", "stakes", "emotion", "originality")
 SEVERITIES = ("high", "medium", "low")
@@ -101,7 +106,153 @@ def validate(path: Path) -> int:
     return 1 if errors else 0
 
 
+def _vnum(p: Path) -> int:
+    m = re.search(r"_v(\d+)\.json$", p.name)
+    return int(m.group(1)) if m else 0
+
+
+def _latest_doc(session: Path, kind: str) -> Path | None:
+    files = [p for p in session.glob(f"{kind}_v*.json") if re.fullmatch(rf"{kind}_v\d+\.json", p.name)]
+    return max(files, key=_vnum) if files else None
+
+
+def _episode_files(session: Path) -> dict[int, tuple[Path, Path]]:
+    """n -> (source, target): source = latest draft, or final/epNN.json when newer; target = next draft."""
+    drafts: dict[int, list[Path]] = {}
+    for p in (session / "episodes").glob("ep*_v*.json"):
+        m = re.fullmatch(r"ep(\d+)_v\d+\.json", p.name)
+        if m:
+            drafts.setdefault(int(m.group(1)), []).append(p)
+    out = {}
+    for n, files in drafts.items():
+        last = max(files, key=_vnum)
+        fin = session / "final" / f"ep{n:02d}.json"
+        src = fin if fin.exists() and fin.stat().st_mtime > last.stat().st_mtime else last
+        out[n] = (src, session / "episodes" / f"ep{n:02d}_v{_vnum(last) + 1}.json")
+    return out
+
+
+def _touches(f: dict, n_eps: list[int]) -> set:
+    """bible / outline / episode numbers a finding rewrites (its `affects` plus `where`)."""
+    out: set = set()
+    where = f.get("where") or {}
+    tokens = [str(x).lower() for x in (f.get("affects") or [])] + [str(where.get("file") or "").lower()]
+    for t in tokens:
+        if t.startswith("bible"):
+            out.add("bible")
+        elif t.startswith("outline"):
+            out.add("outline")
+        elif t in ("all", "all_episodes", "episodes"):
+            out.update(n_eps)
+        elif m := re.search(r"ep(\d+)", t):
+            out.add(int(m.group(1)))
+    if isinstance(where.get("episode"), int):
+        out.add(where["episode"])
+    return out
+
+
+def _packages(eps: dict[int, list[str]]) -> list[dict]:
+    """Episodes -> at most MAX_PACKAGES groups with balanced finding counts (episodes of a group in order)."""
+    if not eps:
+        return []
+    k = min(MAX_PACKAGES, max(1, (len(eps) + 1) // 2))
+    bins: list[dict] = [{"episodes": [], "load": 0} for _ in range(k)]
+    for n in sorted(eps, key=lambda n: (-len(eps[n]), n)):
+        b = min(bins, key=lambda b: (b["load"], len(b["episodes"])))
+        b["episodes"].append(n)
+        b["load"] += len(eps[n])
+    out = []
+    for b in bins:
+        if b["episodes"]:
+            ns = sorted(b["episodes"])
+            out.append({"episodes": ns, "findings": sorted({i for n in ns for i in eps[n]}, key=_fid)})
+    return sorted(out, key=lambda p: p["episodes"][0])
+
+
+def _fid(i: str) -> int:
+    m = re.search(r"\d+", i)
+    return int(m.group()) if m else 0
+
+
+def plan(session: Path, ids: str = "") -> int:
+    review = latest(session)
+    if not review:
+        print("ERROR no editor/review_vN.json")
+        return 1
+    r = json.loads(review.read_text(encoding="utf-8"))
+    findings = r.get("findings") or []
+    if ids.strip().lower() == "all":
+        chosen = findings
+    elif ids.strip():
+        want = [x.strip() for x in ids.split(",") if x.strip()]
+        unknown = sorted(set(want) - {f.get("id") for f in findings})
+        if unknown:
+            print(f"ERROR unknown finding ids: {', '.join(unknown)}")
+            return 1
+        chosen = [f for f in findings if f.get("id") in want]
+    else:
+        chosen = [f for f in findings if f.get("severity") in ("high", "medium")]
+    try:
+        inp = json.loads((session / "input.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        inp = {}
+    produced = int(inp.get("produced_upto") or 0)
+    ep_files = _episode_files(session)
+    rel = lambda p: str(p.relative_to(session))  # noqa: E731
+
+    docs: dict[str, dict] = {}
+    eps: dict[int, list[str]] = {}
+    skipped = []
+    for f in sorted(chosen, key=lambda f: _fid(f.get("id", ""))):
+        fid = f.get("id")
+        for t in sorted(_touches(f, sorted(ep_files)), key=str):
+            if t in ("bible", "outline"):
+                src = _latest_doc(session, t)
+                if src:
+                    d = docs.setdefault(t, {"source": rel(src), "target": f"{t}_v{_vnum(src) + 1}.json", "findings": []})
+                    d["findings"].append(fid)
+            elif t <= produced:
+                skipped.append({"id": fid, "episode": t, "reason": "produced episode (canon) is never rewritten"})
+            elif t in ep_files:
+                eps.setdefault(t, []).append(fid)
+            else:
+                skipped.append({"id": fid, "episode": t, "reason": "episode has no script"})
+
+    out = {
+        "review": rel(review),
+        "findings": [f.get("id") for f in chosen],
+        "docs": docs,
+        "episodes": {str(n): {"source": rel(ep_files[n][0]), "target": rel(ep_files[n][1]), "findings": eps[n]}
+                     for n in sorted(eps)},
+        "packages": _packages(eps),
+        "notes_file": "editor/apply_notes.json",
+        "skipped": skipped,
+    }
+    (session / "editor").mkdir(exist_ok=True)
+    path = session / "editor" / "apply_plan.json"
+    path.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(f"plan {rel(path)}: {len(chosen)} findings, docs {sorted(docs) or '-'}, "
+          f"{len(eps)} episodes in {len(out['packages'])} packages, {len(skipped)} skipped")
+    for i, pk in enumerate(out["packages"], 1):
+        print(f"  package {i}: episodes {pk['episodes']} findings {pk['findings']}")
+    return 0
+
+
+def render(paths: list[Path]) -> int:
+    sys.path.insert(0, str(ROOT))
+    from app.pipeline.screenplay import render_md
+    for p in paths:
+        ep = json.loads(p.read_text(encoding="utf-8"))
+        p.with_suffix(".md").write_text(render_md(ep), encoding="utf-8")
+        print(f"wrote {p.with_suffix('.md')}")
+    return 0
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) >= 2 and argv[0] == "plan":
+        return plan(Path(argv[1]), argv[2] if len(argv) > 2 else "")
+    if len(argv) >= 2 and argv[0] == "render":
+        return render([Path(a) for a in argv[1:]])
     if len(argv) != 2:
         print(__doc__)
         return 2

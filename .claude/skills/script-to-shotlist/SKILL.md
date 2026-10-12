@@ -1,14 +1,15 @@
 ---
 name: script-to-shotlist
 description: |
-  Break a finished script into individual 1–5s shots with timecode, 
-  visuals, dialogue, and camera directions. Generates shotlist.json 
-  (machine-readable) and shotlist.md (human-readable). Output ready 
-  for video generation (image/video AI prompts). Triggers on: "break 
+  Break a finished script into 1–5s shots (cuts) with timecode, visuals,
+  dialogue and camera directions, then group them into 10-15s CLIPS: one
+  video generation per clip, several cuts inside it, so faces, outfits,
+  light and long dialogue stay consistent. Generates shotlist.json/.md
+  (cuts) and prompts.json/.md (clips) for video generation. Triggers on: "break 
   into shots", "create shotlist", "shot breakdown", "shot list", 
   "scene breakdown", "storyboard script", "prompt list", "video prompts".
   Input: approved script Markdown. Output: shotlist.json/.md + prompts.json/.md
-  (one self-contained video-gen prompt per 1-5s shot: who says what, does what).
+  (one self-contained multi-shot video prompt per 10-15s clip: who says what, does what, cut by cut).
 ---
 
 # Script → Shot Breakdown
@@ -22,14 +23,15 @@ Characters stay identical across episodes: build the character anchors once from
 (`final/bible.md`) and reuse them for every episode.
 
 What it does:
-- Break script into discrete 1–5s shots
+- Break script into discrete 1–5s shots (cuts), then group them into 10-15s clips (one prompt each)
 - Create structured data for video generation (image/video AI)
 - Generate visual descriptions for each shot
 - Assign dialogue, actions, camera directions to shots
 - Produce storyboard-like Markdown for review
 
 **Input**: Finished script (Markdown)
-**Output**: `shotlist.json` + `shotlist.md` with 1–5s shot breakdown
+**Output**: `shotlist.json` + `shotlist.md` with 1–5s shot breakdown (the cuts, for editing), and
+`prompts.json` + `prompts.md` with one prompt per 10-15s clip (the unit sent to the video model)
 
 ## Quick Start
 
@@ -49,7 +51,7 @@ Or paste script Markdown and it will output:
 - Respect pacing from original DNA rules
 
 ### Step 2: Segment into Shots
-- Break scenes into individual shots (1–5s each)
+- Break scenes into individual shots (1–5s each; up to ~6s when the style's longest shot allows it)
 - Apply pacing rules:
   - Dialogue-heavy scenes: 2–3s per shot
   - Action-heavy scenes: 1.5–3s per shot
@@ -182,14 +184,36 @@ Direct address to camera builds connection
 [... more shots ...]
 ```
 
-## Step 5: Prompt List (final output of the pipeline)
+## Step 5: Prompt List (final output of the pipeline): 10-15s clips
 
 Input should be an APPROVED episode (`data/series/<slug>/<session-id>/final/epNN.md` from
-`/refine-skill --approve`). Draft episode (`episodes/epNN_vK.md`) -> warn user, continue only if they confirm.
+`/refine-skill --approve`). Draft episode (`episodes/epNN_vK.md`) -> warn user, continue only if they confirm
+(headless: do not continue on a draft; say the episode must be finalized first).
 
 Write to `final/shots/epNN/`:
-- `prompts.json` - one entry per shot, for video gen tools / agents
+- `prompts.json` - one entry per CLIP (10-15s, one video generation), for video gen tools / agents
 - `prompts.md` - numbered list for humans
+
+Why clips: a 1-2s prompt per shot means 30-40 separate generations per episode; faces, outfits,
+light and voices drift between them, and a dialogue exchange gets cut into pieces that never match.
+Current video models (Seedance 2, Kling, Veo) take one prompt with several timed cuts and keep the
+same people and place inside it. The style's fast cutting stays: it lives INSIDE the clip.
+
+### Grouping shots into clips
+- One clip = all or part of ONE scene of the script (a scene is one place at one time). A clip never
+  crosses a scene boundary, even when both scenes share a `loc_id` (the dining room and the back
+  garden of the same villa are two settings): two conversations in two places are two clips.
+- Clip length 10-15s (aim ~12s). A scene shorter than 10s is its own shorter clip (do not borrow
+  time from the next scene). A scene longer than 15s is split into clips of 10-15s.
+- Phone calls / intercut scenes (lines alternate between two places): one clip per place, holding
+  that side's lines lip-synced; the other side is an off-screen voice in the same clip. The editor
+  intercuts the two clips afterwards (say so in `continuity_in`).
+- Never split a dialogue line. Keep a whole exchange in one clip; when an exchange runs past 15s,
+  split at a speaker change, and the next clip opens on the same framing (`continuity_in`).
+- Cuts inside a clip follow the style's pacing (cuts/min, shot sizes); each cut 1-5s.
+- Clips are contiguous: `end_sec` of clip N = `start_sec` of clip N+1; last `end_sec` = episode length.
+- Check before reporting done: `python3 -m app.pipeline.package check <session-dir> <episode>` ->
+  0 errors (clip inside one scene, 15s max, contiguous, every line timed inside its clip). Fix and re-run.
 
 ### Character, outfit and location anchors
 Source of looks, first that exists: `final/assets.json`, else the latest `assets/assets_vN.json`
@@ -201,77 +225,89 @@ With a registry:
 - Location anchor = `locations[].prompt_en` + the scene variant's `lighting`.
 - Prop anchor = `props[].prompt_en` (text on props verbatim).
 - Every prompt ends with `style.prompt_suffix_en`.
-- Each shot lists `refs`: approved reference images from `assets/images.json` (status `approved`)
-  for the characters (outfit image if one exists for the worn outfit, else the character sheet),
-  the location variant and the props in the shot, as paths relative to the session. Empty when
-  none is approved yet. Every shot also carries `loc_id`, `variant_id` and `props` from its scene, so
-  the web app's "Tải gói video" zip (app/pipeline/package.py) can attach refs approved later.
+- Each clip lists `refs`: approved reference images from `assets/images.json` (status `approved`)
+  for the characters on screen (outfit image if one exists for the worn outfit, else the character
+  sheet; speaking characters first), then the location variant, then props; at most 6, as paths
+  relative to the session. Empty when none is approved yet. Every clip also carries `loc_id`,
+  `variant_id`, `props` and `outfits`, so the web app's "Tải gói video" zip (app/pipeline/package.py)
+  can attach refs approved later.
 
-Every prompt that shows a character repeats its anchor text word-for-word. Same character must
-look identical in every shot; the outfit changes only where the scene `cast` changes it.
+Every clip prompt states each character's anchor ONCE, word-for-word, at the top (as "Cast"), then
+refers to them by name in the cuts. Same character looks identical in every clip; the outfit changes
+only where the scene `cast` changes it.
 
 ### `prompts.json`
 ```json
 {
+  "unit": "clip",
   "source_script": "data/series/<slug>/20261001-143000/final/ep01.md",
   "skill": "write-series-<slug>",
   "skill_version": "v3",
   "aspect_ratio": "9:16",
   "total_duration_sec": 90,
   "assets": "data/series/<slug>/20261001-143000/final/assets.json",
-  "characters": {
-    "char_01": "teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant"
-  },
+  "style_suffix": "vertical 9:16 frame, photoreal, ...",
+  "characters": {"char_01": "teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant"},
   "locations": {"loc_02": "foggy dead pine forest at night, ..."},
   "shots": [
     {
       "shot_number": 1,
-      "start_sec": 0,
-      "end_sec": 3,
-      "duration_sec": 3,
-      "characters": ["char_01"],
-      "action": "char_01 runs through foggy forest, glances back over shoulder",
-      "dialogue": [],
-      "sfx": "heavy breathing, snapping branches",
-      "camera": "handheld tracking MS, push-in",
-      "loc_id": "loc_02", "variant_id": "loc_02_night", "props": [], "outfits": {"char_01": "char_01_o1"}, "refs": [],
-      "video_prompt": "Night, dense foggy pine forest. teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant, runs toward camera in panic, glances back over her shoulder. Handheld tracking medium shot, slow push-in. Torch light from behind, desaturated teal, volumetric fog. Sound: heavy breathing, snapping branches. 3 seconds, 9:16."
-    },
-    {
-      "shot_number": 2,
-      "start_sec": 3,
-      "end_sec": 5,
-      "duration_sec": 2,
-      "characters": ["char_01"],
-      "action": "char_01 stops, whispers",
-      "dialogue": [{"character": "char_01", "line": "He's still here.", "delivery": "whisper, terrified"}],
-      "sfx": "wind",
-      "camera": "static CU",
-      "video_prompt": "Close-up, teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant, stops, out of breath, whispers \"He's still here.\" terrified. Static close-up, shallow depth of field, cold moonlight on face, fog behind. Sound: wind. 2 seconds, 9:16."
+      "scene": "SC1",
+      "start_sec": 0, "end_sec": 12.5, "duration_sec": 12.5,
+      "characters": ["char_01", "char_02"],
+      "loc_id": "loc_02", "variant_id": "loc_02_night", "props": ["prop_03"],
+      "outfits": {"char_01": "char_01_o1", "char_02": "char_02_o1"},
+      "refs": ["assets/characters/char_01/char_01_sheet_v1.png", "assets/locations/loc_02/loc_02_night_v1.png"],
+      "action": "Lan runs through the fog, stops when Minh blocks her path; they argue in whispers",
+      "camera": "handheld; WS -> CU -> OTS -> CU",
+      "sfx": "heavy breathing, snapping branches, wind",
+      "cuts": [
+        {"cut": 1, "start_sec": 0, "end_sec": 2.5, "camera": "handheld tracking WS, push-in",
+         "action": "Lan runs toward camera through the fog, glances back", "dialogue": []},
+        {"cut": 2, "start_sec": 2.5, "end_sec": 5, "camera": "static CU",
+         "action": "Lan stops, out of breath",
+         "dialogue": [{"character": "char_01", "line": "Nó vẫn còn ở đây.", "delivery": "thì thào, sợ",
+                       "voiceover": false, "start_sec": 2.8, "end_sec": 4.6}]}
+      ],
+      "dialogue": [{"character": "char_01", "line": "Nó vẫn còn ở đây.", "delivery": "thì thào, sợ",
+                    "voiceover": false, "start_sec": 2.8, "end_sec": 4.6}],
+      "continuity_in": "",
+      "pace_warning": [],
+      "video_prompt": "12.5-second vertical 9:16 multi-shot clip, night, dense foggy pine forest (...location anchor...). Cast: Lan: teen girl, 16, ... ; Minh: ... . Shot 1 (0-2.5s): handheld tracking wide shot, Lan runs toward camera through the fog, glances back. Shot 2 (2.5-5s): static close-up on Lan, out of breath; she whispers in Vietnamese, lip-synced: \"Nó vẫn còn ở đây.\" (terrified). Shot 3 (...) ... Same faces, outfits and light in every shot. Sound: heavy breathing, snapping branches, wind. vertical 9:16 frame, photoreal, ..."
     }
   ]
 }
 ```
+`shots` is the list of clips (the key name is kept for the app). `cuts` are the clip's internal shots
+(the same breakdown as `shotlist.json`, times absolute in the episode). Every dialogue line has its
+own `start_sec`/`end_sec` (absolute): subtitles and lip-sync use them.
 
 ### `prompts.md`
 ```markdown
-# <Title> - Prompt List (90s, 32 shots, skill <slug> v3)
+# <Title> - Video clips (90s, 8 clips / 32 cuts, skill <slug> v3)
 
 ## Characters
 - char_01: teen girl, 16, dark wavy shoulder-length hair, navy blazer, ...
 
-## Shots
-1. [00:00-00:03] (3s) char_01 runs, glances back. No dialogue.
-   PROMPT: Night, dense foggy pine forest. teen girl, 16, ... 3 seconds, 9:16.
-2. [00:03-00:05] (2s) char_01: "He's still here." (whisper)
-   PROMPT: Close-up, teen girl, 16, ... 2 seconds, 9:16.
+## Clips
+1. [00:00-00:12.5] (12.5s) SC1 foggy forest. Cuts: WS run -> CU "Nó vẫn còn ở đây." -> OTS Minh -> CU.
+   PROMPT: 12.5-second vertical 9:16 multi-shot clip, ...
 ```
 
 ### Prompt rules
-- Each shot 1-5s. Longer beat -> split into several shots.
-- `video_prompt` is self-contained: setting + character anchor + action + dialogue in quotes + camera + light/color + sound + duration + aspect ratio. No "same as before".
-- Dialogue: max ~2.5 words/sec of shot. Line too long -> split across shots.
-- Shots contiguous: `end_sec` of shot N = `start_sec` of shot N+1. Last `end_sec` = script length.
+- One prompt per clip of 10-15s (see Grouping). Inside it, numbered timed cuts: "Shot k (a-bs): size
+  + movement, who does what, who says what".
+- `video_prompt` is self-contained: clip length + aspect ratio + setting anchor + Cast anchors + timed
+  cuts + dialogue in quotes with speaker, language and lip-sync (on screen) or "voice-over, off
+  screen, not lip-synced" (VO) + light/color + sound + style suffix + "same faces, outfits and light in
+  every shot". No "same as before".
+- `continuity_in` (and the start of the prompt) describes how the clip opens when it continues the
+  previous clip's scene (same framing, positions, light), so the two clips cut together.
+- Dialogue rate: `.claude/skills/dialogue-polish/references/vi-dialogue.md` "Speech rate" (Vietnamese
+  counted in syllables, hard limit 5.0/s; English 2.5 words/s). Time each line inside its clip. A VO line
+  may run over the next cut (L-cut) without a warning; a lip-synced line may run over a cut only while
+  the speaker stays on screen. Nothing runs past the clip's end. `pace_warning` ONLY for: a stretch over
+  the hard limit, or a lip-synced line whose speaker is off screen while it is spoken.
 - Language: prompts in English (video models), dialogue kept in the script's language.
 
 ## Integration with Video Tools
@@ -284,7 +320,7 @@ look identical in every shot; the outfit changes only where the scene `cast` cha
 
 ## Notes
 
-- Shot durations respect pacing from original DNA
+- Cut durations respect pacing from original DNA; prompts are per 10-15s clip
 - Visual descriptions are detailed for AI image/video generation
 - Camera directions include angle + movement + transitions
 - Dialogue preserved exactly from script

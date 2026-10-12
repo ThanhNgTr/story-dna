@@ -12,6 +12,7 @@ import subprocess
 from types import SimpleNamespace
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -181,6 +182,8 @@ def series_stage(s: dict) -> tuple[str, str]:
     if running_job_for("session_id", s["session_id"]):
         return "Đang xử lý", "run"
     missing = s.get("missing") or []
+    if s.get("final_stale"):
+        return "Có sửa sau khi chốt", "warn"
     if s["final"]:
         return "Đã chốt", "ok"
     if missing and not s["episodes"] and not s.get("produced"):
@@ -491,65 +494,13 @@ def asset_file(slug: str, sid: str, path: str, w: int = 0):
     return FileResponse(f)
 
 
-@app.get("/series/continue", response_class=HTMLResponse)
-def continue_form(request: Request, slug: str = "", sid: str = "", target: str = ""):
-    """Continue a series from produced videos: an existing session (slug+sid) or one produced elsewhere."""
+@app.get("/series/continue")
+def continue_form(slug: str = "", sid: str = "", target: str = ""):
+    """Moved to the React UI (/ui/continue); old links land there with the same series selected."""
     if target and "/" in target:
         slug, sid = target.split("/", 1)
-    if not target and not (slug and sid):
-        # Step 1: which series? (sessions written here, or one produced outside the app)
-        hid = hidden.hidden("series")
-        sessions = [x for x in series.list_sessions() if f"{x['slug']}/{x['session_id']}" not in hid]
-        return page(request, "series_continue_pick.html", sessions=sessions, skills=all_skills(),
-                    tabs=series_tabs("continue"))
-    if target == "external":
-        slug, sid = "", ""
-    st = series.session_state(slug, sid) if slug and sid else None
-    if st and not st["dir"].exists():
-        raise HTTPException(404)
-    written = max(list(st["episodes"]) + [st["produced_upto"]]) if st else 0
-    planned = st["planned"] if st else 0
-    return page(request, "series_continue.html", st=st, slug=slug, sid=sid, skills=all_skills(),
-                tabs=series_tabs("continue"),
-                runs=[r for r in list_runs() if r["done"]], languages=LANGUAGES, start=str(config.INPUT),
-                default_produced=written or 1, default_new=(planned - written) if planned > written else 6)
-
-
-@app.post("/series/continue")
-async def continue_start(slug: str = Form(...), sid: str = Form(""), title: str = Form(""),
-                         episode_sec: int = Form(90), source: str = Form("videos"), video_path: str = Form(""),
-                         run_id: str = Form(""), language: str = Form(""), produced_upto: int = Form(...),
-                         direction: str = Form("follow"), new_episodes: int = Form(6), idea: str = Form(""),
-                         update_skill: str = Form(""), canon_mode: str = Form("transcript"), notes: str = Form("")):
-    canon_mode = canon_mode if canon_mode in ("none", "transcript", "full") else "transcript"
-    if canon_mode == "none":
-        if not sid:
-            raise HTTPException(400, "Series làm ngoài app không có kịch bản: cần chọn video (mức Nhanh hoặc Kỹ).")
-        source = "none"
-    elif source == "videos":
-        vp = Path(video_path).expanduser()
-        if not video_path or not videos_in(vp):
-            raise HTTPException(400, "Chưa chọn video đã làm.")
-    elif source == "run" and not run_id:
-        raise HTTPException(400, "Chưa chọn bản phân tích.")
-    if not series.skill_dir(slug).exists():
-        raise HTTPException(400, f"Không có skill write-series-{slug} (có thể đang bị ẩn).")
-    if not sid:  # produced elsewhere: a new session holds the canon, bible and the next episodes
-        sid = series.new_session(slug, "(Series produced outside this app; continue from the produced videos.)",
-                                 produced_upto + new_episodes, max(60, min(120, episode_sec)),
-                                 title.strip() or "Series viết tiếp")
-        direction = "new-arc"
-    elif running_job_for("session_id", sid):
-        raise HTTPException(400, "Series này đang có việc chạy.")
-    job = jobs.start("continue", f"Viết tiếp từ video đã làm ({slug})",
-                     {"slug": slug, "session_id": sid, "video_path": video_path if source == "videos" else None,
-                      "run_id": run_id if source == "run" else None, "language": language or None,
-                      "chunk_sec": 120, "max_frames": 40, "produced_upto": max(1, produced_upto),
-                      "new_episodes": max(1, min(20, new_episodes)),
-                      "direction": direction if direction in ("follow", "new-arc") else "follow",
-                      "idea": idea, "notes": notes, "canon_mode": canon_mode,
-                      "update_skill": bool(update_skill) and canon_mode == "full"}, series.continue_series)
-    return RedirectResponse(f"/jobs/{job.id}", status_code=303)
+    q = f"?slug={quote(slug)}&sid={quote(sid)}" if slug and sid else ""
+    return RedirectResponse(f"/ui/continue{q}", status_code=303)
 
 
 @app.get("/series/{slug}/{sid}/export")

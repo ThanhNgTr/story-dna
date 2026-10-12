@@ -34,21 +34,24 @@ Two moments:
 
 ## Steps
 
-`H=.claude/skills/series-assets/_assets.py`, `S=<session>`.
+Commands are written out in full (headless runs only allow commands that start with `python3`, and
+shell variables do not carry over between calls). `<session>` = the session dir.
 
-1. `python3 $H scan $S` -> `$S/assets/_scan.json`; `python3 $H next $S` -> N.
+1. `python3 .claude/skills/series-assets/_assets.py scan <session>` -> `<session>/assets/_scan.json`; `python3 .claude/skills/series-assets/_assets.py next <session>` -> N.
    Read `_scan.json` (bible cast + world, every scene with raw location, characters, lighting,
-   beat actions). If `canon` is set, read `$S/<canon>` too: looks AS SEEN on produced video win
+   beat actions). If `canon` is set, read `<session>/<canon>` too: looks AS SEEN on produced video win
    over the scripts. If `prev_assets` is set, read it and keep its IDs stable; apply `--feedback`.
    If `outline` is set, read it for planned look changes (injury, disguise, time skip).
    No episodes in the scan -> bible-only registry (schema.md rules): no scene_map, no issues
    except contradictions inside the bible/outline.
    Read an episode file directly only when a scene in the scan is ambiguous.
-2. Write `$S/assets/assets_vN.json` following `references/schema.md`:
+2. Write `<session>/assets/assets_vN.json` following `references/schema.md`:
    - **characters**: one per bible cast member. Split `visual_signature` into face / hair /
      body / signature props. Fill what the script implies; anything you add to make the face
      drawable goes in `inferred`. `invariants` = what must never change. `prompt_en` describes
      the person WITHOUT clothes-specific text. Each outfit has its own `prompt_en`.
+     Items with `prompt_stale: true` were edited by hand: rewrite their `prompt_en` from the Vietnamese
+     fields (see references/schema.md) and drop the flag.
    - **wardrobe**: read every beat action that mentions the character. Default outfit from the
      bible; add an outfit only where the script shows a change (wet, torn, bloody, jacket off,
      flashback, uniform swap). Record `when`.
@@ -64,13 +67,12 @@ Two moments:
    - **issues**: drift you found. Examples: one place with conflicting descriptions, a bible ID
      used for the wrong room, a costume that changes with no reason, a prop that changes look,
      a scene location that contradicts the action. Each has a concrete `fix`.
-3. `python3 $H validate $S $S/assets/assets_vN.json`. Fix every ERROR and re-run until it
+3. `python3 .claude/skills/series-assets/_assets.py validate <session> <session>/assets/assets_vN.json`. Fix every ERROR and re-run until it
    passes. Fix WARNs on `outfit.episodes` / `prop.episodes`; any other WARN that stays gets its
    reason in that scene's `note`.
-4. `python3 $H render $S/assets/assets_vN.json` -> `assets_vN.md`.
-5. Append a round to `$S/iterations.json` `rounds`: `{round, timestamp, stage: "assets",
-   feedback_raw, items, files_written}` (create the file with `{session, slug, rounds: []}`
-   if missing).
+4. `python3 .claude/skills/series-assets/_assets.py render <session>/assets/assets_vN.json` -> `assets_vN.md`.
+5. Log the round: `iterations.json` is `{"session", "slug", "rounds": [...]}`: append one object to `rounds` (older sessions hold a plain list: append to that list; never replace the file's other rounds): `{round, timestamp, stage: "assets",
+   feedback_raw, items, files_written}`. Missing file -> create `{"session", "slug", "rounds": [<this round>]}`.
 6. Report: counts (characters, outfits, locations, props, scenes), the high-severity issues,
    and the paths. Do not edit episodes or the bible here; the issues list says what to change.
 

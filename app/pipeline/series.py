@@ -15,6 +15,7 @@ from pathlib import Path
 from .. import config
 from ..claude_runner import run_claude
 from ..jobs import Job
+from . import iterations as iteration_log
 
 
 def slugify(text: str) -> str:
@@ -160,21 +161,20 @@ def session_state(slug: str, session_id: str) -> dict:
         num = int(re.match(r"ep(\d+)_", p.name).group(1))
         if num not in episodes or _version(p) > _version(episodes[num]):
             episodes[num] = p
-    iterations = []
-    if (d / "iterations.json").exists():
-        try:
-            iterations = json.loads((d / "iterations.json").read_text())
-        except json.JSONDecodeError:
-            pass
-    outline_approved = any("outline" in json.dumps(it).lower() and "approved" in json.dumps(it).lower()
-                           for it in (iterations if isinstance(iterations, list) else []))
+    iterations = iteration_log.load(d)
     inp = json.loads((d / "input.json").read_text()) if (d / "input.json").exists() else {}
+    # Explicit marker (set when the approve job starts); older sessions: an outline-stage approve round
+    outline_approved = bool(inp.get("outline_approved_at")) or any(
+        isinstance(it, dict) and it.get("stage") == "outline"
+        and (it.get("status") == "approved" or str(it.get("feedback_raw") or "").lower().startswith("approve outline"))
+        for it in iterations)
     produced = int(inp.get("produced_upto") or 0)
     planned = int(inp.get("episodes") or 0)
     # Episodes the outline plans that have neither a script nor a produced video yet
     missing = [n for n in range(produced + 1, planned + 1) if n not in episodes]
     final_dir = d / "final"
     final_eps = {int(m.group(1)) for f in final_dir.glob("ep*.md") if (m := re.match(r"ep(\d+)\.md$", f.name))}
+    stale = final_stale(d, episodes) if final_dir.exists() else []
     return {
         "dir": d,
         "input": inp,
@@ -182,7 +182,8 @@ def session_state(slug: str, session_id: str) -> dict:
         "planned": planned,
         "missing": missing,
         "canon": latest(d.glob("canon_v*.md")),
-        "final_complete": final_dir.exists() and not missing and set(episodes) <= final_eps,
+        "final_complete": final_dir.exists() and not missing and set(episodes) <= final_eps and not stale,
+        "final_stale": stale,
         "adaptation": d / "adaptation.md" if (d / "adaptation.md").exists() else None,
         "bible": latest(d.glob("bible_v*.md")),
         "outline": latest(d.glob("outline_v*.md")),
@@ -190,8 +191,122 @@ def session_state(slug: str, session_id: str) -> dict:
         "episodes": dict(sorted(episodes.items())),
         "final": (d / "final").exists(),
         "outline_approved": outline_approved or bool(episodes),
-        "iterations": iterations if isinstance(iterations, list) else [],
+        "iterations": iterations,
     }
+
+
+def _newer_and_different(draft: Path, fin: Path) -> bool:
+    return draft.stat().st_mtime > fin.stat().st_mtime + 1 and draft.read_bytes() != fin.read_bytes()
+
+
+def final_stale(d: Path, episodes: dict[int, Path]) -> list:
+    """What changed after the season was finalized: episode numbers whose latest draft is newer than
+    final/epNN.json, plus "bible" / "outline" / "assets" when their latest version is newer than final/'s copy.
+    Shotlists and video packages read final/, so these must be finalized again before production."""
+    final = d / "final"
+    out: list = []
+    for kind in ("bible", "outline"):
+        draft, fin = latest(d.glob(f"{kind}_v*.json")), final / f"{kind}.json"
+        if draft and fin.exists() and _newer_and_different(draft, fin):
+            out.append(kind)
+    # Shotlists read final/assets.json first: a registry rebuilt after finalizing must be finalized too
+    draft, fin = latest((d / "assets").glob("assets_v*.json")), final / "assets.json"
+    if draft and fin.exists() and _newer_and_different(draft, fin):
+        out.append("assets")
+    for n, md in sorted(episodes.items()):
+        draft, fin = md.with_suffix(".json"), final / f"ep{n:02d}.json"
+        if fin.exists() and draft.exists() and _newer_and_different(draft, fin):
+            out.append(n)
+    return out
+
+
+def refinalize(slug: str, session_id: str) -> dict:
+    """Copy the latest drafts of what changed since finalizing into final/ (no Claude: the season was
+    already approved; this only brings the approved copy up to date). Logged in iterations.json."""
+    st = session_state(slug, session_id)
+    d, final = st["dir"], st["dir"] / "final"
+    _check(final.exists(), "season not finalized yet")
+    copied = []  # shutil.copy, not copy2: a fresh mtime marks prompts built from the old final/ as stale
+    for item in st["final_stale"]:
+        if item in ("bible", "outline", "assets"):
+            src = latest((d / "assets" if item == "assets" else d).glob(f"{item}_v*.json"))
+            for ext in (".json", ".md"):
+                s = src.with_suffix(ext)
+                if s.exists():
+                    shutil.copy(s, final / f"{item}{ext}")
+                    copied.append(f"final/{item}{ext}")
+        else:
+            src = st["episodes"][item]
+            for ext in (".json", ".md"):
+                s = src.with_suffix(ext)
+                if s.exists():
+                    shutil.copy(s, final / f"ep{item:02d}{ext}")
+                    copied.append(f"final/ep{item:02d}{ext}")
+    if copied:
+        write_final_index(slug, session_id)
+        copied.append("final/series.md")
+        iteration_log.append(d, {"stage": "final", "feedback_raw": "chốt lại các thay đổi sau khi chốt season",
+                                 "files_written": copied, "status": "approved"})
+    return {"copied": copied, "items": st["final_stale"]}
+
+
+def write_final_index(slug: str, session_id: str) -> Path:
+    """Rebuild final/series.md (index table + every final episode) from final/ itself, so it matches what
+    was finalized again. Same layout /refine-skill --approve writes; no Claude."""
+    st = session_state(slug, session_id)
+    d, final = st["dir"], st["dir"] / "final"
+    eps = sorted(((int(m.group(1)), f) for f in final.glob("ep*.md") if (m := re.fullmatch(r"ep(\d+)\.md", f.name))))
+    inp = st["input"]
+    title = inp.get("title") or f"{slug} {session_id}"
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    rows, bodies = [], []
+    for n, md in eps:
+        try:
+            ep = json.loads(md.with_suffix(".json").read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            ep = {}
+        answered = ", ".join((ep.get("ledger") or {}).get("answered") or []) or "-"
+        rows.append(f"| {n} | {ep.get('title') or ''} | [{md.name}]({md.name}) | {ep.get('cliffhanger_type') or ''} | {answered} |")
+        bodies.append(md.read_text(encoding="utf-8").strip())
+    text = (f"# {title} — Series\n\nSkill: write-series-{slug} | Session: {session_id} | {len(eps)} tập\n"
+            f"Bible: bible.md | Outline: outline.md\nTrạng thái: ĐÃ CHỐT, chốt lại {now}.\n\n"
+            "## Mục lục\n\n| Tập | Tên | File | Cliffhanger | Trả lời |\n|---|---|---|---|---|\n"
+            + "\n".join(rows) + "\n\n---\n\n" + "\n\n---\n\n".join(bodies) + "\n")
+    out = final / "series.md"
+    out.write_text(text, encoding="utf-8")
+    return out
+
+
+def archive_episodes(slug: str, session_id: str, eps: list[int] | None = None) -> dict:
+    """Take episode drafts out of the series so they can be written again (e.g. from episode 1 in one go).
+    Nothing is deleted: every version moves to episodes/_archive/<UTC time>/ and the round is logged.
+    eps None = every drafted episode. Produced (canon) and finalized episodes are refused."""
+    st = session_state(slug, session_id)
+    d = st["dir"]
+    files: dict[int, list[Path]] = {}
+    for f in (d / "episodes").glob("ep*_v*.*"):
+        m = re.fullmatch(r"ep(\d+)_v\d+\.(json|md)", f.name)
+        if m:
+            files.setdefault(int(m.group(1)), []).append(f)
+    want = sorted(files) if eps is None else sorted(set(eps))
+    _check(bool(want), "không có tập nào để xóa")
+    produced = [n for n in want if n <= st["produced_upto"]]
+    _check(not produced, f"tập {', '.join(map(str, produced))} đã quay thành video (canon), không xóa được")
+    finalized = [n for n in want if (d / "final" / f"ep{n:02d}.json").exists()]
+    _check(not finalized, f"tập {', '.join(map(str, finalized))} đã chốt season, không xóa được")
+    unknown = [n for n in want if n not in files]
+    _check(not unknown, f"tập {', '.join(map(str, unknown))} chưa có kịch bản")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dest = d / "episodes" / "_archive" / stamp
+    dest.mkdir(parents=True, exist_ok=False)
+    moved = []
+    for n in want:
+        for f in sorted(files[n]):
+            shutil.move(str(f), str(dest / f.name))
+            moved.append(f"episodes/_archive/{stamp}/{f.name}")
+    iteration_log.append(d, {"stage": "episodes", "feedback_raw": f"xóa tập {', '.join(map(str, want))} để viết lại",
+                             "files_written": moved, "status": "archived"})
+    return {"archived": want, "dir": f"episodes/_archive/{stamp}", "files": len(moved)}
 
 
 def list_sessions() -> list[dict]:
@@ -202,7 +317,7 @@ def list_sessions() -> list[dict]:
             out.append({"slug": d.parent.name, "session_id": d.name, "episodes": len(st["episodes"]),
                         "planned": st["input"].get("episodes"), "final": st["final_complete"],
                         "has_outline": st["outline"] is not None, "missing": st["missing"],
-                        "produced": st["produced_upto"],
+                        "produced": st["produced_upto"], "final_stale": st["final_stale"],
                         "title": st["input"].get("title") or d.name})
     return out
 
@@ -236,12 +351,31 @@ def _story_check(d: Path, stage: str) -> dict:
         return {"ok": False, "errors": ["story_check.py produced no report"], "warnings": []}
 
 
+def _report_current(report: Path, d: Path, checker: Path, stage: str | None = None) -> dict | None:
+    """The saved report when neither a script file nor the checker changed since it was written
+    (page loads stay read-only)."""
+    if not report.exists():
+        return None
+    newest = max((f.stat().st_mtime for pat in ("bible_v*.json", "outline_v*.json", "input.json", "episodes/ep*_v*.json",
+                                                  "final/*.json") for f in d.glob(pat)), default=0)
+    if checker.exists():
+        newest = max(newest, checker.stat().st_mtime)
+    if newest > report.stat().st_mtime:
+        return None
+    try:
+        rep = json.loads(report.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return rep if stage is None or rep.get("stage") == stage else None
+
+
 def story_check_view(slug: str, session_id: str) -> dict | None:
-    """Fresh check for the UI (fast, no Claude). None before an outline exists."""
+    """Story check for the UI (fast, no Claude); re-run only when the scripts changed. None before an outline."""
     st = session_state(slug, session_id)
     if st["outline"] is None:
         return None
-    rep = _story_check(st["dir"], "episodes" if st["episodes"] else "outline")
+    stage = "episodes" if st["episodes"] else "outline"
+    rep = _report_current(st["dir"] / "story_check.json", st["dir"], STORY_CHECK, stage) or _story_check(st["dir"], stage)
     return {k: rep.get(k) for k in ("ok", "stage", "checked_at", "errors", "warnings")}
 
 
@@ -384,7 +518,7 @@ def dialogue_view(slug: str, session_id: str) -> dict | None:
     if not st["episodes"]:
         return None
     d = st["dir"]
-    rep = _dialogue_lint(d)
+    rep = _report_current(d / "dialogue_check.json", d, DIALOGUE_LINT) or _dialogue_lint(d)
     polishes = sorted((d / "dialogue").glob("polish_v*.json"), key=_version)
     last = None
     if polishes:
@@ -478,8 +612,30 @@ async def write_outline(job: Job) -> dict:
     _check(st["outline"] is not None, "outline was not written")
     job.step("outline", "done")
     await enforce_story_contract(job, d, "outline")
-    await editor_review(job, d)
+    if session_settings(d)["auto_editor_outline"]:
+        await editor_review(job, d)
+    else:
+        job.step("editor", "skipped", note="tự biên tập đang tắt")
     return {"slug": slug, "session_id": sid}
+
+
+SETTINGS_DEFAULTS = {"auto_editor_outline": True, "auto_editor_episodes": False}
+
+
+def session_settings(d: Path) -> dict:
+    """Per-series switches stored in input.json["settings"] (cost/time vs automatic review)."""
+    try:
+        inp = json.loads((d / "input.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        inp = {}
+    return {**SETTINGS_DEFAULTS, **{k: bool(v) for k, v in (inp.get("settings") or {}).items() if k in SETTINGS_DEFAULTS}}
+
+
+def save_settings(d: Path, changes: dict) -> dict:
+    inp = json.loads((d / "input.json").read_text()) if (d / "input.json").exists() else {}
+    inp["settings"] = {**session_settings(d), **{k: bool(v) for k, v in changes.items() if k in SETTINGS_DEFAULTS}}
+    (d / "input.json").write_text(json.dumps(inp, indent=2, ensure_ascii=False))
+    return inp["settings"]
 
 
 async def refine(job: Job) -> dict:
@@ -489,6 +645,10 @@ async def refine(job: Job) -> dict:
     if p.get("approve") == "outline":
         missing = session_state(slug, sid)["missing"]
         _check(bool(missing), "no episodes left to write (all planned episodes exist)")
+        d = session_dir(slug, sid)
+        inp = json.loads((d / "input.json").read_text()) if (d / "input.json").exists() else {}
+        inp.setdefault("outline_approved_at", datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        (d / "input.json").write_text(json.dumps(inp, indent=2, ensure_ascii=False))
         p["writing"] = missing
         step, timeout = "episodes", 7200
         prompt = (f"/refine-skill {slug} --session {sid} --approve outline\n\n"
@@ -512,14 +672,16 @@ async def refine(job: Job) -> dict:
     if step == "episodes":
         left = session_state(slug, sid)["missing"]
         _check(len(left) < len(p["writing"]), "no episodes were written")
-        if left:
-            job.log(f"[episodes] still missing: {left} (approve the outline again to write them)")
+        _check(not left, f"chưa viết xong tập {', '.join(map(str, left))}: các tập đã viết được giữ lại; "
+                         "bấm viết tập lần nữa để viết tiếp phần còn thiếu")
     if step == "final":
         _check(session_state(slug, sid)["final"], "final/ was not created")
     job.step(step, "done")
     if step != "final":
         st = session_state(slug, sid)
         await enforce_story_contract(job, st["dir"], "episodes" if st["episodes"] else "outline")
+        if step == "episodes" and session_settings(st["dir"])["auto_editor_episodes"]:
+            await editor_review(job, st["dir"])
     return {"slug": slug, "session_id": sid}
 
 

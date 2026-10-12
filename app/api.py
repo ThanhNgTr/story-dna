@@ -143,6 +143,16 @@ class EditorIn(BaseModel):
     rereview: bool = False
 
 
+class ArchiveIn(BaseModel):
+    episodes: list[int] | None = None  # None = every drafted episode
+    rewrite: bool = False              # then write the missing episodes again (same as approving the outline)
+
+
+class SettingsIn(BaseModel):
+    auto_editor_outline: bool | None = None
+    auto_editor_episodes: bool | None = None
+
+
 class PolishIn(BaseModel):
     episodes: list[int] = []
 
@@ -377,8 +387,10 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                 "duration_sec": ep.get("total_duration_sec"), "cliffhanger_type": ep.get("cliffhanger_type"),
                 "produced": n <= st["produced_upto"],
                 "has_prompts": package.prompts_file(d, n) is not None,
+                "prompts_stale": package.prompts_stale(d, n),
             })
         summary = {"session_id": sid, "episodes": len(st["episodes"]), "final": st["final_complete"],
+                   "final_stale": st["final_stale"],
                    "has_outline": st["outline"] is not None, "missing": st["missing"], "produced": st["produced_upto"]}
         label, tone = stage(summary)
         av = asset_images.view_model(d)
@@ -391,6 +403,10 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             "stage": {"label": label, "tone": tone},
             "planned": st["planned"], "produced_upto": st["produced_upto"], "missing": st["missing"],
             "outline_approved": st["outline_approved"], "final_complete": st["final_complete"],
+            "final_stale": st["final_stale"],
+            "settings": series.session_settings(d),
+            "cost_usd": round(sum(float(j.data.get("cost_usd") or 0) for j in jobs.list()
+                                  if (j.data.get("params") or {}).get("session_id") == sid), 2),
             "docs": {k: ([series._version(p) for p in st["versions"][k]] if k in st["versions"]
                          else ([0] if st[k] else [])) for k in DOC_KINDS},
             "episodes": episodes,
@@ -589,6 +605,38 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                          {"slug": slug, "session_id": sid, "episodes": body.episodes}, job_funcs["dialogue"])
         return one(job)
 
+    @r.put("/projects/{slug}/{sid}/settings")
+    def settings_save(slug: str, sid: str, body: SettingsIn):
+        d = session_or_404(slug, sid)["dir"]
+        return series.save_settings(d, {k: v for k, v in body.model_dump().items() if v is not None})
+
+    @r.post("/projects/{slug}/{sid}/episodes/archive")
+    async def episodes_archive(slug: str, sid: str, body: ArchiveIn):  # async: jobs.start needs the event loop
+        st = session_or_404(slug, sid)
+        if running_for(sid):
+            raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi xóa tập.")
+        if body.rewrite and st["outline"] is None:
+            raise HTTPException(400, "Chưa có outline để viết lại các tập.")
+        try:
+            out = series.archive_episodes(slug, sid, body.episodes)
+        except RuntimeError as e:
+            raise HTTPException(400, str(e))
+        if body.rewrite:
+            job = jobs.start("refine", f"Viết lại các tập ({slug})",
+                             {"slug": slug, "session_id": sid, "feedback": "", "target": "", "approve": "outline"},
+                             job_funcs["refine"])
+            out["job"] = one(job)
+        return out
+
+    @r.post("/projects/{slug}/{sid}/final/refresh")
+    def final_refresh(slug: str, sid: str):
+        st = session_or_404(slug, sid)
+        if running_for(sid):
+            raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi chốt lại.")
+        if not st["final_stale"]:
+            raise HTTPException(400, "Bản chốt đã là bản mới nhất.")
+        return series.refinalize(slug, sid)
+
     @r.post("/projects/{slug}/{sid}/shotlist")
     async def shotlist(slug: str, sid: str, body: ShotlistIn):
         st = session_or_404(slug, sid)
@@ -596,11 +644,25 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi tạo prompt.")
         if not (st["dir"] / "final").exists():
             raise HTTPException(400, "Chốt season trước: prompt video được tạo từ bản cuối (final/).")
+        if "assets" in st["final_stale"]:
+            raise HTTPException(400, "Bộ ngoại hình có sửa sau khi chốt: bấm “Chốt lại” ở trang Tổng quan trước, "
+                                     "để prompt video dùng trang phục, bối cảnh mới nhất.")
+        stale = [x for x in st["final_stale"] if isinstance(x, int) and (not body.episodes or x in body.episodes)]
+        if stale:
+            raise HTTPException(400, f"Tập {', '.join(map(str, stale))} có sửa sau khi chốt: bấm “Chốt lại” ở trang Tổng quan "
+                                     "trước, để prompt video dùng bản mới nhất.")
         what = f"tập {', '.join(map(str, body.episodes))}" if body.episodes else "các tập chưa có prompt"
         job = jobs.start("shotlist", f"Tạo prompt video {what} ({slug})",
                          {"slug": slug, "session_id": sid, "episodes": body.episodes, "force": body.force},
                          job_funcs["shotlist"])
         return one(job)
+
+    @r.get("/projects/{slug}/{sid}/episodes/{n}/prompts")
+    def episode_prompts(slug: str, sid: str, n: int):
+        view = package.prompts_view(session_or_404(slug, sid)["dir"], n)
+        if view is None:
+            raise HTTPException(404, f"Tập {n} chưa có prompt video.")
+        return view
 
     @r.get("/projects/{slug}/{sid}/episodes/{n}/package")
     def episode_package(slug: str, sid: str, n: int, background: BackgroundTasks):

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Callable
@@ -28,6 +29,12 @@ class ClaudeResult:
     tool_calls: list[str] = field(default_factory=list)
 
 
+HEADLESS_NOTE = ("\n\nHEADLESS RUN: this process exits as soon as your turn ends. Run every Agent/subagent call in "
+                 "the foreground (run_in_background: false; several Agent calls in ONE message still run in "
+                 "parallel) and never end your turn while a subagent, background command or task is still "
+                 "running: wait for all of them, check their files, then finish.")
+
+
 def _describe_tool(block: dict) -> str:
     name = block.get("name", "?")
     inp = block.get("input") or {}
@@ -43,6 +50,9 @@ async def run_claude(prompt: str, *, agent: str | None = None, model: str | None
     if not claude_bin:
         return ClaudeResult(ok=False, error="claude CLI not found (set CLAUDE_BIN)")
 
+    # Headless: the process ends when the main turn ends, killing any subagent still running in the
+    # background (a whole batch of episodes was lost that way). Keep every subagent in the foreground.
+    prompt += HEADLESS_NOTE
     cmd = [claude_bin, "-p", prompt, "--output-format", "stream-json", "--verbose",
            # Token-level events, so long writes show a heartbeat instead of a frozen log
            "--include-partial-messages",
@@ -57,6 +67,7 @@ async def run_claude(prompt: str, *, agent: str | None = None, model: str | None
 
     proc = await asyncio.create_subprocess_exec(
         *cmd, cwd=str(config.ROOT), stdin=asyncio.subprocess.DEVNULL,
+        env={**os.environ, "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"},
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, limit=16 * 1024 * 1024)
 
     result = ClaudeResult(ok=False)
