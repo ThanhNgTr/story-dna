@@ -49,7 +49,12 @@ shell variables do not carry over between calls). `<session>` = the session dir.
    - **characters**: one per bible cast member. Split `visual_signature` into face / hair /
      body / signature props. Fill what the script implies; anything you add to make the face
      drawable goes in `inferred`. `invariants` = what must never change. `prompt_en` describes
-     the person WITHOUT clothes-specific text. Each outfit has its own `prompt_en`.
+     the person WITHOUT clothes-specific text.
+     Faces must not read as a beauty template: never stack glamour adjectives ("fair smooth skin, small
+     oval face, large round eyes, slim nose, pink lips"); give every face at least two ordinary,
+     distinctive features (a mole, freckles, a slightly crooked tooth, uneven brows, a wide nose bridge,
+     a chipped front tooth, acne marks, heavy eyelids). An idol-like face makes video tools (Google
+     Flow) refuse every clip with that character as a "famous person", and is less memorable on screen. Each outfit has its own `prompt_en`.
      Items with `prompt_stale: true` were edited by hand: rewrite their `prompt_en` from the Vietnamese
      fields (see references/schema.md) and drop the flag.
    - **wardrobe**: read every beat action that mentions the character. Default outfit from the

@@ -210,10 +210,15 @@ same people and place inside it. The style's fast cutting stays: it lives INSIDE
   intercuts the two clips afterwards (say so in `continuity_in`).
 - Never split a dialogue line. Keep a whole exchange in one clip; when an exchange runs past 15s,
   split at a speaker change, and the next clip opens on the same framing (`continuity_in`).
-- Cuts inside a clip follow the style's pacing (cuts/min, shot sizes); each cut 1-5s.
+- At most 5 cuts per clip (aim 3-4): video models execute 3-4 timed cuts reliably and blur the rest.
+  Each cut 1.5-5s. When the style cuts faster, merge neighbouring cuts on the same subject into one
+  shot with a camera move (push-in from MCU to CU, rack focus to the prop) instead of adding cuts.
+- Clips are 10-15s for multi-shot models (Seedance 2, Kling). Veo 3.1 / Google Flow makes at most 8s
+  per generation: every clip longer than 8s also carries `veo_parts` (see below).
 - Clips are contiguous: `end_sec` of clip N = `start_sec` of clip N+1; last `end_sec` = episode length.
 - Check before reporting done: `python3 -m app.pipeline.package check <session-dir> <episode>` ->
-  0 errors (clip inside one scene, 15s max, contiguous, every line timed inside its clip). Fix and re-run.
+  0 errors (clip inside one scene, 15s max, contiguous, every line timed inside its clip, Opening /
+  Ending / Rules in every prompt, `veo_parts` on every clip and valid; Flow-safe warnings fixed). Fix and re-run; also fix "more than 5 cuts" warnings.
 
 ### Character, outfit and location anchors
 Source of looks, first that exists: `final/assets.json`, else the latest `assets/assets_vN.json`
@@ -224,7 +229,10 @@ With a registry:
   (`wardrobe[].prompt_en`; outfit from the episode scene `cast`, else the registry `scene_map`).
 - Location anchor = `locations[].prompt_en` + the scene variant's `lighting`.
 - Prop anchor = `props[].prompt_en` (text on props verbatim).
-- Every prompt ends with `style.prompt_suffix_en`.
+- Every prompt ends with the style suffix, FILTERED to the scene: keep the clauses that hold everywhere
+  (aspect, photoreal, lens, grain, the general grade) and only the lighting clause that matches this
+  scene's INT/EXT and time of day. Never put "warm practical light indoors" in an exterior clip, or a
+  night clause in a day clip. `style_suffix` in prompts.json keeps the full registry text.
 - Each clip lists `refs`: approved reference images from `assets/images.json` (status `approved`)
   for the characters on screen (outfit image if one exists for the worn outfit, else the character
   sheet; speaking characters first), then the location variant, then props; at most 6, as paths
@@ -235,11 +243,113 @@ With a registry:
 Every clip prompt states each character's anchor ONCE, word-for-word, at the top (as "Cast"), then
 refers to them by name in the cuts. Same character looks identical in every clip; the outfit changes
 only where the scene `cast` changes it.
+- Anchors are word-for-word EXCEPT states that change over the story (wounds, scars, bandages, stains,
+  wet clothes, a prop not yet given): describe that state as it is at this moment of this episode
+  (a scar the character gets in shot 6 is not in shots 1-5). Remove the clause, never contradict it.
+- Cast = ONLY the characters seen in this clip, each with the ONE outfit worn in this scene. Never list
+  a character who is not on screen, and never give two looks ("before / after the makeover") for one
+  person. A voice heard off screen is an `OFF-SCREEN VOICE` line in the cut (see "Dialogue in
+  prompts"), not described in Cast (its voice is in `Voices`).
+
+### Clip handoff, performance, guards (every clip)
+- `opening_state`: one sentence, the exact first frame: who is where, pose, what is in hand, framing.
+  When the clip continues the previous clip's scene it matches that clip's `closing_state`.
+- `closing_state`: one sentence, the exact last frame the next clip (or the edit) picks up from.
+- `performance`: one sentence, the emotional turn across the clip (from what to what, and what the
+  face/body shows: "confusion first, not anger"). Delivery tags on lines stay as they are.
+- `on_screen_text`: every piece of lettering that must be visible (sign, phone screen, document
+  header, title card), verbatim with where it appears; `[]` when none. Prefer `[]`: models misspell
+  text, so keep only lettering the story needs and leave the rest for post (say so in `action`).
+- `continuity_in` stays for the app: how the clip joins the previous one (may repeat `opening_state`).
+
+Prompt layout (`video_prompt`, one paragraph per item, in this order):
+1. `<len>-second vertical 9:16 multi-shot clip, <INT/EXT>, <time of day>, <location anchor>.`
+2. `Cast: <name>: <anchor + outfit>; ...` (only who is on screen) `Voices: ...` `Props: ...`
+3. `Opening: <opening_state>`
+4. `Shot 1 (0-2.5s): ...` timed cuts, each with size + camera + action + exact quoted line(s)
+   (speaker, language, lip-synced or voice-over, delivery, line times).
+5. `Performance: <performance>`
+6. `Ending: <closing_state>` and `Sound: ...`
+7. The guard block, verbatim, filling the on-screen text slot:
+   `Rules: Speak only the quoted lines, word for word, each by its named speaker; no extra lines, no
+   ad-lib, no narration that is not quoted. Only the listed cast appear; background people only where a
+   shot names them. No subtitles, captions, watermarks or on-screen text except: <on_screen_text, or
+   "none">. Keep every prop with its owner and the same faces, outfits and light in every shot.
+   Natural hands and anatomy; no sudden costume change; no music with lyrics.`
+8. The filtered style suffix.
+
+### Dialogue in prompts: who speaks, how (every prompt, Seedance and Flow)
+Video models confuse speakers and lip-sync inner thoughts unless every line says, in the same words
+every time, WHICH kind of line it is. Each dialogue line in prompts.json has `"mode"`:
+- `speaks`: said aloud by a character on screen in that cut.
+- `voiceover`: narration or inner thought (`voiceover: true` in the script). Nobody's lips move, even
+  when the speaker is on screen (that is the usual case: the narrator thinks while we see him).
+- `offscreen`: said aloud by a character NOT in frame in that cut (phone, loudspeaker, behind a door).
+
+Write each line with its tag, word for word, right before the quote:
+- speaks: `SPEAKS (lip-synced): <who> (<visual tag>), <delivery>, <a>-<b>s: "<line>"`
+- voiceover: `VOICE-OVER (inner voice, nobody's lips move): <who>, <delivery>, <a>-<b>s: "<line>"`;
+  when the speaker is in the shot add "<who> keeps his/her mouth closed".
+- offscreen: `OFF-SCREEN VOICE (not in frame): <who>, <through what>, <delivery>, <a>-<b>s: "<line>"`
+`<who>` = the same name as in Cast (Seedance) or the same role label (Flow parts); never a name in
+one place and a label in another. `<visual tag>` = what tells him apart in THIS frame ("on the left,
+grey T-shirt", "the one holding the shovel").
+
+Rules:
+- A `Voices:` line right after Cast: one voice per speaker of the clip (gender, age, timbre, accent,
+  from the bible `cast[].voice`; a character not in the bible cast gets one from the registry age and
+  role, e.g. "the foreman: man in his mid 40s, gruff loud voice"), e.g. `Voices: Phong: young man, low warm voice, soft Southern
+  accent; Tam: man in his 30s, quick bright voice`. The VO voice is the same as that character's voice.
+- At most one `speaks` speaker per cut. A two-person exchange is shot / reverse shot, one cut per
+  speaker; if both must be in one frame, the visual tag gives left/right and only that one's lips move.
+- A cut with no `speaks` line says "no one speaks on screen" when it has a voiceover line.
+- Never call a voiceover "off screen" while its speaker is visible; "off screen" is only for `offscreen`.
+- A line that runs over the next cut (L-cut) is mentioned in EVERY cut it covers: "No one speaks on
+  screen; <who>'s voice-over continues over this shot." Write "No dialogue" only for a cut that no line
+  overlaps; otherwise the model cuts the line or crams it.
+- While a voice-over plays, no action may invite speech: never "as if to ask / about to say / opens his
+  mouth"; write "his lips part, then press shut" or "says nothing". Characters with no line in the clip
+  get silent performance words ("smiles silently", "watches"), never "teases", "jokes", "chats", "laughs"
+  aloud, which make the model invent lines.
+- Every line fits the speech rate at its own times (vi-dialogue.md: Vietnamese <= 5.0 syllables/s).
+  When the script line cannot fit, do not rush it: keep it and write a `pace_warning` naming
+  /dialogue-polish; `package check` warns on it.
+
+### Veo parts (every clip): the Google Flow / Veo 3.1 version
+`veo_parts`: the same clip for an 8-second model, each part one Veo / Flow generation. A clip of 8s or
+less is one part; a longer clip is split:
+- Split ONLY at cut boundaries, never inside a dialogue line; parts are contiguous, cover the clip
+  exactly (first `start_sec` = clip start, last `end_sec` = clip end), each at most 8s.
+- Each part is self-contained (`video_prompt` in the same layout: its own Cast = who is on screen in
+  THAT part, its own Opening = the part's real first frame, only its cuts and lines with times
+  relative to the part, the guard block, the style suffix). Part 1 opens on the clip's
+  `opening_state`, the last part ends on its `closing_state`. Parts join on a hard cut, so the next
+  part does not repeat the previous Ending; its `continuity_in` says what carries over (positions,
+  props in hand, light) so the edit matches.
+- Flow-safe writing (Google Flow refuses prompts that look like recreating a real person: "may
+  violate our policy on videos of famous people"). A personal name + a detailed face + a portrait
+  photo was refused; a role label + a short look + one photo went through. So in every part prompt:
+  - Characters by ROLE LABEL, never by name: `flow_labels` (top of prompts.json) gives each character
+    one fixed label for the whole series, from the bible role ("the worker", "the businessman", "the
+    young woman", "the little girl"); unique per character, the same in every episode. Names may
+    appear only inside quoted dialogue.
+  - Short look only: age range, build, hair, outfit, one signature item, PLUS the character's 1-2
+    distinctive face marks from the registry (freckles, a mole, glasses, a scar, a crooked tooth). No
+    full facial anatomy list (eyes, brows, nose, lips, jaw, skin), no height in cm. Never leave a face
+    with no mark at all: the model then fills in a default "pretty" face, and a young woman described
+    only by hair and a silk blouse was refused as a famous person even with no image of her attached.
+  - `refs`: at most ONE character image plus the location plate; other characters are text only.
+    Pick the character the part is ABOUT (most screen time, the face the camera holds on), not merely
+    the first speaker.
+  - No lettering at all (signs, phone screens, title cards go to post): the guard line reads
+    "... on-screen text except: none" and the location text drops sign wording.
+  - Start the Cast line with "Original fictional characters, not real people."
 
 ### `prompts.json`
 ```json
 {
   "unit": "clip",
+  "prompt_format": 2,
   "source_script": "data/series/<slug>/20261001-143000/final/ep01.md",
   "skill": "write-series-<slug>",
   "skill_version": "v3",
@@ -247,6 +357,7 @@ only where the scene `cast` changes it.
   "total_duration_sec": 90,
   "assets": "data/series/<slug>/20261001-143000/final/assets.json",
   "style_suffix": "vertical 9:16 frame, photoreal, ...",
+  "flow_labels": {"char_01": "the schoolgirl", "char_02": "the tall boy"},
   "characters": {"char_01": "teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant"},
   "locations": {"loc_02": "foggy dead pine forest at night, ..."},
   "shots": [
@@ -267,13 +378,25 @@ only where the scene `cast` changes it.
         {"cut": 2, "start_sec": 2.5, "end_sec": 5, "camera": "static CU",
          "action": "Lan stops, out of breath",
          "dialogue": [{"character": "char_01", "line": "Nó vẫn còn ở đây.", "delivery": "thì thào, sợ",
-                       "voiceover": false, "start_sec": 2.8, "end_sec": 4.6}]}
+                       "voiceover": false, "mode": "speaks", "start_sec": 2.8, "end_sec": 4.6}]}
       ],
       "dialogue": [{"character": "char_01", "line": "Nó vẫn còn ở đây.", "delivery": "thì thào, sợ",
-                    "voiceover": false, "start_sec": 2.8, "end_sec": 4.6}],
+                    "voiceover": false, "mode": "speaks", "start_sec": 2.8, "end_sec": 4.6}],
       "continuity_in": "",
+      "opening_state": "Wide: Lan, far in the fog, running toward camera, torch in her right hand.",
+      "closing_state": "Close-up: Lan and Minh face to face, his hand on her torch arm, both still.",
+      "performance": "Lan's panic turns into suspicion when Minh blocks her; Minh stays calm, hiding something.",
+      "on_screen_text": [],
       "pace_warning": [],
-      "video_prompt": "12.5-second vertical 9:16 multi-shot clip, night, dense foggy pine forest (...location anchor...). Cast: Lan: teen girl, 16, ... ; Minh: ... . Shot 1 (0-2.5s): handheld tracking wide shot, Lan runs toward camera through the fog, glances back. Shot 2 (2.5-5s): static close-up on Lan, out of breath; she whispers in Vietnamese, lip-synced: \"Nó vẫn còn ở đây.\" (terrified). Shot 3 (...) ... Same faces, outfits and light in every shot. Sound: heavy breathing, snapping branches, wind. vertical 9:16 frame, photoreal, ..."
+      "video_prompt": "12.5-second vertical 9:16 multi-shot clip, EXT, night, dense foggy pine forest (...location anchor...).\nCast: Lan: teen girl, 16, ... ; Minh: ... .\nVoices: Lan: teenage girl, thin breathy voice; Minh: teenage boy, low calm voice.\nOpening: Wide: Lan, far in the fog, running toward camera, torch in her right hand.\nShot 1 (0-2.5s): handheld tracking wide shot, Lan runs toward camera through the fog, glances back. Shot 2 (2.5-5s): static close-up on Lan, out of breath. SPEAKS (lip-synced): Lan (alone in frame, torch in hand), whispering in Vietnamese, terrified, 2.8-4.6s: \"Nó vẫn còn ở đây.\" Shot 3 (...) ...\nPerformance: ...\nEnding: Close-up: Lan and Minh face to face, ... Sound: heavy breathing, snapping branches, wind.\nRules: Speak only the quoted lines, ... No subtitles, captions, watermarks or on-screen text except: none. ...\nvertical 9:16 frame, photoreal, ...",
+      "veo_parts": [
+        {"part": 1, "start_sec": 0, "end_sec": 5, "cuts": [1, 2], "continuity_in": "",
+         "refs": ["assets/characters/char_01/char_01_sheet_v1.png", "assets/locations/loc_02/loc_02_night_v1.png"],
+         "video_prompt": "5-second vertical 9:16 multi-shot clip, EXT, night, foggy pine forest. Cast: Original fictional characters, not real people. The schoolgirl: teenage girl, slim, dark wavy shoulder-length hair, navy blazer, torch in hand. Opening: ... Ending: Close-up: the schoolgirl out of breath, eyes on the fog. ..."},
+        {"part": 2, "start_sec": 5, "end_sec": 12.5, "cuts": [3, 4], "continuity_in": "the schoolgirl still out of breath, torch in her right hand, same fog and light",
+         "refs": ["assets/characters/char_02/char_02_sheet_v1.png", "assets/locations/loc_02/loc_02_night_v1.png"],
+         "video_prompt": "7.5-second vertical 9:16 multi-shot clip, ... Opening: Over-the-shoulder: the tall boy steps out of the fog in front of the schoolgirl. ..."}
+      ]
     }
   ]
 }
@@ -295,12 +418,12 @@ own `start_sec`/`end_sec` (absolute): subtitles and lip-sync use them.
 ```
 
 ### Prompt rules
-- One prompt per clip of 10-15s (see Grouping). Inside it, numbered timed cuts: "Shot k (a-bs): size
-  + movement, who does what, who says what".
-- `video_prompt` is self-contained: clip length + aspect ratio + setting anchor + Cast anchors + timed
-  cuts + dialogue in quotes with speaker, language and lip-sync (on screen) or "voice-over, off
-  screen, not lip-synced" (VO) + light/color + sound + style suffix + "same faces, outfits and light in
-  every shot". No "same as before".
+- One prompt per clip of 10-15s (see Grouping). Inside it, numbered timed cuts (at most 5): "Shot k
+  (a-bs): size + movement, who does what, who says what".
+- `video_prompt` is self-contained and follows the Prompt layout above: setting anchor, Cast (on-screen
+  only), Voices, Opening, timed cuts with every line tagged SPEAKS / VOICE-OVER / OFF-SCREEN VOICE
+  (see "Dialogue in prompts"), Performance, Ending, Sound, the Rules guard block, the filtered style
+  suffix. No "same as before".
 - `continuity_in` (and the start of the prompt) describes how the clip opens when it continues the
   previous clip's scene (same framing, positions, light), so the two clips cut together.
 - Dialogue rate: `.claude/skills/dialogue-polish/references/vi-dialogue.md` "Speech rate" (Vietnamese

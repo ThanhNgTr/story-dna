@@ -61,3 +61,13 @@ def test_image_from_older_description_is_outdated(tmp_path):
     vm = assets.view_model(d)
     imgs = {i["name"]: i["outdated"] for i in vm["reg"]["locations"][0]["variants"][0]["_img"]["images"]}
     assert imgs == {"a.png": True, "b.png": False}
+
+
+def test_character_sheet_prompt_asks_for_a_non_famous_face(tmp_path):
+    d = tmp_path / "s"
+    reg = registry()
+    reg["characters"] = [{"char_id": "char_02", "name": "Vy", "age": 22, "prompt_en": "Vietnamese woman, early 20s",
+                          "wardrobe": [{"outfit_id": "char_02_o1", "when": "default", "prompt_en": "cream blouse"}]}]
+    write(d / "assets" / "assets_v1.json", reg)
+    prompt = assets.plan(d, ("character",), force=True)[0]["prompt"]
+    assert assets.IDENTITY_GUARD in prompt and "must not resemble any real" in prompt

@@ -107,7 +107,7 @@ function NextAction({ p }: { p: Project }) {
         confirmLabel="Chốt lại" pending={refresh.isPending} onConfirm={() => refresh.mutateAsync()} />
     )
   } else if (p.final_complete) {
-    const noPrompts = p.episodes.filter((e) => e.in_final && (!e.has_prompts || e.prompts_stale)).length
+    const noPrompts = p.episodes.filter((e) => e.in_final && (!e.has_prompts || e.prompts_stale || e.prompts_outdated)).length
     title = 'Season đã chốt'
     body = noPrompts
       ? <>Bước tiếp: tạo prompt video cho {noPrompts} tập (Claude chia mỗi tập thành các clip 10–15s, mỗi clip một prompt có sẵn các cảnh cắt bên trong, kèm ảnh tham chiếu đã duyệt). Xong, mỗi thẻ tập có nút “Tải gói video”.</>
@@ -116,7 +116,7 @@ function NextAction({ p }: { p: Project }) {
       <div className="flex flex-wrap gap-2">
         {noPrompts > 0 && (
           <ConfirmAction trigger={<Button>Tạo prompt video ({noPrompts} tập)</Button>} title="Tạo prompt video?"
-            description={<>Claude tạo shotlist + prompt cho {noPrompts} tập chưa có hoặc có prompt cũ (khoảng {Math.ceil(noPrompts / 4) * 5}–{Math.ceil(noPrompts / 4) * 10} phút). Nên duyệt ảnh nhân vật / bối cảnh trước để prompt gắn ảnh tham chiếu.</>}
+            description={<>Claude tạo shotlist + prompt cho {noPrompts} tập chưa có prompt, có prompt cũ hoặc theo định dạng cũ (khoảng {Math.ceil(noPrompts / 4) * 5}–{Math.ceil(noPrompts / 4) * 10} phút). Nên duyệt ảnh nhân vật / bối cảnh trước để prompt gắn ảnh tham chiếu.</>}
             confirmLabel="Tạo" pending={shots.isPending} onConfirm={() => shots.mutateAsync()} />
         )}
         <Button render={<a href={`/series/${p.slug}/${p.session_id}/export`} />} variant="outline">Tải file biên kịch .md</Button>

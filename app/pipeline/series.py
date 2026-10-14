@@ -586,13 +586,26 @@ async def create_skill(job: Job) -> dict:
     return {"slug": slug}
 
 
-def new_session(slug: str, idea: str, episodes: int, episode_sec: int, title: str) -> str:
+# Screenplay language chosen when the series is created; "" = the language of the idea
+LANGUAGES = {"vi": "Vietnamese", "en": "English"}
+
+
+def language_note(lang: str) -> str:
+    """Prompt line for the screenplay language (Claude follows the idea's language when none was chosen)."""
+    if lang in LANGUAGES:
+        return (f"Write the bible, outline and screenplay in {LANGUAGES[lang]} (dialogue, VO, scene text, "
+                f"titles), whatever language the idea is written in; set the bible's language to \"{lang}\".")
+    return "Write the screenplay in the language of the idea."
+
+
+def new_session(slug: str, idea: str, episodes: int, episode_sec: int, title: str, language: str = "") -> str:
     sid = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     d = session_dir(slug, sid)
     d.mkdir(parents=True, exist_ok=True)
     (d / "idea.md").write_text(idea)
     (d / "input.json").write_text(json.dumps({
         "title": title, "idea_file": str(d / "idea.md"), "episodes": episodes, "episode_sec": episode_sec,
+        **({"language": language} if language in LANGUAGES else {}),
         "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}, indent=2, ensure_ascii=False))
     return sid
 
@@ -607,7 +620,7 @@ async def write_outline(job: Job) -> dict:
         f"--episode-sec {p['episode_sec']}\n\n"
         f"Session dir already exists, use it exactly: {d} (input.json and idea.md are there; keep them).\n"
         "Run Stage 1 (adaptation.md) and Stage 2 (bible_v1, outline_v1) only, then stop for review. "
-        "Do not ask questions; write the screenplay in the language of the idea." + UI_NOTE), "outline")
+        "Do not ask questions. " + language_note(p.get("language") or "") + UI_NOTE), "outline")
     st = session_state(slug, sid)
     _check(st["outline"] is not None, "outline was not written")
     job.step("outline", "done")

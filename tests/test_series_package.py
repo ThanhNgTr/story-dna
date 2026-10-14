@@ -267,3 +267,140 @@ def test_check_clips_length_and_gaps(app_session):
           {"unit": "clip", "total_duration_sec": 40, "shots": [_clip(1, 0, 20, "SC1"), _clip(2, 21, 40, "SC1")]})
     errs, _ = package.check_clips(d, 1)
     assert any("max 15s" in e for e in errs) and any("contiguous" in e for e in errs)
+
+
+def _fmt2_clip(no, a, b, scene="SC1", cuts=None, parts=None, lines=()):
+    prompt = "Opening: x. Shot 1 ... Ending: y. Rules: ... No subtitles, captions ..."
+    c = _clip(no, a, b, scene, lines)
+    c.update({"video_prompt": prompt, "opening_state": "x", "closing_state": "y", "performance": "z",
+              "on_screen_text": [], "cuts": cuts or [], "veo_parts": parts or []})
+    return c
+
+
+def _write_fmt2(d, clips, total):
+    ep = episode(1)
+    ep["scenes"] = [{"id": "SC1", "start_sec": 0, "end_sec": total, "loc_id": "loc_01", "beats": []}]
+    write(d / "final" / "ep01.json", ep)
+    write(d / "final" / "shots" / "ep01" / "prompts.json",
+          {"unit": "clip", "prompt_format": 2, "total_duration_sec": total, "shots": clips})
+
+
+def test_check_clips_format2_prompt_layout(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    good = _fmt2_clip(1, 0, 8, cuts=[{"cut": 1, "start_sec": 0, "end_sec": 8}],
+                      parts=[{"part": 1, "start_sec": 0, "end_sec": 8, "video_prompt": "Opening: a Ending: b No subtitles"}])
+    _write_fmt2(d, [good], 8)
+    assert package.check_clips(d, 1) == ([], [])
+    bad = {**good, "video_prompt": "Shot 1 only", "closing_state": ""}
+    _write_fmt2(d, [bad], 8)
+    errs, _ = package.check_clips(d, 1)
+    assert any("Opening:, Ending:, No subtitles" in e for e in errs) and any("no closing_state" in e for e in errs)
+
+
+def test_check_clips_veo_parts_and_cut_count(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    cuts = [{"cut": k, "start_sec": a, "end_sec": b} for k, (a, b) in enumerate([(0, 2), (2, 4), (4, 6), (6, 8), (8, 10), (10, 12)], 1)]
+    part = lambda k, a, b: {"part": k, "start_sec": a, "end_sec": b, "video_prompt": "Opening: a Ending: b No subtitles"}
+    line = ("Anh đi đâu đấy?", 4.5, 5.8)
+    _write_fmt2(d, [_fmt2_clip(1, 0, 12, cuts=cuts)], 12)
+    errs, warns = package.check_clips(d, 1)
+    assert any("no veo_parts" in e for e in errs) and any("6 cuts" in w for w in warns)
+    _write_fmt2(d, [_fmt2_clip(1, 0, 12, cuts=cuts, parts=[part(1, 0, 6), part(2, 6, 12)], lines=[line])], 12)
+    assert package.check_clips(d, 1)[0] == []
+    # 9s part, split inside a cut and inside a line
+    _write_fmt2(d, [_fmt2_clip(1, 0, 12, cuts=cuts, parts=[part(1, 0, 3), part(2, 3, 12)])], 12)
+    errs, _ = package.check_clips(d, 1)
+    assert any("ends inside a cut" in e for e in errs) and any("9.0s, max 8s" in e for e in errs)
+    _write_fmt2(d, [_fmt2_clip(1, 0, 12, cuts=cuts, parts=[part(1, 0, 6), part(2, 6, 12)], lines=[("Dài.", 5, 7)])], 12)
+    assert any("splits the line" in e for e in package.check_clips(d, 1)[0])
+
+
+def test_check_clips_flags_old_format(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    ep = episode(1)
+    ep["scenes"] = [{"id": "SC1", "start_sec": 0, "end_sec": 10, "beats": []}]
+    write(d / "final" / "ep01.json", ep)
+    write(d / "final" / "shots" / "ep01" / "prompts.json", {"unit": "clip", "total_duration_sec": 10, "shots": [_clip(1, 0, 10, "SC1")]})
+    errs, warns = package.check_clips(d, 1)
+    assert errs == [] and any("older prompt format" in w for w in warns)
+
+
+def test_old_prompt_format_is_outdated_not_stale(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    finalize(d)
+    pf = d / "final" / "shots" / "ep01" / "prompts.json"
+    write(pf, {"unit": "clip", "shots": []})
+    assert package.prompts_outdated(d, 1) and not package.prompts_stale(d, 1)
+    write(pf, {"unit": "clip", "prompt_format": 2, "shots": []})
+    assert not package.prompts_outdated(d, 1)
+
+
+def test_check_clips_every_clip_needs_a_flow_version(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    _write_fmt2(d, [_fmt2_clip(1, 0, 6, cuts=[{"cut": 1, "start_sec": 0, "end_sec": 6}])], 6)
+    assert any("no veo_parts" in e for e in package.check_clips(d, 1)[0])
+
+
+def test_flow_warnings_names_and_faces():
+    from app.pipeline import package
+    names = {"char_01": "Phong", "char_03": "Ông Hữu"}
+    part = {"video_prompt": 'Cast: Mr. Huu: man, 50s. The worker says: "Phong ơi, ra đây."',
+            "refs": ["assets/characters/char_01/a.png", "assets/characters/char_03/b.png", "assets/locations/x.png"]}
+    w = package.flow_warnings("p1", part, names)
+    assert any("Ông Hữu" in x and "Phong" not in x for x in w)  # name in dialogue is fine, "Huu" is not
+    assert any("2 character images" in x for x in w)
+    ok = {"video_prompt": 'The businessman points up. The worker: "Phong đây."', "refs": ["assets/characters/char_01/a.png"]}
+    assert package.flow_warnings("p1", ok, names) == []
+
+
+def test_dialogue_tags_catch_lip_synced_thoughts_and_wrong_speakers():
+    from app.pipeline import package
+    lines = [{"character": "char_02", "line": "Tay mày sao rồi?", "start_sec": 0.1},
+             {"character": "char_01", "line": "Khóa thật nặng gấp đôi.", "voiceover": True, "start_sec": 3.9},
+             {"character": "char_09", "line": "Ai nhặt được thì đem nộp!", "start_sec": 6.7}]
+    on = {"char_01", "char_02"}
+    good = ('Voices: ... Shot 1: SPEAKS (lip-synced): Tam (left, bucket hat), worried, 0.1-1.8s: "Tay mày sao rồi?" '
+            'VOICE-OVER (inner voice, nobody\'s lips move): Phong, cold, 3.9-6.4s; Phong keeps his mouth closed: '
+            '"Khóa thật nặng gấp đôi." OFF-SCREEN VOICE (not in frame): the foreman, through a loudspeaker: '
+            '"Ai nhặt được thì đem nộp!"')
+    assert package.dialogue_tag_warnings("c7", good, lines, on) == []
+    # the old style: VO written as "off screen, not lip-synced" after a lip-synced line -> wrong tag
+    old = ('Tam says in Vietnamese, SPEAKS (lip-synced): "Tay mày sao rồi?" Then Phong (voice-over, off screen, '
+           'not lip-synced): "Khóa thật nặng gấp đôi." The Foreman: "Ai nhặt được thì đem nộp!"')
+    w = package.dialogue_tag_warnings("c7", old, lines, on)
+    assert any("Khóa" in x and "has no VOICE-OVER tag" in x for x in w)  # untagged inner thought
+    assert any("Ai nhặt" in x and "has no OFF-SCREEN VOICE tag" in x for x in w)
+    mixed = 'SPEAKS (lip-synced): Phong: "Khóa thật nặng gấp đôi."'  # a thought tagged as speech
+    assert any("tagged SPEAKS (lip-synced), should be VOICE-OVER" in x
+               for x in package.dialogue_tag_warnings("c7", mixed, lines[1:2], on))
+    assert any("not quoted word for word" in x for x in package.dialogue_tag_warnings("c7", "nothing", lines[:1], on))
+
+
+USER_PART = ('Shot 1 (0-1.4s): extreme close-up; the hand hides. No one speaks on screen. The young worker keeps his '
+             'mouth closed. VOICE-OVER (inner voice, nobody\'s lips move): the young worker, low, in Vietnamese, '
+             '0.05-2.9s: "Tôi suýt kể cho cô ấy nghe chuyện hồi đi học, rồi lại nuốt vào." Shot 2 (1.4-3.2s): '
+             'the bangle flashes. No dialogue. Shot 3 (3.2-5.25s): he draws a breath as if to ask, then looks down. '
+             'VOICE-OVER (inner voice, nobody\'s lips move): the young worker, slow, 2.95-5.23s: "Ba tuần rồi."')
+
+
+def test_shot_dialogue_warnings_on_a_real_flow_part():
+    from app.pipeline import package
+    w = package.shot_dialogue_warnings("p", USER_PART)
+    assert any("1.4-3.2s says \"No dialogue\"" in x for x in w)
+    assert any("as if to ask" in x for x in w)
+    fixed = (USER_PART.replace("No dialogue.", "No one speaks on screen; the young worker's voice-over continues.")
+             .replace("he draws a breath as if to ask", "his lips part, then press shut"))
+    assert package.shot_dialogue_warnings("p", fixed) == []
+
+
+def test_pace_warnings_count_vietnamese_syllables():
+    from app.pipeline import package
+    fast = {"line": "Tôi suýt kể cho cô ấy nghe chuyện hồi đi học, rồi lại nuốt vào.", "start_sec": 0.05, "end_sec": 2.9}
+    ok = {"line": "Tôi suýt kể chuyện hồi đi học, rồi lại thôi.", "start_sec": 0.05, "end_sec": 2.9}
+    assert "15 syllables" in package.pace_warnings("c", [fast])[0]
+    assert package.pace_warnings("c", [ok]) == []

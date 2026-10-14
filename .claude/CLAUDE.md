@@ -102,7 +102,11 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
    - Produced videos are analyzed with step 1, then reconciled with the scripts as CANON (video wins) -> `canon_vN`, bible/outline next version; approve -> only missing episodes are written
    - Works for series produced outside the app (no scripts: bible built from the videos)
 6. **Optional production**: `/script-to-shotlist final/epNN.md` -> `final/shots/epNN/prompts.json` (`"unit": "clip"`: one
-   prompt per 10-15s clip with timed cuts + timed lines; older per-shot files count as `prompts_stale`); web "Tải gói video"
+   prompt per 10-15s clip with <=5 timed cuts + timed lines; older per-shot files count as `prompts_stale`).
+   `"prompt_format": 2`: each clip has opening/closing state, performance, `on_screen_text`, a fixed Rules guard
+   block, and `veo_parts` on EVERY clip (Google Flow / Veo 3.1 version, <=8s each, split on cuts): role labels
+   (`flow_labels`) not names, short looks, <=1 character image per part, no lettering (Flow refused names +
+   detailed faces + 4 portraits as "famous people"); `package check` enforces it, older files only warn. Web "Tải gói video"
    (`app/pipeline/package.py`) zips per episode: shot prompts + approved refs + `subtitles.srt` + `edit_list.csv`. Then `/direct-video`,
    `/cinematographer-brief`, `/sound-design-brief`, `/production-design-brief`
 

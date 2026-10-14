@@ -100,7 +100,7 @@ function VideoPackageButton({ n, busy }: { n: number; busy: boolean }) {
   const qc = useQueryClient()
   const ep = p.episodes.find((e) => e.n === n)
   const make = useMutation({
-    mutationFn: () => api.makeShotlist(p.slug, p.session_id, [n]),
+    mutationFn: () => api.makeShotlist(p.slug, p.session_id, [n], true),
     onSuccess: () => {
       toast.success(`Claude đang tạo prompt video tập ${n} (khoảng 3–8 phút).`)
       qc.invalidateQueries({ queryKey: ['project', p.slug, p.session_id] })
@@ -110,10 +110,22 @@ function VideoPackageButton({ n, busy }: { n: number; busy: boolean }) {
   if (!ep) return null
   if (ep.has_prompts && !ep.prompts_stale) {
     return (
-      <Button variant="outline" size="sm" className="gap-1.5" render={<a href={api.packageUrl(p.slug, p.session_id, n)} download />}
-        title="Gói zip cho Higgsfield: prompt từng shot, ảnh tham chiếu, phụ đề .srt, danh sách dựng .csv">
-        <Download className="size-3.5" /> Tải gói video
-      </Button>
+      <>
+        <Button variant="outline" size="sm" className="gap-1.5" render={<a href={api.packageUrl(p.slug, p.session_id, n)} download />}
+          title="Gói zip cho Higgsfield: prompt từng shot, ảnh tham chiếu, phụ đề .srt, danh sách dựng .csv">
+          <Download className="size-3.5" /> Tải gói video
+        </Button>
+        <ConfirmAction
+          trigger={<Button variant={ep.prompts_outdated ? 'outline' : 'ghost'} size="sm" className="gap-1.5"
+            disabled={busy || !ep.in_final || make.isPending}
+            title={ep.prompts_outdated ? 'Prompt theo định dạng cũ: chưa có khung đầu/cuối, lệnh cấm, bản Veo 8s' : 'Viết lại prompt video của tập này'}>
+            <Clapperboard className="size-3.5" /> {ep.prompts_outdated ? 'Nâng cấp prompt video' : 'Tạo lại prompt'}
+          </Button>}
+          title={`Tạo lại prompt video tập ${n}?`} confirmLabel="Tạo lại" pending={make.isPending}
+          onConfirm={() => make.mutateAsync()}
+          description={<>Claude chia lại tập thành các clip và viết prompt mới (khoảng 3–8 phút), thay cho prompt hiện tại của tập này.
+            {ep.prompts_outdated && ' Bản mới có khung đầu/cuối mỗi clip, diễn xuất, lệnh cấm phụ đề / thêm thoại, tối đa 5 cảnh cắt mỗi clip và bản tách ≤8s cho Veo 3.1 / Flow.'}</>} />
+      </>
     )
   }
   return (

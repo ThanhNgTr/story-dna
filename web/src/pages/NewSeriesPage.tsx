@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import { api, qk } from '@/lib/api'
+import { api, qk, type ScriptLanguage } from '@/lib/api'
 import { askNotificationPermission } from '@/lib/events'
 import { cn } from '@/lib/utils'
 
@@ -24,9 +24,14 @@ Cảnh muốn có:
 Kết: (nếu đã nghĩ ra; chưa có cũng được)
 `
 const EP_SEC = [60, 75, 90, 120]
+const LANGUAGES: { value: ScriptLanguage; label: string; hint: string }[] = [
+  { value: '', label: 'Theo ý tưởng', hint: 'Ý tưởng viết bằng tiếng gì thì kịch bản ra tiếng đó.' },
+  { value: 'vi', label: 'Tiếng Việt', hint: 'Thoại, VO, mô tả cảnh bằng tiếng Việt.' },
+  { value: 'en', label: 'English', hint: 'Thoại, VO, mô tả cảnh bằng tiếng Anh, dù ý tưởng viết tiếng Việt.' },
+]
 const STEPS = ['Phong cách', 'Ý tưởng', 'Độ dài & xác nhận']
 
-interface Draft { slug: string; title: string; idea: string; episodes: number; episode_sec: number }
+interface Draft { slug: string; title: string; idea: string; episodes: number; episode_sec: number; language: ScriptLanguage }
 
 function loadDraft(): Partial<Draft> {
   try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch { return {} }
@@ -40,7 +45,8 @@ export function NewSeriesPage() {
   const [d, setD] = useState<Draft>(() => {
     const saved = loadDraft()
     return { slug: params.get('skill') || saved.slug || '', title: saved.title || '', idea: saved.idea || '',
-      episodes: saved.episodes || 12, episode_sec: saved.episode_sec || 90 }
+      episodes: saved.episodes || 12, episode_sec: saved.episode_sec || 90,
+      language: LANGUAGES.some((l) => l.value === saved.language) ? saved.language! : '' }
   })
   const fileRef = useRef<HTMLInputElement>(null)
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }))
@@ -67,6 +73,7 @@ export function NewSeriesPage() {
   const words = d.idea.trim() ? d.idea.trim().split(/\s+/).length : 0
   const canNext = [!!skill, d.idea.trim().length >= 20, true][step]
   const totalMin = Math.round((d.episodes * d.episode_sec) / 60)
+  const lang = LANGUAGES.find((l) => l.value === d.language) ?? LANGUAGES[0]
 
   const readFile = (f: File) => {
     if (f.size > 500_000) { toast.error('File quá lớn (tối đa 500 KB chữ).'); return }
@@ -161,7 +168,7 @@ export function NewSeriesPage() {
                 <li>Rời rạc cũng được: vài nhân vật, một bối cảnh, vài cảnh bạn thích.</li>
                 <li>Chỗ nào bỏ trống, Claude tự nghĩ theo phong cách và đánh dấu “[từ khung]”.</li>
                 <li>Khi ý của bạn khác khung truyện, ý của bạn được ưu tiên.</li>
-                <li>Viết bằng tiếng gì thì kịch bản ra tiếng đó.</li>
+                <li>Viết bằng tiếng gì thì kịch bản ra tiếng đó, trừ khi bạn chọn ngôn ngữ ở bước sau.</li>
               </ul>
             </aside>
           </div>
@@ -187,12 +194,25 @@ export function NewSeriesPage() {
                 </div>
               </div>
             </div>
+            <div>
+              <label className="text-sm font-medium">Ngôn ngữ kịch bản</label>
+              <div className="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label="Ngôn ngữ kịch bản">
+                {LANGUAGES.map((l) => (
+                  <button key={l.value || 'auto'} role="radio" aria-checked={d.language === l.value} onClick={() => set({ language: l.value })}
+                    className={cn('rounded-lg border px-3 py-1.5 text-sm', d.language === l.value ? 'border-primary bg-primary/5 font-medium text-primary' : 'hover:border-primary/40')}>
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-xs text-muted-foreground">{lang.hint}</p>
+            </div>
             <div className="rounded-lg border bg-muted/30 p-4 text-sm">
               <div className="font-medium">Tóm tắt</div>
               <dl className="mt-2 grid grid-cols-[120px_minmax(0,1fr)] gap-y-1.5">
                 <dt className="text-muted-foreground">Phong cách</dt><dd>{skill?.slug}</dd>
                 <dt className="text-muted-foreground">Tên</dt><dd>{d.title || <span className="text-muted-foreground">(Claude đặt)</span>}</dd>
                 <dt className="text-muted-foreground">Ý tưởng</dt><dd className="line-clamp-3 whitespace-pre-wrap">{d.idea.trim()}</dd>
+                <dt className="text-muted-foreground">Ngôn ngữ</dt><dd>{lang.label}</dd>
                 <dt className="text-muted-foreground">Thời lượng</dt><dd>{d.episodes} tập × {d.episode_sec} giây ≈ {totalMin} phút cả season</dd>
               </dl>
             </div>

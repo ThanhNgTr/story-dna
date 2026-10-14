@@ -82,6 +82,13 @@ def approved_refs(session: Path) -> dict[str, str]:
     return out
 
 
+# Video tools (Google Flow / Veo) refuse a reference image whose face reads as a real or famous person: a
+# face built from beauty-standard adjectives came out idol-like and every clip with it was refused.
+IDENTITY_GUARD = ("Identity: an original fictional person with an ordinary, lived-in face and its own "
+                  "distinctive features (not a model, idol or beauty-pageant look); must not resemble any real "
+                  "actor, singer, influencer or other celebrity.")
+
+
 def _default_outfit(c: dict) -> dict | None:
     ward = c.get("wardrobe") or []
     return next((o for o in ward if "default" in (o.get("when") or "").lower()), ward[0] if ward else None)
@@ -235,6 +242,7 @@ def plan(session: Path, kinds=DEFAULT_KINDS, ids: set[str] | None = None, force:
                     "(front, three-quarter, side). Same person in every view. Plain light grey studio backdrop, "
                     "even soft light, no text, no labels, no watermark.\n"
                     f"Subject: {_subject(c)}\n"
+                    f"{IDENTITY_GUARD}\n"
                     + (f"Outfit: {_text(base)}\n" if base else "")
                     + f"Style: {_style(reg, plate=False)}."))
             if "outfit" in kinds:

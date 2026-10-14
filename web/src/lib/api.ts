@@ -47,9 +47,12 @@ export interface ContinueBody {
 export interface PromptShot {
   shot_number: number; scene: string; start_sec: number; end_sec: number; duration_sec: number
   action: string; camera: string; sfx: string; loc_id: string; video_prompt: string
-  dialogue: { character: string; line: string; delivery?: string; voiceover?: boolean; start_sec?: number; end_sec?: number }[]
+  dialogue: { character: string; line: string; delivery?: string; voiceover?: boolean; mode?: 'speaks' | 'voiceover' | 'offscreen'; start_sec?: number; end_sec?: number }[]
   characters: { id: string; name: string }[]; pace_warning: string[]; refs: string[]
   continuity_in?: string
+  opening_state?: string; closing_state?: string; performance?: string
+  on_screen_text: string[]
+  veo_parts: { part: number; start_sec: number; end_sec: number; cuts?: number[]; refs?: string[]; video_prompt: string }[]
   cuts: { cut: number; start_sec: number; end_sec: number; camera?: string; action?: string }[]
 }
 export interface PromptsData {
@@ -86,6 +89,7 @@ export interface EpisodeInfo {
   produced: boolean
   has_prompts: boolean
   prompts_stale: boolean
+  prompts_outdated: boolean
 }
 
 export interface Iteration {
@@ -453,7 +457,8 @@ export interface SkillDetail extends Omit<Skill, 'reference' | 'projects'> {
   skill_md: string
 }
 
-export interface NewProject { slug: string; title: string; idea: string; episodes: number; episode_sec: number }
+export type ScriptLanguage = '' | 'vi' | 'en'
+export interface NewProject { slug: string; title: string; idea: string; episodes: number; episode_sec: number; language: ScriptLanguage }
 
 export class ApiError extends Error {
   status: number

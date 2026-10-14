@@ -115,6 +115,7 @@ class NewProjectIn(BaseModel):
     idea: str
     episodes: int = 12
     episode_sec: int = 90
+    language: str = ""          # "" = language of the idea; else a key of series.LANGUAGES
 
 
 class HideIn(BaseModel):
@@ -304,9 +305,12 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             raise HTTPException(400, "Ý tưởng quá ngắn: viết thêm vài dòng về nhân vật, bối cảnh hoặc cảnh bạn muốn có.")
         episodes = max(10, min(20, body.episodes))
         episode_sec = max(60, min(120, body.episode_sec))
-        sid = series.new_session(body.slug, idea, episodes, episode_sec, body.title.strip())
+        if body.language and body.language not in series.LANGUAGES:
+            raise HTTPException(400, "Ngôn ngữ không hỗ trợ.")
+        sid = series.new_session(body.slug, idea, episodes, episode_sec, body.title.strip(), body.language)
         job = jobs.start("outline", f"Viết outline: {body.title.strip() or body.slug}",
-                         {"slug": body.slug, "session_id": sid, "episodes": episodes, "episode_sec": episode_sec},
+                         {"slug": body.slug, "session_id": sid, "episodes": episodes, "episode_sec": episode_sec,
+                          "language": body.language},
                          job_funcs["outline"])
         return {"slug": body.slug, "session_id": sid, "job": one(job)}
 
@@ -388,6 +392,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                 "produced": n <= st["produced_upto"],
                 "has_prompts": package.prompts_file(d, n) is not None,
                 "prompts_stale": package.prompts_stale(d, n),
+                "prompts_outdated": package.prompts_outdated(d, n),
             })
         summary = {"session_id": sid, "episodes": len(st["episodes"]), "final": st["final_complete"],
                    "final_stale": st["final_stale"],

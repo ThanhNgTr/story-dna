@@ -7,7 +7,7 @@ if [ -f .env ]; then
   set -a; . ./.env; set +a
 fi
 if [ ! -x .venv/bin/python ]; then
-  echo "Missing .venv. See README > Quick Start step 0." >&2; exit 1
+  echo "Missing .venv: run ./install.sh first." >&2; exit 1
 fi
 .venv/bin/python -c "import fastapi, uvicorn" 2>/dev/null || \
   ~/.local/bin/uv pip install --python .venv/bin/python -r app/requirements.txt

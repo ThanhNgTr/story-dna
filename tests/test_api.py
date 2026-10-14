@@ -1,5 +1,7 @@
 """JSON API used by the React UI: payload shape and the guards around finalize / video prompts."""
 
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -147,3 +149,35 @@ def test_job_start_without_event_loop_fails_before_saving(tmp_path, monkeypatch)
     with pytest.raises(RuntimeError):
         m.start("x", "t", {}, lambda j: None)
     assert list(tmp_path.glob("*.json")) == []
+
+
+@pytest.mark.parametrize("language,note", [("en", "in English"), ("", "language of the idea")])
+def test_new_series_language(client, monkeypatch, language, note):
+    c, d = client
+    from app import main
+    from app.jobs import Job
+    from app.pipeline import series
+    started = {}
+
+    def fake_start(kind, title, params, fn, job=None):
+        started.update(params)
+        return Job({"id": "J1", "kind": kind, "title": title, "params": params, "status": "running",
+                    "created_at": "2026-10-13T00:00:00Z", "steps": {}, "cost_usd": 0.0, "result": {}})
+
+    monkeypatch.setattr(series, "list_series_skills", lambda: ["demo"])
+    monkeypatch.setattr(main.jobs, "start", fake_start)
+    r = c.post("/api/projects", json={"slug": "demo", "idea": "Một anh phụ hồ cứu con gái ông chủ thầu.",
+                                      "language": language})
+    assert r.status_code == 200, r.text
+    inp = json.loads((d.parent / r.json()["session_id"] / "input.json").read_text())
+    assert inp.get("language", "") == language and started["language"] == language
+    assert note in series.language_note(language)
+
+
+def test_new_series_rejects_unknown_language(client, monkeypatch):
+    c, _ = client
+    from app.pipeline import series
+    monkeypatch.setattr(series, "list_series_skills", lambda: ["demo"])
+    r = c.post("/api/projects", json={"slug": "demo", "idea": "Một anh phụ hồ cứu con gái ông chủ thầu.",
+                                      "language": "fr"})
+    assert r.status_code == 400

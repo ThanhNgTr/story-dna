@@ -59,10 +59,31 @@ Claude Code command.
 | Codex CLI, logged in with ChatGPT (optional) | reference images of characters / locations / props | ChatGPT/Codex extension in VS Code, or `codex` on PATH |
 | Node 20+ (optional) | only to change the web UI | `node --version` |
 
-Linux and macOS. The Claude CLI is found via `CLAUDE_BIN`, `PATH` or the VS Code extension; Codex via
+Linux, macOS, and Windows through WSL2. The Claude CLI is found via `CLAUDE_BIN`, `PATH` or the VS Code extension; Codex via
 `CODEX_BIN`, `PATH` or the VS Code ChatGPT extension.
 
 ## Install
+
+### One command (recommended)
+
+| System | Command |
+|---|---|
+| Ubuntu / Debian / Fedora / Arch, macOS (needs [Homebrew](https://brew.sh)) | `./install.sh` |
+| Windows 10/11 | PowerShell in the story-dna folder: `powershell -ExecutionPolicy Bypass -File .\install.ps1` (sets up WSL2 + Ubuntu, copies the project to `~/story-dna` inside it, runs `install.sh` there) |
+
+`install.sh` installs what is missing and skips what is there (safe to run again): ffmpeg / git / curl (asks
+before `sudo`), uv, Python 3.12 in `.venv`, the web app packages, WhisperX (CPU), Claude Code (official
+installer), Codex CLI (optional, via Homebrew or npm), `.env`. Then log in once: `claude` (and `codex login`
+for images), and start with `./run_app.sh`.
+
+Options: `--yes` (no questions), `--no-whisperx` (skip the 2.5 GB download; dialogue is then guessed from
+frames), `--no-codex`, `--check` (only report what is installed and what is missing).
+
+Notes: Fedora gets `ffmpeg-free` from its own repos (common H.264/AAC files work; RPM Fusion's `ffmpeg` is the
+full build). Intel Macs: no current PyTorch, so WhisperX is skipped. WSL2: open
+http://127.0.0.1:8765/ui/ in the Windows browser; keep videos inside the Linux home (`~/story-dna/data/input`).
+
+### Manual
 
 1. **ffmpeg**: `sudo apt install ffmpeg` (Ubuntu) or `brew install ffmpeg` (macOS).
 2. **uv + Python environment + WhisperX** (local CPU, no sudo):

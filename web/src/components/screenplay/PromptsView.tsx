@@ -29,13 +29,21 @@ function ShotCard({ s, imgBase, names, unit }: { s: PromptShot; imgBase: string;
         <span className="text-xs text-muted-foreground">{s.scene}{s.camera ? ` · ${s.camera}` : ''}</span>
         <Button size="xs" variant={done ? 'secondary' : 'outline'} className="ml-auto gap-1"
           onClick={async () => { await copy(s.video_prompt || '', `prompt ${unit} ${s.shot_number}`); setDone(true) }}>
-          {done ? <Check className="size-3" /> : <Copy className="size-3" />} Sao chép prompt
+          {done ? <Check className="size-3" /> : <Copy className="size-3" />} Sao chép prompt{s.veo_parts.length ? ' (Seedance)' : ''}
         </Button>
       </header>
       <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto]">
         <div className="min-w-0 space-y-3 text-sm">
           {s.action && <p className="text-muted-foreground">{s.action}</p>}
           {s.continuity_in && <p className="text-xs text-muted-foreground">Nối tiếp clip trước: {s.continuity_in}</p>}
+          {(s.opening_state || s.closing_state || s.performance) && (
+            <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-xs">
+              {s.opening_state && <><dt className="text-muted-foreground">Khung đầu</dt><dd>{s.opening_state}</dd></>}
+              {s.performance && <><dt className="text-muted-foreground">Diễn xuất</dt><dd>{s.performance}</dd></>}
+              {s.closing_state && <><dt className="text-muted-foreground">Khung cuối</dt><dd>{s.closing_state}</dd></>}
+              {s.opening_state && <><dt className="text-muted-foreground">Chữ trên hình</dt><dd>{s.on_screen_text.length ? s.on_screen_text.join(' · ') : 'không'}</dd></>}
+            </dl>
+          )}
           {s.cuts.length > 0 && (
             <ol className="space-y-0.5 rounded-lg border px-3 py-2 text-xs">
               {s.cuts.map((c) => (
@@ -52,7 +60,8 @@ function ShotCard({ s, imgBase, names, unit }: { s: PromptShot; imgBase: string;
                 <p key={i}>
                   {d.start_sec != null && <span className="mr-1 font-mono text-xs text-muted-foreground">{sec(d.start_sec)}</span>}
                   <span className="font-medium">{names[d.character] || d.character}</span>
-                  {d.voiceover && <span className="ml-1 rounded bg-muted px-1 text-[10px] font-medium">VO</span>}
+                  {(d.voiceover || d.mode === 'voiceover') && <span className="ml-1 rounded bg-muted px-1 text-[10px] font-medium" title="Lời dẫn / nghĩ trong lòng: không ai mấp máy môi">VO</span>}
+                  {d.mode === 'offscreen' && <span className="ml-1 rounded bg-muted px-1 text-[10px] font-medium" title="Nói thành tiếng nhưng người nói không có trong khung">Ngoài khung</span>}
                   {d.delivery && <span className="ml-1 text-xs text-muted-foreground italic">({d.delivery})</span>}
                   <span className="ml-1">“{d.line}”</span>
                 </p>
@@ -60,6 +69,26 @@ function ShotCard({ s, imgBase, names, unit }: { s: PromptShot; imgBase: string;
             </div>
           )}
           <pre className="max-h-64 overflow-y-auto rounded-lg bg-muted/60 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">{s.video_prompt}</pre>
+          {s.veo_parts.length > 0 && (
+            <details className="rounded-lg border px-3 py-2 text-xs">
+              <summary className="cursor-pointer text-muted-foreground">Bản Google Flow / Veo 3.1: {s.veo_parts.length} phần ≤ 8s, gọi nhân vật bằng vai, tối đa 1 ảnh nhân vật</summary>
+              <div className="mt-2 space-y-2">
+                {s.veo_parts.map((vp) => (
+                  <div key={vp.part} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-muted-foreground">Phần {vp.part} · {sec(vp.start_sec)}–{sec(vp.end_sec)}</span>
+                      <Button size="xs" variant="outline" className="ml-auto gap-1"
+                        onClick={() => copy(vp.video_prompt, `prompt Veo ${unit} ${s.shot_number} phần ${vp.part}`)}>
+                        <Copy className="size-3" /> Sao chép
+                      </Button>
+                    </div>
+                    <p className="text-muted-foreground">Ảnh cho phần này: {vp.refs?.length ? vp.refs.map((r) => r.split('/').pop()).join(', ') : 'không'}</p>
+                    <pre className="max-h-40 overflow-y-auto rounded bg-muted/60 p-2 font-mono leading-relaxed whitespace-pre-wrap">{vp.video_prompt}</pre>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
           {s.sfx && <p className="text-xs text-muted-foreground">Âm thanh: {s.sfx}</p>}
           {s.pace_warning.map((w, i) => (
             <p key={i} className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
@@ -128,6 +157,12 @@ export function PromptsView({ slug, sid, n }: { slug: string; sid: string; n: nu
       )}
       {v.check && !v.check.errors.length && (
         <p className="text-xs text-muted-foreground">Đã kiểm tra: mỗi clip nằm trong đúng một cảnh (một bối cảnh, một thời điểm), tối đa 15s, thoại khớp thời gian.</p>
+      )}
+      {v.check && v.check.warnings.length > 0 && (
+        <details className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">
+          <summary className="cursor-pointer">{v.check.warnings.length} cảnh báo prompt</summary>
+          <ul className="mt-1 list-disc pl-5">{v.check.warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+        </details>
       )}
       {v.style_suffix && (
         <details className="rounded-lg border bg-card px-4 py-2.5 text-sm">

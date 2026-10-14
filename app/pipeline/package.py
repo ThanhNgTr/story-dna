@@ -51,6 +51,18 @@ def prompts_stale(session: Path, n: int) -> bool:
     return bool(srcs and max(f.stat().st_mtime for f in srcs) > p.stat().st_mtime + 1)
 
 
+def prompts_outdated(session: Path, n: int) -> bool:
+    """Clip prompts in an older prompt_format (no opening/closing state, guard block, Veo parts): still usable,
+    but worth remaking with the current skill."""
+    p = prompts_file(session, n)
+    if not p or not is_clip_format(p):
+        return False
+    try:
+        return int(json.loads(p.read_text(encoding="utf-8")).get("prompt_format") or 1) < PROMPT_FORMAT
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        return False
+
+
 def _clip_lines(s: dict) -> list[tuple[float, float, dict]]:
     """(start, end, line) for subtitles: the line's own times when given, else the clip's time shared evenly."""
     start, end = float(s.get("start_sec", 0)), float(s.get("end_sec", 0))
@@ -135,7 +147,8 @@ def prompts_view(session: Path, n: int) -> dict | None:
                 refs.append(str(f.relative_to(assets)))
         shots.append({**{k: sh.get(k) for k in ("shot_number", "scene", "start_sec", "end_sec", "duration_sec",
                                                  "action", "dialogue", "camera", "sfx", "loc_id", "video_prompt",
-                                                 "continuity_in")},
+                                                 "continuity_in", "opening_state", "closing_state", "performance")},
+                      "on_screen_text": sh.get("on_screen_text") or [], "veo_parts": sh.get("veo_parts") or [],
                       "cuts": sh.get("cuts") or [],
                       "characters": [{"id": c, "name": names.get(c, c)} for c in sh.get("characters") or []],
                       "pace_warning": sh.get("pace_warning") or [], "refs": refs})
@@ -148,13 +161,151 @@ def prompts_view(session: Path, n: int) -> dict | None:
 
 
 CLIP_MAX_SEC = 15.5  # 15s + rounding
+VEO_MAX_SEC = 8.25   # Veo 3.1 / Flow: 8s per generation + rounding
+MAX_CUTS = 5         # timed cuts a video model executes reliably in one generation
 EPS = 0.25           # seconds of overlap that do not count (rounded timecodes)
+PROMPT_FORMAT = 2    # opening/closing state, performance, guard block, veo_parts
+PROMPT_MARKERS = ("Opening:", "Ending:", "No subtitles")
+
+
+def _check_prompt(tag: str, prompt: str) -> list[str]:
+    missing = [m for m in PROMPT_MARKERS if m not in (prompt or "")]
+    return [f"{tag}: prompt has no {', '.join(missing)} (skill Step 5 prompt layout)"] if missing else []
+
+
+LINE_TAGS = {"speaks": "SPEAKS (lip-synced)", "voiceover": "VOICE-OVER", "offscreen": "OFF-SCREEN VOICE"}
+
+
+def line_mode(d: dict, on_screen) -> str:
+    """speaks (on screen, lip-synced) | voiceover (narration / inner thought, no lips move) | offscreen."""
+    if d.get("mode") in LINE_TAGS:
+        return d["mode"]
+    if d.get("voiceover"):
+        return "voiceover"
+    return "speaks" if d.get("character") in on_screen else "offscreen"
+
+
+def dialogue_tag_warnings(tag: str, prompt: str, lines: list[dict], on_screen) -> list[str]:
+    """Every line must be quoted word for word in the prompt, and the nearest line tag before it must be the
+    one of its mode: video models otherwise lip-sync inner thoughts and give lines to the wrong person."""
+    out, pos = [], 0
+    prompt = (prompt or "").replace("“", '"').replace("”", '"')
+    for d in lines:
+        text = (d.get("line") or "").strip()
+        if not text:
+            continue
+        i = prompt.find(f'"{text}"', pos)
+        if i < 0:
+            out.append(f'{tag}: line not quoted word for word: "{text[:40]}"')
+            continue
+        mode = line_mode(d, on_screen)
+        if d.get("voiceover") and mode != "voiceover":
+            out.append(f'{tag}: "{text[:30]}" is a voice-over in the script but mode is {mode}')
+        if mode == "speaks" and d.get("character") not in on_screen:
+            out.append(f'{tag}: "{text[:30]}" is lip-synced but its speaker is not in the clip')
+        before = prompt[pos:i]
+        last = max(LINE_TAGS.values(), key=lambda t: before.rfind(t))
+        if before.rfind(last) < 0:
+            out.append(f'{tag}: "{text[:30]}" has no {LINE_TAGS[mode]} tag before it')
+        elif last != LINE_TAGS[mode]:
+            out.append(f'{tag}: "{text[:30]}" is tagged {last}, should be {LINE_TAGS[mode]}')
+        pos = i + len(text) + 2
+    return out
+
+
+SHOT_RE = re.compile(r"Shot\s+\d+\s*\((\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)s\)")
+LINE_TIME_RE = re.compile(r"(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)s\s*[:;][^\"]{0,80}\"")
+SPEECH_INVITES = re.compile(r"as if to (?:ask|speak|say|talk)|about to (?:speak|say|ask)|opens? (?:his|her) mouth to", re.I)
+MAX_SYL_PER_SEC = 5.0  # vi-dialogue.md "Speech rate"
+
+
+def shot_dialogue_warnings(tag: str, prompt: str) -> list[str]:
+    """Inside one prompt: a shot that says "No dialogue" while a timed line overlaps it (an L-cut the prompt
+    contradicts), and actions that invite speech while a voice-over plays."""
+    prompt = (prompt or "").replace("“", '"').replace("”", '"')
+    shots = list(SHOT_RE.finditer(prompt))
+    lines = [(float(m.group(1)), float(m.group(2))) for m in LINE_TIME_RE.finditer(prompt)]
+    out = []
+    for k, m in enumerate(shots):
+        a, b = float(m.group(1)), float(m.group(2))
+        body = prompt[m.end(): shots[k + 1].start() if k + 1 < len(shots) else len(prompt)]
+        if "No dialogue" in body and any(min(b, l1) - max(a, l0) > EPS for l0, l1 in lines):
+            out.append(f"{tag}: shot {a}-{b}s says \"No dialogue\" but a line runs over it "
+                       "(write \"... voice-over continues over this shot\")")
+        if "VOICE-OVER" in body and SPEECH_INVITES.search(body):
+            out.append(f"{tag}: shot {a}-{b}s has a voice-over and an action that invites speech "
+                       f"(\"{SPEECH_INVITES.search(body).group(0)}\")")
+    return out
+
+
+def pace_warnings(tag: str, lines: list[dict]) -> list[str]:
+    out = []
+    for d in lines:
+        s0, s1, text = d.get("start_sec"), d.get("end_sec"), (d.get("line") or "").strip()
+        if s0 is None or s1 is None or not text or float(s1) - float(s0) <= 0:
+            continue
+        n = len(re.findall(r"\w+", text))
+        rate = n / (float(s1) - float(s0))
+        if rate > MAX_SYL_PER_SEC + 0.05:
+            out.append(f'{tag}: "{text[:30]}" {n} syllables in {float(s1) - float(s0):.1f}s = {rate:.1f}/s '
+                       f"(max {MAX_SYL_PER_SEC}): shorten with /dialogue-polish")
+    return out
+
+
+def _fold(text: str) -> str:
+    """Lower case without Vietnamese marks: 'Ông Hữu' and 'Mr. Huu' both contain 'huu'."""
+    text = unicodedata.normalize("NFKD", text.replace("đ", "d").replace("Đ", "D"))
+    return "".join(ch for ch in text if not unicodedata.combining(ch)).lower()
+
+
+def flow_warnings(tag: str, part: dict, names: dict[str, str]) -> list[str]:
+    """Google Flow refused a personal name + a detailed face + several portrait refs, and accepted a role
+    label + a short look + one portrait: warn on names outside quoted dialogue and on >1 character image."""
+    out = []
+    spoken_removed = _fold(re.sub(r'"[^"]*"|“[^”]*”', " ", part.get("video_prompt") or ""))
+    found = sorted({n for n in names.values() for w in [_fold(n).split()[-1]] if len(w) >= 2
+                    and re.search(rf"(?<![a-z]){re.escape(w)}(?![a-z])", spoken_removed)})
+    if found:
+        out.append(f"{tag}: names outside dialogue ({', '.join(found)}): use the role labels (flow_labels)")
+    faces = [r for r in part.get("refs") or [] if "characters/" in r]
+    if len(faces) > 1:
+        out.append(f"{tag}: {len(faces)} character images, Flow accepts one (keep the main subject)")
+    return out
+
+
+def _check_veo_parts(tag: str, c: dict, a: float, b: float) -> list[str]:
+    """Every clip carries veo_parts (the Flow / Veo 3.1 version): contiguous, cover the clip, <= 8s each,
+    split on cut boundaries and never inside a dialogue line."""
+    parts = c.get("veo_parts") or []
+    if not parts:
+        return [f"{tag}: no veo_parts (the Google Flow / Veo version, one part per 8s at most)"]
+    errors, prev = [], a
+    cut_ends = {round(float(x.get("end_sec", 0)), 2) for x in c.get("cuts") or []}
+    for part in parts:
+        p0, p1 = float(part.get("start_sec", 0)), float(part.get("end_sec", 0))
+        ptag = f"{tag} veo part {part.get('part')} [{p0}-{p1}]"
+        if p1 - p0 > VEO_MAX_SEC:
+            errors.append(f"{ptag}: {p1 - p0:.1f}s, max 8s")
+        if abs(p0 - prev) > EPS:
+            errors.append(f"{ptag}: starts at {p0}, previous part ended at {prev}")
+        if p1 < b - EPS and cut_ends and not any(abs(p1 - e) <= EPS for e in cut_ends):
+            errors.append(f"{ptag}: ends inside a cut (split only at cut boundaries)")
+        for d in c.get("dialogue") or []:
+            s0, s1 = d.get("start_sec"), d.get("end_sec")
+            if s0 is not None and s1 is not None and float(s0) < p1 - EPS < float(s1) - EPS and p1 < b - EPS:
+                errors.append(f"{ptag}: splits the line {str(d.get('line'))[:40]}")
+        errors += _check_prompt(ptag, part.get("video_prompt", ""))
+        prev = p1
+    if abs(prev - b) > EPS:
+        errors.append(f"{tag}: veo_parts end at {prev}, clip ends at {b}")
+    return errors
 
 
 def check_clips(session: Path, n: int) -> tuple[list[str], list[str]]:
     """(errors, warnings) for final/shots/epNN/prompts.json in clip format, against final/epNN.json:
     each clip inside ONE scene (one place, one time: two conversations in two places never share a video),
-    at most 15s, clips contiguous over the episode, every dialogue line timed inside its clip."""
+    at most 15s, clips contiguous over the episode, every dialogue line timed inside its clip; format 2 also:
+    Opening / Ending / guard block in every prompt and valid veo_parts (Veo makes 8s at most)."""
     pf = prompts_file(session, n)
     if not pf:
         return [f"ep{n:02d}: no prompts.json"], []
@@ -165,6 +316,10 @@ def check_clips(session: Path, n: int) -> tuple[list[str], list[str]]:
     scenes = json.loads(ep_f.read_text(encoding="utf-8")).get("scenes", []) if ep_f.exists() else []
     errors, warns = [], []
     clips = data.get("shots") or []
+    fmt2 = int(data.get("prompt_format") or 1) >= PROMPT_FORMAT
+    names = _bible_names(session)
+    if clips and not fmt2:
+        warns.append("older prompt format (no opening/closing state, guard block or Veo parts): remake the prompts")
     prev_end = 0.0
     for c in clips:
         no, a, b = c.get("shot_number"), float(c.get("start_sec", 0)), float(c.get("end_sec", 0))
@@ -175,6 +330,26 @@ def check_clips(session: Path, n: int) -> tuple[list[str], list[str]]:
             warns.append(f"{tag}: only {b - a:.1f}s")
         if abs(a - prev_end) > EPS:
             errors.append(f"{tag}: starts at {a}, previous clip ended at {prev_end} (clips must be contiguous)")
+        if len(c.get("cuts") or []) > MAX_CUTS:
+            warns.append(f"{tag}: {len(c['cuts'])} cuts, at most {MAX_CUTS} per generation (merge cuts)")
+        if fmt2:
+            errors += _check_prompt(tag, c.get("video_prompt", ""))
+            errors += [f"{tag}: no {k}" for k in ("opening_state", "closing_state") if not c.get(k)]
+            errors += _check_veo_parts(tag, c, a, b)
+            on_screen = set(c.get("characters") or [])
+            lines = sorted(c.get("dialogue") or [], key=lambda d: float(d.get("start_sec") or 0))
+            if lines and "Voices:" not in (c.get("video_prompt") or ""):
+                warns.append(f"{tag}: no Voices: line (one voice per speaker)")
+            warns += dialogue_tag_warnings(tag, c.get("video_prompt", ""), lines, on_screen)
+            warns += shot_dialogue_warnings(tag, c.get("video_prompt", ""))
+            warns += pace_warnings(tag, lines)
+            for vp in c.get("veo_parts") or []:
+                ptag = f"{tag} veo part {vp.get('part')}"
+                warns += flow_warnings(ptag, vp, names)
+                p0, p1 = float(vp.get("start_sec", 0)), float(vp.get("end_sec", 0))
+                inside = [d for d in lines if p0 - EPS <= float(d.get("start_sec") or 0) < p1 - EPS]
+                warns += dialogue_tag_warnings(ptag, vp.get("video_prompt", ""), inside, on_screen)
+                warns += shot_dialogue_warnings(ptag, vp.get("video_prompt", ""))
         prev_end = b
         inside = [sc for sc in scenes
                   if min(b, float(sc.get("end_sec", 0))) - max(a, float(sc.get("start_sec", 0))) > EPS]
@@ -216,6 +391,7 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
 
     refs: dict[Path, str] = {}  # source image -> name inside refs/
     shot_refs: list[list[str]] = []
+    part_refs: dict[tuple[int, int], list[str]] = {}  # (clip index, part) -> names inside refs/
     missing_refs = 0
     for s in shots:
         files = _shot_refs(session, s, approved)
@@ -223,6 +399,11 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
         for f in files:
             refs.setdefault(f, _ref_name(f, names))
         shot_refs.append([refs[f] for f in files])
+        for vp in s.get("veo_parts") or []:
+            found = [f for f in _shot_refs(session, {"refs": vp.get("refs") or []}, {}) if f.is_file()]
+            for f in found:
+                refs.setdefault(f, _ref_name(f, names))
+            part_refs[(len(shot_refs), vp.get("part"))] = [refs[f] for f in found]
 
     tmp = Path(tempfile.mkstemp(suffix=".zip", prefix=f"{root}_")[1])
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
@@ -241,7 +422,8 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
             timed = _clip_lines(s)
             lines = [d for _, _, d in timed]
             said = "\n".join(f"  [{_ts(a)}] {names.get(d.get('character')) or d.get('character')}"
-                             + (" (VO)" if d.get("voiceover") else "") + f": \"{d['line']}\""
+                             + {"voiceover": " (VO)", "offscreen": " (ngoài khung)"}.get(
+                                 line_mode(d, set(s.get("characters") or [])), "") + f": \"{d['line']}\""
                              + (f" ({d['delivery']})" if d.get("delivery") else "") for a, _, d in timed)
             cuts = "\n".join(f"  {c.get('cut', j)}. [{_ts(c.get('start_sec', 0))}-{_ts(c.get('end_sec', 0))}] "
                               f"{c.get('camera', '')}: {c.get('action', '')}"
@@ -259,7 +441,15 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
                  f"Máy quay: {s.get('camera', '')}\n\n"
                  f"Ảnh tham chiếu (upload theo thứ tự):\n{ref_list}\n\n"
                  f"Lưu clip thành: clips/{unit}_{no:02d}.mp4\n\n"
-                 f"PROMPT (copy nguyên văn):\n{s.get('video_prompt', '')}\n")
+                 + (f"Khung đầu: {s['opening_state']}\nKhung cuối: {s['closing_state']}\n"
+                    if s.get("opening_state") else "")
+                 + (f"Diễn xuất: {s['performance']}\n" if s.get("performance") else "")
+                 + f"\nPROMPT (Seedance 2 / Kling, {dur}s, copy nguyên văn):\n{s.get('video_prompt', '')}\n"
+                 + "".join(f"\nPROMPT VEO 3.1 / FLOW phần {vp.get('part')} [{_ts(vp.get('start_sec', 0))}-"
+                           f"{_ts(vp.get('end_sec', 0))}] (lưu thành clips/{unit}_{no:02d}_{vp.get('part')}.mp4)\n"
+                           f"Ảnh cho phần này (chỉ những ảnh này): "
+                           f"{', '.join('refs/' + r for r in part_refs.get((i, vp.get('part')), [])) or 'không'}\n"
+                           f"{vp.get('video_prompt', '')}\n" for vp in s.get("veo_parts") or []))
             w.writerow([no, f"{unit}_{no:02d}.mp4", _ts(start), _ts(end), dur, chars,
                         " | ".join(f"{names.get(d.get('character')) or d.get('character')}: {d['line']}" for d in lines),
                         s.get("sfx", ""), s.get("camera", ""), " ".join(shot_refs[i - 1])])
@@ -292,6 +482,9 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
              f"  - Ghép clips/{unit}_01.mp4, {unit}_02.mp4, ... theo thứ tự tên file.\n"
              "  - subtitles.srt: phụ đề thoại, khớp thời gian khi các clip đúng thời lượng.\n\n"
              "Prompt bằng tiếng Anh (cho model video); thoại giữ nguyên ngôn ngữ kịch bản.\n"
+             "Seedance 2 / Kling: dùng PROMPT chính (một clip tối đa 15s) với mọi ảnh tham chiếu của clip.\n"
+             "Veo 3.1 / Google Flow (tối đa 8s): dùng các 'PROMPT VEO phần 1, 2...' và CHỈ upload ảnh ghi ở phần đó\n"
+             "  (tối đa 1 ảnh nhân vật; gọi nhân vật bằng vai, không tên riêng, để Flow không chặn vì 'người nổi tiếng').\n"
              + ("\nCẢNH BÁO: prompt kiểu cũ (mỗi shot 1-5s một video, dễ lệch nhân vật). Tạo lại prompt video (clip 10-15s).\n"
                 if not clip else
                 "\nCẢNH BÁO: prompt được tạo từ bản kịch bản cũ hơn bản chốt hiện tại. Tạo lại prompt video trước khi quay.\n"
@@ -313,7 +506,8 @@ async def run_shotlist_job(job) -> dict:
     final = d / "final"
     eps = [int(n) for n in p.get("episodes") or []] or sorted(
         int(m.group(1)) for f in final.glob("ep*.md") if (m := re.fullmatch(r"ep(\d+)\.md", f.name)))
-    eps = [n for n in eps if (final / f"ep{n:02d}.md").exists() and (p.get("force") or not prompts_file(d, n) or prompts_stale(d, n))]
+    eps = [n for n in eps if (final / f"ep{n:02d}.md").exists() and (p.get("force") or not prompts_file(d, n) or prompts_stale(d, n)
+                                                          or prompts_outdated(d, n))]
     if not eps:
         raise RuntimeError("không có tập nào cần tạo prompt (tập phải nằm trong final/: chốt season trước)")
     done, failed = [], []
@@ -326,8 +520,10 @@ async def run_shotlist_job(job) -> dict:
                 await _claude(job, f"/script-to-shotlist {final / f'ep{n:02d}.md'}\n\nRun non-interactively: do not ask "
                                    "questions. The episode is approved (final/). Write shotlist.json/.md and "
                                    f"prompts.json/.md into {final / 'shots' / f'ep{n:02d}'}/. prompts.json is "
-                                   '"unit": "clip": one prompt per 10-15s clip with timed cuts inside and a '
-                                   "start/end time on every dialogue line (skill Step 5); replace any older "
+                                   '"unit": "clip", "prompt_format": 2: one prompt per 10-15s clip, at most 5 timed '
+                                   "cuts, a start/end time on every dialogue line, opening/closing state, "
+                                   "performance, the Rules guard block, and veo_parts for clips over 8s "
+                                   "(skill Step 5); replace any older "
                                    "per-shot prompts.json." + UI_NOTE,
                               f"ep{n:02d}", 3600)
             except RuntimeError as e:
