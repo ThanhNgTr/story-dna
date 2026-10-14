@@ -35,6 +35,9 @@ logged problem). No registry yet -> run `/series-assets --session <dir>` first.
   `### SC1 [00:00-00:12] INT. BẾP KÍNH — ĐÊM  {loc_03 · char_01:o1, char_06:o1}`.
 - Action lines describe what changes (blood, wet, torn), not the base look; the base look lives in
   the registry.
+- What people DO (per beat `acting`: body, hands, face, what is in hand; scene `blocking`) follows
+  `.claude/skills/action-polish/references/screen-action.md`. Hands use the scene `props` and the
+  location's fixed elements first; `holds` names a registered prop by its registry name.
 
 ## Something new is needed
 

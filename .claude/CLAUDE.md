@@ -45,6 +45,12 @@ Codex CLI on the user's ChatGPT login (built-in image_gen, no OpenAI API key)
   dialogue (next versions + `dialogue/polish_vN.json`). Speech rate (one limit for every skill): vi-dialogue.md "Speech rate",
   Vietnamese <= 5.0 syllables/s, lint flag `too_fast`. Manual edits feed `data/dialogue_examples.json`
   (before/after) that writers imitate. Web: page "Lời thoại", button "Làm rõ thoại" per episode.
+- **Screen action** (`.claude/skills/action-polish/`): `references/screen-action.md` = what people DO on screen.
+  Every beat has `acting: [{character, does, face, holds}]` for each visible character (listener too: body +
+  hands, face, what is in hand), every 2+ character scene a `blocking`; objects stay in hand until a beat puts
+  them down. `_action_lint.py lint <session>` (`missing` / `prop_vanish` / `no_blocking` must be 0);
+  `/action-polish` adds it to existing episodes (only action/acting/blocking change; `action/polish_vN.json`).
+  Shotlist cuts and `performance` are built from it. Web: button "Bổ sung diễn xuất" per episode.
 - **Feedback loop**: `rule` feedback patches the skill (new version), `story` feedback edits only
   this series. Live SKILL.md = latest; immutable `versions/SKILL_vN.md`.
 
@@ -107,12 +113,14 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
    block, and `veo_parts` on EVERY clip (Google Flow / Veo 3.1 version, <=8s each, split on cuts): role labels
    (`flow_labels`) not names, short looks, <=1 character image per part, no lettering (Flow refused names +
    detailed faces + 4 portraits as "famous people"); `package check` enforces it, older files only warn. Web "Tải gói video"
-   (`app/pipeline/package.py`) zips per episode: shot prompts + approved refs + `subtitles.srt` + `edit_list.csv`. Then `/direct-video`,
+   (`app/pipeline/package.py`) zips per episode: shot prompts + approved refs + `subtitles.srt` + `edit_list.csv`
+   (Higgsfield = 10-15s clips; "Tải gói Flow" `?target=flow` = one Google Flow generation per `veo_parts` entry:
+   `parts/clip_NN_K.txt`, only that part's images, `flow_queue.json/.csv` for batch tools, `trim_to_sec` because Flow makes 8s). Then `/direct-video`,
    `/cinematographer-brief`, `/sound-design-brief`, `/production-design-brief`
 
 ## PROJECT RESET (new reference video)
 
-Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `series-assets`, `story-contract`, `story-editor`, `dialogue-polish`, `script-to-shotlist`, the 4 brief
+Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `series-assets`, `story-contract`, `story-editor`, `dialogue-polish`, `action-polish`, `script-to-shotlist`, the 4 brief
 skills, agents `video-analyst` + `story-merger` + `film-analyst`. Remove: generated `.claude/skills/write-series-*`,
 `data/analyses/*`, `data/series/*`, `data/skills-generated/*`.
 

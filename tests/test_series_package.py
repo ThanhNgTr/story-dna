@@ -404,3 +404,43 @@ def test_pace_warnings_count_vietnamese_syllables():
     ok = {"line": "Tôi suýt kể chuyện hồi đi học, rồi lại thôi.", "start_sec": 0.05, "end_sec": 2.9}
     assert "15 syllables" in package.pace_warnings("c", [fast])[0]
     assert package.pace_warnings("c", [ok]) == []
+
+
+def test_flow_package_one_file_per_veo_part(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    finalize(d)
+    img = write(d / "assets" / "characters" / "char_01" / "char_01_sheet_v1.png", "PNG" * 400)
+    line = {"character": "char_01", "line": "Anh đi đâu đấy?", "voiceover": False, "start_sec": 9.0, "end_sec": 10.5}
+    write(d / "final" / "shots" / "ep01" / "prompts.json", {
+        "unit": "clip", "aspect_ratio": "9:16", "flow_labels": {"char_01": "the young worker"}, "shots": [
+            {"shot_number": 1, "start_sec": 0, "end_sec": 12, "characters": ["char_01"], "dialogue": [line],
+             "video_prompt": "SEEDANCE ONE", "veo_parts": [
+                 {"part": 1, "start_sec": 0, "end_sec": 6.5, "characters": [], "refs": [], "video_prompt": "VEO ONE"},
+                 {"part": 2, "start_sec": 6.5, "end_sec": 12, "characters": ["char_01"],
+                  "refs": [str(img.relative_to(d))], "video_prompt": "VEO TWO"}]}]})
+    path, name = package.build_flow_package(d, 1, "Demo")
+    try:
+        z = zipfile.ZipFile(path)
+        root = z.namelist()[0].split("/")[0]
+        assert name.endswith("_flow.zip")
+        p1, p2 = z.read(f"{root}/parts/clip_01_1.txt").decode(), z.read(f"{root}/parts/clip_01_2.txt").decode()
+        assert "VEO ONE" in p1 and "Text to Video" in p1 and "SEEDANCE" not in p1
+        assert "VEO TWO" in p2 and "Ingredients to Video" in p2 and "refs/char_01_vu_sheet_v1.png" in p2
+        assert 'the young worker: "Anh đi đâu đấy?"' in p2 and "Anh đi đâu" not in p1
+        q = json.loads(z.read(f"{root}/flow_queue.json"))
+        assert [r["save_as"] for r in q["parts"]] == ["clips/clip_01_1.mp4", "clips/clip_01_2.mp4"]
+        assert q["parts"][1]["trim_to_sec"] == 5.5
+        assert f"{root}/refs/char_01_vu_sheet_v1.png" in z.namelist()
+    finally:
+        path.unlink()
+
+
+def test_flow_package_needs_veo_parts(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    finalize(d)
+    write(d / "final" / "shots" / "ep01" / "prompts.json", {"unit": "clip", "aspect_ratio": "9:16", "shots": [
+        {"shot_number": 1, "start_sec": 0, "end_sec": 12, "video_prompt": "p"}]})
+    with pytest.raises(FileNotFoundError):
+        package.build_flow_package(d, 1, "Demo")

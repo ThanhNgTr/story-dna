@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Clapperboard, Clock, Download, Sparkles, GitCompare, MessageSquare, PencilLine, ScrollText } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Clapperboard, Clock, Download, Hand, Sparkles, GitCompare, MessageSquare, PencilLine, ScrollText } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { toast } from 'sonner'
@@ -95,6 +95,24 @@ function PolishEpisodeButton({ n, busy }: { n: number; busy: boolean }) {
   )
 }
 
+function ActionEpisodeButton({ n, busy }: { n: number; busy: boolean }) {
+  const p = useProject()
+  const qc = useQueryClient()
+  const run = useMutation({
+    mutationFn: () => api.polishAction(p.slug, p.session_id, [n]),
+    onSuccess: () => {
+      toast.success(`Claude đang bổ sung diễn xuất tập ${n}. Xong, bấm “So sánh phiên bản” để xem từng beat.`)
+      qc.invalidateQueries({ queryKey: ['project', p.slug, p.session_id] })
+    },
+    onError: (e) => toast.error((e as Error).message),
+  })
+  return (
+    <ConfirmAction trigger={<Button variant="outline" size="sm" className="gap-1.5" disabled={busy}><Hand className="size-3.5" /> Bổ sung diễn xuất</Button>}
+      title={`Bổ sung diễn xuất tập ${n}?`} confirmLabel="Bổ sung" pending={run.isPending} onConfirm={() => run.mutateAsync()}
+      description="Claude viết thêm cho từng beat: mỗi nhân vật trên hình đang làm gì (thân, tay), nét mặt, đang cầm gì, và vị trí đứng của từng cảnh; người nghe cũng có phản ứng. Đồ vật cầm trên tay được giữ liên tục giữa các beat. Thoại, cảnh, thời lượng giữ nguyên. Kết quả là phiên bản mới, bản cũ vẫn giữ (khoảng 3–6 phút)." />
+  )
+}
+
 function VideoPackageButton({ n, busy }: { n: number; busy: boolean }) {
   const p = useProject()
   const qc = useQueryClient()
@@ -111,9 +129,13 @@ function VideoPackageButton({ n, busy }: { n: number; busy: boolean }) {
   if (ep.has_prompts && !ep.prompts_stale) {
     return (
       <>
-        <Button variant="outline" size="sm" className="gap-1.5" render={<a href={api.packageUrl(p.slug, p.session_id, n)} download />}
-          title="Gói zip cho Higgsfield: prompt từng shot, ảnh tham chiếu, phụ đề .srt, danh sách dựng .csv">
-          <Download className="size-3.5" /> Tải gói video
+        <Button variant="outline" size="sm" className="gap-1.5" render={<a href={api.packageUrl(p.slug, p.session_id, n, 'flow')} download />}
+          title="Gói zip cho Google Flow / Veo 3.1: mỗi phần ≤8s một lần tạo, đúng ảnh của phần đó, hàng đợi flow_queue, phụ đề .srt, danh sách dựng .csv">
+          <Download className="size-3.5" /> Tải gói Flow
+        </Button>
+        <Button variant="ghost" size="sm" className="gap-1.5" render={<a href={api.packageUrl(p.slug, p.session_id, n)} download />}
+          title="Gói zip cho Higgsfield (Seedance 2 / Kling): mỗi clip 10-15s một lần tạo, ảnh tham chiếu, phụ đề .srt, danh sách dựng .csv">
+          <Download className="size-3.5" /> Gói Higgsfield
         </Button>
         <ConfirmAction
           trigger={<Button variant={ep.prompts_outdated ? 'outline' : 'ghost'} size="sm" className="gap-1.5"
@@ -310,6 +332,7 @@ export function EpisodePage() {
                 </Button>
               )}
               {view !== 'edit' && view !== 'prompts' && <PolishEpisodeButton n={n} busy={busy} />}
+              {view !== 'edit' && view !== 'prompts' && <ActionEpisodeButton n={n} busy={busy} />}
               {view !== 'edit' && <VideoPackageButton n={n} busy={busy} />}
               {view !== 'edit' ? (
                 <Button variant="outline" size="sm" className="gap-1.5" disabled={busy} onClick={startEdit}

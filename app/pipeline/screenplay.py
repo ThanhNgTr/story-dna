@@ -52,6 +52,23 @@ def _dialogue(ep: dict, beat: dict) -> str:
     return "<br>".join(parts) or "—"
 
 
+def _acting(ep: dict, beat: dict) -> str:
+    """Action cell: the shot's action, then one line per visible character (does; face; in hand)."""
+    parts = [_cell(beat.get("action"))] if beat.get("action") else []
+    for a in beat.get("acting") or []:
+        if not isinstance(a, dict):
+            continue
+        bits = [str(a.get("does") or "").strip()]
+        if a.get("face"):
+            bits.append(f"mặt: {a['face']}")
+        if a.get("holds"):
+            bits.append(f"cầm: {a['holds']}")
+        text = "; ".join(b for b in bits if b)
+        if text:
+            parts.append(f"**{_speaker(ep, str(a.get('character', ''))).title()}**: {_cell(text)}")
+    return "<br>".join(parts) or "—"
+
+
 TIME_VI = {"day": "NGÀY", "night": "ĐÊM", "dawn": "BÌNH MINH", "dusk": "CHẠNG VẠNG", "morning": "SÁNG",
            "noon": "TRƯA", "afternoon": "CHIỀU", "evening": "TỐI"}
 
@@ -88,12 +105,14 @@ def render_md(ep: dict) -> str:
         out.append(f"### {sc.get('id')} [{_t(sc.get('start_sec', 0))}-{_t(sc.get('end_sec', 0))}] {_heading(sc)}{ids}")
         if sc.get("props"):
             out.append("Props: " + ", ".join(map(str, sc["props"])))
+        if sc.get("blocking"):
+            out.append(f"Vị trí: {sc['blocking']}")
         out += ["| Time | Shot | Action | Dialogue / VO | Camera | Light/Color | Sound |",
                 "|---|---|---|---|---|---|---|"]
         for b in sc.get("beats", []):
             dur = float(b.get("end_sec", 0)) - float(b.get("start_sec", 0))
             shot = _cell(b.get("shot_size")) + (f" **[GIỮ {dur:.0f}s]**" if dur >= HELD_SEC else "")
-            out.append(f"| {b.get('start_sec')}-{b.get('end_sec')} | {shot} | {_cell(b.get('action'))} | "
+            out.append(f"| {b.get('start_sec')}-{b.get('end_sec')} | {shot} | {_acting(ep, b)} | "
                        f"{_dialogue(ep, b)} | {_cell(b.get('camera'))} | {_cell(b.get('lighting_color'))} | {_cell(b.get('sound'))} |")
         out.append("")
     new_assets = [a for a in ep.get("new_assets") or [] if isinstance(a, dict)]
@@ -258,3 +277,25 @@ def mark_sent(session: Path, ids: list[str], job_id: str):
         if c["id"] in ids:
             c["status"], c["sent_in_job"], c["sent_at"] = "sent", job_id, now()
     _save_comments(session, comments)
+
+
+def main(argv: list[str]) -> int:
+    """python3 -m app.pipeline.screenplay render <session> <N> [N ...]: rewrite the .md of each episode's
+    latest version from its JSON (skills that write episode JSON call this so the md matches)."""
+    if len(argv) < 3 or argv[0] != "render":
+        print(main.__doc__)
+        return 2
+    session = Path(argv[1])
+    for n in [int(x) for a in argv[2:] for x in a.split(",") if x.strip()]:
+        files = episode_versions(session, n)
+        if not files:
+            print(f"ep{n:02d}: no episode file")
+            return 1
+        md = files[-1].with_suffix(".md")
+        md.write_text(render_md(json.loads(files[-1].read_text(encoding="utf-8"))), encoding="utf-8")
+        print(f"ep{n:02d}: {md}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

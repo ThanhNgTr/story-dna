@@ -565,6 +565,38 @@ async def run_polish(job: Job) -> dict:
     return {"slug": slug, "session_id": sid}
 
 
+ACTION_LINT = config.SKILLS / "action-polish" / "_action_lint.py"
+
+
+def _action_lint(d: Path) -> dict:
+    import subprocess
+    subprocess.run(["python3", str(ACTION_LINT), "lint", str(d)], cwd=str(config.ROOT),
+                   capture_output=True, text=True, timeout=120)
+    try:
+        return json.loads((d / "action_check.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"counts": {}, "items": [], "episodes": {}}
+
+
+async def run_action_polish(job: Job) -> dict:
+    """Web job: /action-polish (what characters do in every beat) on the given episodes (all when empty)."""
+    p = job.data["params"]
+    slug, sid = p["slug"], p["session_id"]
+    st = session_state(slug, sid)
+    _check(bool(st["episodes"]), "no episodes yet")
+    d = st["dir"]
+    before = len(list((d / "action").glob("polish_v*.json")))
+    eps = [int(n) for n in p.get("episodes") or []]
+    job.step("action", "running")
+    await _claude(job, f"/action-polish --session {d}" + (f" --episodes {','.join(map(str, eps))}" if eps else "")
+                  + "\n\nRun non-interactively: do not ask questions." + UI_NOTE, "action", 7200)
+    _check(len(list((d / "action").glob("polish_v*.json"))) > before, "action/polish_vN.json was not written")
+    rep = _action_lint(d)
+    job.step("action", "done", flagged=rep.get("strict", 0))
+    await enforce_story_contract(job, d, "episodes")
+    return {"slug": slug, "session_id": sid}
+
+
 async def create_skill(job: Job) -> dict:
     p = job.data["params"]
     run_dir, slug = Path(p["run_dir"]), p["slug"]

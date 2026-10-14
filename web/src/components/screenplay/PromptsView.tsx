@@ -131,8 +131,11 @@ export function PromptsView({ slug, sid, n }: { slug: string; sid: string; n: nu
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => copy(all, `${v.shots.length} prompt`)}>
             <Copy className="size-3.5" /> Sao chép tất cả
           </Button>
-          <Button size="sm" variant="outline" className="gap-1.5" render={<a href={api.packageUrl(slug, sid, n)} download />}>
-            <Download className="size-3.5" /> Tải gói video
+          <Button size="sm" variant="outline" className="gap-1.5" render={<a href={api.packageUrl(slug, sid, n, 'flow')} download />}>
+            <Download className="size-3.5" /> Tải gói Flow
+          </Button>
+          <Button size="sm" variant="ghost" className="gap-1.5" render={<a href={api.packageUrl(slug, sid, n)} download />}>
+            <Download className="size-3.5" /> Gói Higgsfield
           </Button>
         </div>
       </div>

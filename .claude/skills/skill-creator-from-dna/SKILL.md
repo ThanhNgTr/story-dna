@@ -136,6 +136,7 @@ Session dir: data/series/<slug>/<session-id>/ (session-id = UTC YYYYMMDD-HHMMSS)
 - N > 6: write in parallel with general-purpose subagents, 3-4 episodes each; give each the bible, outline, this SKILL.md path and its episode numbers.
 - Continuity pass after all episodes: names, visual signatures (verbatim), ledger timing, callbacks, timecodes adding up.
 - Then python3 .claude/skills/series-assets/_assets.py lint <session-dir> -> 0 errors, and /series-assets --session <session-dir> (scene map, new_assets get real IDs, drift report).
+- Acting: every beat carries acting (per visible character, listener included: does = body + hands, face, holds = what is in hand) and every 2+ character scene a blocking line, per .claude/skills/action-polish/references/screen-action.md (lines said while doing something; the cast's body tells at their turns; objects stay in hand until a beat puts them down). python3 .claude/skills/action-polish/_action_lint.py lint <session-dir>: missing / prop_vanish / no_blocking = 0.
 - python3 .claude/skills/dialogue-polish/_dialogue_lint.py lint <session-dir>; rewrite flagged lines that fail the dialogue guide. definition / narrates_action flags must be 0 (a line that explains a word or retells the shot is cut, shown, or turned into speech between the characters on screen).
 - python3 .claude/skills/story-contract/_story_check.py <session-dir> -> 0 errors.
 - Write series.md (index + all episodes) and reply with: outline table, open threads, file paths.
@@ -235,8 +236,9 @@ Logline: ... | Story beats: <template beats> | Cliffhanger: <type>
 ### SC1 [00:00-00:12] EXT. <PLACE> — NIGHT  {loc_01 · char_01:o1}
 | Time | Shot | Action | Dialogue / VO | Camera | Light/Color | Sound |
 |---|---|---|---|---|---|---|
-| 0.0-1.8 | ECU | char_01 ... | VO: "..." | handheld | teal fog | drone, breath |
+| 0.0-1.8 | ECU | <frame / event><br>**Name**: <does>; mặt: <face>; cầm: <holds> | VO: "..." | handheld | teal fog | drone, breath |
 ```
+(`python3 -m app.pipeline.screenplay render <session-dir> <N>` writes this md from the JSON.)
 
 `epNN_vK.json` (read by /script-to-shotlist):
 ```json
@@ -247,7 +249,9 @@ Logline: ... | Story beats: <template beats> | Cliffhanger: <type>
   "characters": {"char_01": {"name": "...", "visual_signature": "<bible, verbatim>", "outfits": ["char_01_o1"]}},
   "scenes": [{"id": "SC1", "start_sec": 0, "end_sec": 12, "location": "<registry name>", "loc_id": "loc_01", "variant_id": "loc_01_night",
     "cast": {"char_01": "char_01_o1"}, "referenced": [], "props": ["prop_01"], "int_ext": "EXT", "time_of_day": "night",
+    "blocking": "<who is where, facing whom, what is within reach>",
     "beats": [{"start_sec": 0, "end_sec": 1.8, "shot_size": "ECU", "characters": ["char_01"], "action": "...",
+      "acting": [{"character": "char_01", "does": "<body + hands>", "face": "<visible expression>", "holds": "<in hand at beat end, or empty>"}],
       "dialogue": [{"character": "char_01", "line": "...", "voiceover": true, "delivery": "whisper"}],
       "camera": "...", "lighting_color": "...", "sound": "..."}]}],
   "new_assets": [], "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}

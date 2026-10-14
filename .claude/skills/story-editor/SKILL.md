@@ -94,7 +94,9 @@ named). The plan script resolves every source and target file; read only what it
    session dir, `editor/apply_plan.json` + its package number, `editor/apply_notes.json`, the
    review path, the NEW bible/outline paths, `.claude/skills/write-series-<slug>/SKILL.md`,
    `.claude/skills/series-assets/references/episode-contract.md`,
-   `.claude/skills/dialogue-polish/references/vi-dialogue.md`, and the rules of step 4. Each writer:
+   `.claude/skills/dialogue-polish/references/vi-dialogue.md`,
+   `.claude/skills/action-polish/references/screen-action.md` (new or changed beats carry `acting`,
+   scenes `blocking`), and the rules of step 4. Each writer:
    reads only its episodes' sources, applies only the notes for its episodes, writes the targets,
    renders md with `python3 .claude/skills/story-editor/_editor.py render <target.json>...`, runs
    `python3 .claude/skills/dialogue-polish/_dialogue_lint.py lint <session> <NN...>` and (when

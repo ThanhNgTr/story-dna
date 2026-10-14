@@ -35,7 +35,7 @@ undercuts).
    Nothing else in the bible changes.
 4. For each episode (latest version; `final/epNN.json` if newer; skip produced/canon episodes):
    - Rewrite only `dialogue[].line` (and `delivery` if needed). Keep every scene, beat, time,
-     shot, action, `loc_id`, `cast`, character IDs, `voiceover` flags. Do not add or remove beats.
+     shot, action, `acting`, `blocking`, `loc_id`, `cast`, character IDs, `voiceover` flags. Do not add or remove beats.
      A line may move to a neighbour beat of the same scene only when it no longer fits.
    - Description lines (`definition`, `narrates_action`, guide rules 14-16): the one exception to
      "keep speaker and flag". Such a line may be (a) rewritten as VO that says what the image cannot,

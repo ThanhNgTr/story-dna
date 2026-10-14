@@ -1,7 +1,7 @@
 import { Camera, Lightbulb, Plus, Trash2, Volume2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import type { Beat, DialogueLine } from '@/lib/api'
+import type { Acting, Beat, DialogueLine } from '@/lib/api'
 import { fmtTime } from '@/lib/format'
 import type { CastMember } from './cast'
 
@@ -30,6 +30,9 @@ export function BeatEditor({ beat, index, cast, onChange }: {
   const setLine = (i: number, d: Partial<DialogueLine>) =>
     onChange({ ...beat, dialogue: lines.map((x, j) => (j === i ? { ...x, ...d } : x)) })
   const speakers = [...cast.values()]
+  const acting = beat.acting ?? []
+  const setActing = (i: number, a: Partial<Acting>) =>
+    onChange({ ...beat, acting: acting.map((x, j) => (j === i ? { ...x, ...a } : x)) })
   return (
     <div className="grid gap-x-4 gap-y-3 bg-primary/[0.03] px-4 py-3 sm:px-5 md:grid-cols-[92px_minmax(0,1fr)_220px]">
       <div className="text-xs text-muted-foreground">
@@ -39,6 +42,29 @@ export function BeatEditor({ beat, index, cast, onChange }: {
       <div className="min-w-0 space-y-2">
         <Textarea value={beat.action ?? ''} onChange={(e) => onChange({ ...beat, action: e.target.value })}
           placeholder="Hành động / hình ảnh" rows={2} className="bg-background font-serif text-[15px]" />
+        {acting.map((a, i) => (
+          <div key={`a${i}`} className="grid gap-1.5 rounded-md border border-dashed bg-background p-2 sm:grid-cols-[120px_minmax(0,1fr)]">
+            <div className="flex items-center gap-1">
+              <select value={a.character} onChange={(e) => setActing(i, { character: e.target.value })}
+                className="h-7 min-w-0 flex-1 rounded-md border bg-background px-2 text-xs">
+                {speakers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {!cast.has(a.character) && <option value={a.character}>{a.character}</option>}
+              </select>
+              <button title="Xóa diễn xuất" className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-destructive"
+                onClick={() => onChange({ ...beat, acting: acting.filter((_, j) => j !== i) })}><Trash2 className="size-3.5" /></button>
+            </div>
+            <Input value={a.does ?? ''} onChange={(e) => setActing(i, { does: e.target.value })} placeholder="làm gì (thân, tay): tay run run rót trà..." className="h-7 text-xs" />
+            <span className="hidden sm:block" />
+            <div className="grid gap-1.5 sm:grid-cols-2">
+              <Input value={a.face ?? ''} onChange={(e) => setActing(i, { face: e.target.value })} placeholder="nét mặt, ánh mắt" className="h-7 text-xs" />
+              <Input value={a.holds ?? ''} onChange={(e) => setActing(i, { holds: e.target.value })} placeholder="đang cầm (trống = tay không)" className="h-7 text-xs" />
+            </div>
+          </div>
+        ))}
+        <button className="flex items-center gap-1 text-xs text-primary hover:underline"
+          onClick={() => onChange({ ...beat, acting: [...acting, { character: beat.characters?.find((c) => !acting.some((a) => a.character === c)) ?? speakers[0]?.id ?? 'char_01', does: '', face: '', holds: '' }] })}>
+          <Plus className="size-3" /> Thêm diễn xuất
+        </button>
         {lines.map((d, i) => (
           <div key={i} className="rounded-md border bg-background p-2">
             <div className="flex flex-wrap items-center gap-2">

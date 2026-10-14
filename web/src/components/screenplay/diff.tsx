@@ -21,8 +21,13 @@ function lineText(cast: Map<string, CastMember>, d?: NonNullable<Beat['dialogue'
   return `${d.voiceover ? 'VO' : nameOf(cast, d.character)}${d.delivery ? ` (${d.delivery})` : ''}: ${d.line}`
 }
 
+function actingText(cast: Map<string, CastMember>, a?: NonNullable<Beat['acting']>[number]) {
+  if (!a) return ''
+  return [`${nameOf(cast, a.character)}: ${a.does ?? ''}`, a.face && `mặt: ${a.face}`, a.holds && `cầm: ${a.holds}`].filter(Boolean).join(' · ')
+}
+
 function beatKey(b?: Beat) {
-  return b ? JSON.stringify([b.action, b.dialogue, b.camera, b.lighting_color, b.sound, b.start_sec, b.end_sec]) : ''
+  return b ? JSON.stringify([b.action, b.acting, b.dialogue, b.camera, b.lighting_color, b.sound, b.start_sec, b.end_sec]) : ''
 }
 
 /** Side-by-side meaning, inline rendering: what changed from `base` to `cur`, scene by scene, beat by beat. */
@@ -44,6 +49,7 @@ export function EpisodeDiff({ base, cur, cast, onlyChanged }: {
       if (changed) changedTotal += 1
       if (onlyChanged && !changed) return null
       const lines = Math.max(x?.dialogue?.length ?? 0, y?.dialogue?.length ?? 0)
+      const acts = Math.max(x?.acting?.length ?? 0, y?.acting?.length ?? 0)
       return (
         <div key={i} className={cn('grid gap-x-4 px-5 py-3 md:grid-cols-[92px_minmax(0,1fr)]', changed && 'bg-warning/5')}>
           <div className="font-mono text-xs text-muted-foreground tabular-nums">
@@ -53,6 +59,9 @@ export function EpisodeDiff({ base, cur, cast, onlyChanged }: {
           </div>
           <div className="min-w-0 space-y-1.5 font-serif text-[15px] leading-relaxed">
             <p><Words a={x?.action} b={y?.action} /></p>
+            {Array.from({ length: acts }, (_, j) => (
+              <p key={`a${j}`} className="font-sans text-[13px] text-foreground/80"><Words a={actingText(cast, x?.acting?.[j])} b={actingText(cast, y?.acting?.[j])} /></p>
+            ))}
             {Array.from({ length: lines }, (_, j) => (
               <p key={j} className="border-l-2 border-primary/30 pl-3"><Words a={lineText(cast, x?.dialogue?.[j])} b={lineText(cast, y?.dialogue?.[j])} /></p>
             ))}

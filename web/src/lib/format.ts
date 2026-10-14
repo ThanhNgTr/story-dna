@@ -53,6 +53,7 @@ export const STEP_LABEL: Record<string, string> = {
   shotlist: 'Tạo prompt video từng shot',
   editor: 'Biên tập kịch bản: chấm chiều sâu',
   dialogue: 'Làm rõ lời thoại',
+  action: 'Bổ sung diễn xuất (tay, mặt, đồ cầm, vị trí)',
   editor_apply: 'Áp dụng sửa của biên tập',
   story_check: 'Kiểm tra cốt truyện (mở đầu → kết, nhân vật, bối cảnh, cao trào, bí ẩn)',
 }

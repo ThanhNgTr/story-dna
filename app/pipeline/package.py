@@ -1,4 +1,5 @@
-"""Per-episode production package (zip) for video tools such as Higgsfield.
+"""Per-episode production packages (zip): Higgsfield (Seedance / Kling, 10-15s clips) below, and Google Flow
+(Veo 3.1, one generation per veo part) in build_flow_package.
 
 Input: final/shots/epNN/prompts.json from /script-to-shotlist + approved reference images.
 Zip layout (one folder per episode):
@@ -492,6 +493,130 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
              + (f"\nLưu ý: {missing_refs} {unit} chưa có ảnh tham chiếu đã duyệt (duyệt ảnh ở mục Ngoại hình rồi tải lại).\n"
                 if missing_refs else ""))
     return tmp, f"{root}_higgsfield.zip"
+
+
+def _flow_mode(images: list[str]) -> str:
+    return "Ingredients to Video" if images else "Text to Video"
+
+
+def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, str]:
+    """Google Flow / Veo 3.1 zip: one generation per `veo_parts` entry (<= 8s), only that part's images.
+
+      HUONG_DAN_FLOW.txt     how to run it in Flow
+      parts/clip_01_1.txt    one Flow generation: mode, images, aspect, save name, trim, PROMPT
+      flow_queue.json/.csv   the same, one row per part, for batch tools
+      refs/                  images used by the parts (<= 1 character image + location plate per part)
+      clips/                 empty: save each part as clip_01_1.mp4, clip_01_2.mp4, ...
+      edit_list.csv          part order, times in the episode, trim length
+      subtitles.srt          dialogue timed on the episode
+      prompts.json           original from /script-to-shotlist
+    """
+    pf = prompts_file(session, n)
+    if not pf:
+        raise FileNotFoundError(f"ep{n:02d}: chưa có final/shots/ep{n:02d}/prompts.json (chạy /script-to-shotlist)")
+    data = json.loads(pf.read_text(encoding="utf-8"))
+    shots = data.get("shots") or []
+    if not any(s.get("veo_parts") for s in shots):
+        raise FileNotFoundError(f"Tập {n}: prompt chưa có bản Veo / Flow (định dạng cũ). Bấm 'Nâng cấp prompt video' rồi tải lại.")
+    ep_json = session / "final" / f"ep{n:02d}.json"
+    ep = json.loads(ep_json.read_text(encoding="utf-8")) if ep_json.exists() else {}
+    names = _bible_names(session)
+    names.update({cid: c["name"] for cid, c in (ep.get("characters") or {}).items() if (c or {}).get("name")})
+    labels = data.get("flow_labels") or {}
+    ep_title = ep.get("title") or data.get("title") or ""
+    root = f"tap{n:02d}" + (f"_{_ascii(ep_title)}" if _ascii(ep_title) else "") + "_flow"
+    aspect = data.get("aspect_ratio", "9:16")
+    orient = "Portrait (dọc)" if aspect == "9:16" else "Landscape (ngang)" if aspect == "16:9" else aspect
+    unit = "clip" if data.get("unit") == "clip" else "shot"
+
+    refs: dict[Path, str] = {}
+    rows, skipped = [], []
+    for i, s in enumerate(shots, 1):
+        no = int(s.get("shot_number") or i)
+        parts = s.get("veo_parts") or []
+        if not parts:
+            skipped.append(no)
+            continue
+        timed = _clip_lines(s)
+        for vp in parts:
+            k = vp.get("part") or 1
+            a, b = float(vp.get("start_sec", 0)), float(vp.get("end_sec", 0))
+            found = [f for f in _shot_refs(session, {"refs": vp.get("refs") or []}, {}) if f.is_file()]
+            for f in found:
+                refs.setdefault(f, _ref_name(f, names))
+            images = [f"refs/{refs[f]}" for f in found]
+            lines = [(x, y, d) for x, y, d in timed if a - 0.05 <= x < b]
+            rows.append({
+                "episode": n, unit: no, "part": k, "scene": s.get("scene"),
+                "id": f"{unit}_{no:02d}_{k}", "start_sec": a, "end_sec": b, "duration_sec": round(b - a, 2),
+                "trim_to_sec": round(b - a, 2), "aspect_ratio": aspect, "mode": _flow_mode(images),
+                "images": images, "characters": [labels.get(c) or c for c in vp.get("characters") or []],
+                "dialogue": [{"who": labels.get(d.get("character")) or d.get("character"),
+                              "mode": line_mode(d, set(vp.get("characters") or [])), "line": d["line"],
+                              "start_sec": round(x, 2), "end_sec": round(y, 2)} for x, y, d in lines],
+                "continuity_in": vp.get("continuity_in") or "",
+                "save_as": f"clips/{unit}_{no:02d}_{k}.mp4", "prompt": vp.get("video_prompt") or ""})
+
+    tmp = Path(tempfile.mkstemp(suffix=".zip", prefix=f"{root}_")[1])
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+        def text(name: str, body: str):
+            z.writestr(f"{root}/{name}", body)
+
+        q, e = io.StringIO(), io.StringIO()
+        qw, ew = csv.writer(q), csv.writer(e)
+        qw.writerow(["id", "save_as", "mode", "aspect_ratio", "duration_sec", "trim_to_sec", "images", "prompt"])
+        ew.writerow(["order", "clip_file", "start", "end", "trim_to_sec", "scene", "dialogue"])
+        for j, r in enumerate(rows, 1):
+            said = "\n".join(f"  [{_ts(d['start_sec'])}] {d['who']}"
+                              + {"voiceover": " (VO, không mấp máy môi)", "offscreen": " (ngoài khung)"}.get(d["mode"], "")
+                              + f": \"{d['line']}\"" for d in r["dialogue"])
+            text(f"parts/{r['id']}.txt",
+                 f"{r['id'].upper()}   [{_ts(r['start_sec'])}-{_ts(r['end_sec'])}]   dài {r['duration_sec']}s   {aspect}\n\n"
+                 f"Flow: Veo 3.1, chế độ {r['mode']}, khung {orient}, 1 kết quả mỗi lần.\n"
+                 f"Ảnh (chỉ những ảnh này, đúng thứ tự): {', '.join(r['images']) or 'không có (tạo từ chữ)'}\n"
+                 f"Lưu video thành: {r['save_as']}  (Flow tạo 8s: khi dựng chỉ lấy {r['trim_to_sec']}s đầu)\n"
+                 + (f"Nối tiếp phần trước: {r['continuity_in']}\n" if r["continuity_in"] else "")
+                 + f"Thoại trong phần này:\n{said or '  (không thoại)'}\n"
+                 f"\nPROMPT (copy nguyên văn vào Flow):\n{r['prompt']}\n")
+            qw.writerow([r["id"], r["save_as"], r["mode"], aspect, r["duration_sec"], r["trim_to_sec"],
+                         " ".join(r["images"]), r["prompt"]])
+            ew.writerow([j, Path(r["save_as"]).name, _ts(r["start_sec"]), _ts(r["end_sec"]), r["trim_to_sec"],
+                         r["scene"] or "", " | ".join(f"{d['who']}: {d['line']}" for d in r["dialogue"])])
+        text("flow_queue.json", json.dumps({"episode": n, "title": ep_title, "series": title, "aspect_ratio": aspect,
+                                            "model": "Veo 3.1", "flow_labels": labels, "parts": rows},
+                                           ensure_ascii=False, indent=2))
+        text("flow_queue.csv", "\ufeff" + q.getvalue())
+        text("edit_list.csv", "\ufeff" + e.getvalue())
+        srt = []
+        for k, (a, b, d) in enumerate((x for s in shots for x in _clip_lines(s)), 1):
+            who = names.get(d.get("character")) or d.get("character") or ""
+            srt.append(f"{k}\n{_ts(a, True)} --> {_ts(b, True)}\n{who + ' (VO): ' if d.get('voiceover') else ''}{d['line']}\n")
+        text("subtitles.srt", "\n".join(srt))
+        text("clips/DAT_CLIP_VAO_DAY.txt", f"Lưu video của từng phần ở đây: {unit}_01_1.mp4, {unit}_01_2.mp4, ...\n")
+        z.write(pf, f"{root}/prompts.json")
+        for src, name in refs.items():
+            z.write(src, f"{root}/refs/{name}", compress_type=zipfile.ZIP_STORED)
+        total = shots[-1].get("end_sec") if shots else 0
+        text("HUONG_DAN_FLOW.txt",
+             f"{title + ' — ' if title else ''}Tập {n:02d}: {ep_title}\n"
+             f"{len(rows)} lần tạo trên Google Flow (Veo 3.1), {total}s, khung {aspect}. {len(refs)} ảnh tham chiếu.\n\n"
+             "Mỗi file parts/XX.txt là MỘT lần tạo trên Flow (mỗi phần <= 8s):\n"
+             "  1. Flow -> New project. Cài đặt: model Veo 3.1, khung " + orient + ", số kết quả 1.\n"
+             "  2. Chế độ ghi trong file: 'Ingredients to Video' -> thêm ĐÚNG các ảnh ghi trong file (thư mục refs/);\n"
+             "     'Text to Video' -> không thêm ảnh.\n"
+             "  3. Copy PROMPT dán nguyên văn. Không thêm tên nhân vật: prompt gọi nhân vật bằng vai\n"
+             "     (Flow chặn tên riêng + mặt chi tiết như 'người nổi tiếng').\n"
+             "  4. Tải video về, lưu đúng tên ghi trong file (clips/clip_01_1.mp4 ...).\n\n"
+             "Chạy hàng loạt: flow_queue.json / flow_queue.csv có đủ các phần theo thứ tự\n"
+             "(id, save_as, mode, images, prompt, trim_to_sec).\n\n"
+             "Dựng video:\n"
+             "  - Ghép clips/ theo thứ tự trong edit_list.csv; mỗi phần chỉ lấy trim_to_sec giây đầu\n"
+             "    (Flow luôn tạo 8s, phần ngắn hơn phải cắt).\n"
+             "  - subtitles.srt khớp thời gian khi các phần được cắt đúng độ dài.\n"
+             + (f"\nCẢNH BÁO: {unit} {', '.join(map(str, skipped))} chưa có bản Veo; tạo lại prompt video.\n" if skipped else "")
+             + ("\nCẢNH BÁO: prompt được tạo từ bản kịch bản cũ hơn bản chốt hiện tại. Tạo lại prompt video trước khi quay.\n"
+                if prompts_stale(session, n) else ""))
+    return tmp, f"{root}.zip"
 
 
 async def run_shotlist_job(job) -> dict:

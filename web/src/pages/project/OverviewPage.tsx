@@ -273,10 +273,14 @@ export function OverviewPage() {
                 {e.logline && <p className="mt-1 line-clamp-3 text-sm text-muted-foreground">{e.logline}</p>}
               </Link>
               {e.has_prompts && (
-                <a href={api.packageUrl(p.slug, p.session_id, e.n)} download
-                  className={cn('inline-flex items-center gap-1 border-t px-4 py-2 text-xs hover:underline', e.prompts_stale ? 'text-warning' : 'text-primary')}>
-                  <Download className="size-3" /> {e.prompts_stale ? 'Gói video (prompt cũ, nên tạo lại)' : 'Tải gói video (Higgsfield)'}
-                </a>
+                <div className={cn('flex items-center gap-3 border-t px-4 py-2 text-xs', e.prompts_stale ? 'text-warning' : 'text-primary')}>
+                  <a href={api.packageUrl(p.slug, p.session_id, e.n, 'flow')} download className="inline-flex items-center gap-1 hover:underline">
+                    <Download className="size-3" /> {e.prompts_stale ? 'Gói Flow (prompt cũ, nên tạo lại)' : 'Tải gói Flow'}
+                  </a>
+                  <a href={api.packageUrl(p.slug, p.session_id, e.n)} download className="inline-flex items-center gap-1 opacity-70 hover:underline">
+                    Higgsfield
+                  </a>
+                </div>
               )}
               </div>
             ))}

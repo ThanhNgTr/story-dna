@@ -1,4 +1,4 @@
-import { Camera, Clapperboard, Lightbulb, MapPin, Shirt, Volume2 } from 'lucide-react'
+import { Camera, Clapperboard, Hand, Lightbulb, MapPin, Move, Shirt, Volume2 } from 'lucide-react'
 import { Link } from 'react-router'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import type { Beat, EpisodeData, Scene } from '@/lib/api'
@@ -70,6 +70,27 @@ function Dialogue({ d, cast }: { d: NonNullable<Beat['dialogue']>[number]; cast:
   )
 }
 
+/** One line per visible character: what the body and hands do, the face, what is in hand. */
+function ActingLines({ acting, cast }: { acting?: Beat['acting']; cast: Map<string, CastMember> }) {
+  const rows = (acting ?? []).filter((a) => a.does || a.face || a.holds)
+  if (!rows.length) return null
+  return (
+    <ul className="mt-1.5 space-y-0.5 text-[13px] leading-snug text-foreground/80">
+      {rows.map((a, i) => (
+        <li key={i} className="flex gap-1.5">
+          <Hand className="mt-[3px] size-3 shrink-0 opacity-50" />
+          <span>
+            <b className="font-medium" style={{ color: `oklch(0.55 0.13 ${hueOf(a.character)})` }}>{nameOf(cast, a.character)}</b>
+            {a.does && <> {a.does}</>}
+            {a.face && <span className="text-muted-foreground"> · mặt: {a.face}</span>}
+            {a.holds && <span className="text-muted-foreground"> · cầm: {a.holds}</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
 function Tech({ icon: Icon, children }: { icon: React.ComponentType<{ className?: string }>; children?: string }) {
   if (!children) return null
   return <div className="flex gap-1.5"><Icon className="mt-0.5 size-3 shrink-0 opacity-60" /><span>{children}</span></div>
@@ -102,6 +123,7 @@ export function BeatRow({ beat, index, cast, mode, actions }: {
       </div>
       <div className="min-w-0">
         {beat.action && <p className="font-serif text-[15px] leading-relaxed">{beat.action}</p>}
+        <ActingLines acting={beat.acting} cast={cast} />
         {beat.dialogue?.map((d, i) => <Dialogue key={i} d={d} cast={cast} />)}
       </div>
       {mode === 'full' && (
@@ -145,6 +167,9 @@ export function SceneHeader({ scene, cast, look }: { scene: Scene; cast: Map<str
           </Link>
         ))}
       </div>
+      {scene.blocking && (
+        <p className="mt-2 flex gap-1.5 text-xs text-muted-foreground"><Move className="mt-0.5 size-3 shrink-0" />{scene.blocking}</p>
+      )}
     </div>
   )
 }

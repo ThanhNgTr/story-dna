@@ -46,7 +46,9 @@ Or paste script Markdown and it will output:
 ## How It Works
 
 ### Step 1: Parse Script
-- Identify scenes, dialogue, action beats
+- Identify scenes, dialogue, action beats; read the episode JSON's per-beat `acting`
+  (`does` / `face` / `holds` per visible character) and each scene's `blocking`
+  (`.claude/skills/action-polish/references/screen-action.md`)
 - Extract character names, locations, tone cues
 - Respect pacing from original DNA rules
 
@@ -252,11 +254,18 @@ only where the scene `cast` changes it.
   prompts"), not described in Cast (its voice is in `Voices`).
 
 ### Clip handoff, performance, guards (every clip)
-- `opening_state`: one sentence, the exact first frame: who is where, pose, what is in hand, framing.
+- Acting from the script: each cut's `action` = the beat's `action` + its `acting` (every visible
+  character: body/hands from `does`, the face from `face`, the object from `holds`), translated, in
+  that order, speaker first. Never drop a held object between cuts; hands carry the subtext (a line
+  said while the hands shake keeps the shaking). A beat with no `acting` (older script): invent only
+  silent, neutral business and suggest `/action-polish`.
+- `opening_state`: one sentence, the exact first frame: who is where, pose, what is in hand, framing
+  (from the scene `blocking` and the first beat's `holds`).
   When the clip continues the previous clip's scene it matches that clip's `closing_state`.
 - `closing_state`: one sentence, the exact last frame the next clip (or the edit) picks up from.
 - `performance`: one sentence, the emotional turn across the clip (from what to what, and what the
-  face/body shows: "confusion first, not anger"). Delivery tags on lines stay as they are.
+  face/body shows: "confusion first, not anger"), built from the clip's `acting` faces and hands.
+  Delivery tags on lines stay as they are.
 - `on_screen_text`: every piece of lettering that must be visible (sign, phone screen, document
   header, title card), verbatim with where it appears; `[]` when none. Prefer `[]`: models misspell
   text, so keep only lettering the story needs and leave the rest for post (say so in `action`).

@@ -610,6 +610,18 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                          {"slug": slug, "session_id": sid, "episodes": body.episodes}, job_funcs["dialogue"])
         return one(job)
 
+    @r.post("/projects/{slug}/{sid}/action/polish")
+    async def action_polish(slug: str, sid: str, body: PolishIn):
+        st = session_or_404(slug, sid)
+        if running_for(sid):
+            raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi bổ sung diễn xuất.")
+        if not st["episodes"]:
+            raise HTTPException(400, "Chưa có tập nào.")
+        what = f"tập {', '.join(map(str, body.episodes))}" if body.episodes else "tất cả các tập"
+        job = jobs.start("action", f"Bổ sung diễn xuất {what} ({slug})",
+                         {"slug": slug, "session_id": sid, "episodes": body.episodes}, job_funcs["action"])
+        return one(job)
+
     @r.put("/projects/{slug}/{sid}/settings")
     def settings_save(slug: str, sid: str, body: SettingsIn):
         d = session_or_404(slug, sid)["dir"]
@@ -670,10 +682,11 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
         return view
 
     @r.get("/projects/{slug}/{sid}/episodes/{n}/package")
-    def episode_package(slug: str, sid: str, n: int, background: BackgroundTasks):
+    def episode_package(slug: str, sid: str, n: int, background: BackgroundTasks, target: str = "higgsfield"):
         st = session_or_404(slug, sid)
+        build = package.build_flow_package if target == "flow" else package.build_episode_package
         try:
-            path, name = package.build_episode_package(st["dir"], n, st["input"].get("title") or "")
+            path, name = build(st["dir"], n, st["input"].get("title") or "")
         except FileNotFoundError as e:
             raise HTTPException(404, str(e))
         background.add_task(path.unlink, missing_ok=True)

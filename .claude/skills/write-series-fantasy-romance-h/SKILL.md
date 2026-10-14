@@ -1,7 +1,7 @@
 ---
 name: write-series-fantasy-romance-h
-version: v3
-stable_version: v3
+version: v4
+stable_version: v4
 description: |
   Turn a rough or fragmented story idea into a 10-20 episode vertical series (60-120s episodes)
   told the way a fantasy-romance "humiliated then face-slapped" short drama is told: a 25-30s
@@ -109,6 +109,13 @@ Save `input.json` first: the raw idea, every flag value, and this skill's versio
   summing to `--episode-sec`.
 - Then `python3 .claude/skills/series-assets/_assets.py lint <session-dir>` -> 0 errors, and
   `/series-assets --session <session-dir>` (scene map, `new_assets` get real IDs, drift report).
+- Acting: every beat carries `acting` (per visible character, listener included: `does` = body +
+  hands, `face`, `holds` = what is in hand) and every 2+ character scene a `blocking` line, following
+  `.claude/skills/action-polish/references/screen-action.md`: lines are said WHILE doing something
+  (rót trà, gắp đồ ăn, siết quai túi); the heroine's hem-tug and the lead's body tells land at their
+  turns; objects stay in hand until a beat puts them down. Then
+  `python3 .claude/skills/action-polish/_action_lint.py lint <session-dir>`: `missing`, `prop_vanish`,
+  `no_blocking` = 0. Subagents get the guide path too.
 - Dialogue: `python3 .claude/skills/dialogue-polish/_dialogue_lint.py lint <session-dir>`; rewrite
   flagged lines that fail `.claude/skills/dialogue-polish/references/vi-dialogue.md`. `definition`
   and `narrates_action` flags must be 0: a line that explains a word or retells the shot is cut,
@@ -373,20 +380,24 @@ Logline: ... | Story beats: <template beats + %> | Cliffhanger: <type>
 ### SC1 [00:00-00:12] EXT. <PLACE> — NIGHT  {loc_01 · char_01:o1}
 | Time | Shot | Action | Dialogue / VO | Camera | Light/Color | Sound |
 |---|---|---|---|---|---|---|
-| 0.0-1.8 | ECU | char_01 ... | VO: "..." | static push-in | grey-teal, wet street | phone buzz |
+| 0.0-1.8 | ECU | <frame / event><br>**Name**: <does>; mặt: <face>; cầm: <holds> | VO: "..." | static push-in | grey-teal, wet street | phone buzz |
 ```
+(`python3 -m app.pipeline.screenplay render <session-dir> <N>` writes this md from the JSON; a scene's
+`blocking` prints as a `Vị trí:` line under its heading.)
 
 `episodes/epNN_vK.json` (read by `/script-to-shotlist`):
 
 ```json
 {
-  "skill": "write-series-fantasy-romance-h", "skill_version": "v3", "session": "<session-id>",
+  "skill": "write-series-fantasy-romance-h", "skill_version": "v4", "session": "<session-id>",
   "episode": 3, "title": "...", "total_duration_sec": 90, "aspect_ratio": "9:16",
   "logline": "...", "story_beats": "<template beats + %>", "cliffhanger_type": "<hook pattern name>",
   "characters": {"char_01": {"name": "...", "visual_signature": "<bible, verbatim>", "outfits": ["char_01_o1"]}},
   "scenes": [{"id": "SC1", "start_sec": 0, "end_sec": 12, "location": "<registry name>", "loc_id": "loc_01", "variant_id": "loc_01_night",
     "cast": {"char_01": "char_01_o1"}, "referenced": [], "props": ["prop_01"], "int_ext": "EXT", "time_of_day": "night",
+    "blocking": "<who is where, facing whom, what is within reach>",
     "beats": [{"start_sec": 0, "end_sec": 1.8, "shot_size": "ECU", "characters": ["char_01"], "action": "...",
+      "acting": [{"character": "char_01", "does": "<body + hands>", "face": "<visible expression>", "holds": "<in hand at beat end, or empty>"}],
       "dialogue": [{"character": "char_01", "line": "...", "voiceover": true, "delivery": "wry"}],
       "camera": "...", "lighting_color": "...", "sound": "..."}]}],
   "new_assets": [], "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}
@@ -429,6 +440,8 @@ ledger}], never_answered[]}`; last episode `ending` + `cliffhanger_type: "resolu
 - [ ] Dialogue reads as natural spoken language, xưng hô per `address_matrix`; `_dialogue_lint.py`
       flags fixed or justified; 0 `definition` / `narrates_action`; every 2+ character scene has
       a spoken exchange
+- [ ] Every beat has `acting` for each visible character (listener too), every 2+ character scene a
+      `blocking`; `_action_lint.py` reports 0 `missing` / `prop_vanish` / `no_blocking`
 
 ## Data limits
 
@@ -464,3 +477,6 @@ ledger}], never_answered[]}`; last episode `ending` + `cliffhanger_type: "resolu
 - v3 (2026-10-12T15:30:00Z): outline `act` mapped to the contract's 1-3; episode JSON carries
   `logline`, `story_beats`, `cliffhanger_type`, character `outfits` (read by the app); speech rate =
   vi-dialogue.md "Speech rate" (<= 5.0 syllables/s, lint `too_fast`).
+- v4 (2026-10-14T00:00:00Z): on-screen action per beat: `acting` [{character, does, face, holds}]
+  for every visible character, scene `blocking`, objects kept in hand
+  (`action-polish/references/screen-action.md`, lint `_action_lint.py`).

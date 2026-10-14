@@ -209,12 +209,16 @@ export interface DocResponse { kind: string; file: string; version: number; mark
 
 export interface DialogueLine { character: string; line: string; voiceover?: boolean; delivery?: string }
 
+/** What one visible character does in a beat (action-polish/references/screen-action.md). */
+export interface Acting { character: string; does?: string; face?: string; holds?: string }
+
 export interface Beat {
   start_sec: number
   end_sec: number
   shot_size?: string
   characters?: string[]
   action?: string
+  acting?: Acting[]
   dialogue?: DialogueLine[]
   camera?: string
   lighting_color?: string
@@ -234,6 +238,7 @@ export interface Scene {
   cast?: Record<string, string>
   referenced?: string[]
   props?: string[]
+  blocking?: string
   beats: Beat[]
 }
 
@@ -533,6 +538,8 @@ export const api = {
   dialogue: (slug: string, sid: string) => request<DialogueView>(`${p(slug, sid)}/dialogue`),
   polishDialogue: (slug: string, sid: string, episodes: number[] = []) =>
     request<Job>(`${p(slug, sid)}/dialogue/polish`, { method: 'POST', body: JSON.stringify({ episodes }) }),
+  polishAction: (slug: string, sid: string, episodes: number[] = []) =>
+    request<Job>(`${p(slug, sid)}/action/polish`, { method: 'POST', body: JSON.stringify({ episodes }) }),
   makeShotlist: (slug: string, sid: string, episodes: number[] = [], force = false) =>
     request<Job>(`${p(slug, sid)}/shotlist`, { method: 'POST', body: JSON.stringify({ episodes, force }) }),
   saveSettings: (slug: string, sid: string, body: Partial<SeriesSettings>) =>
@@ -540,7 +547,8 @@ export const api = {
   refreshFinal: (slug: string, sid: string) =>
     request<{ copied: string[]; items: (number | string)[] }>(`${p(slug, sid)}/final/refresh`, { method: 'POST' }),
   prompts: (slug: string, sid: string, n: number) => request<PromptsData>(`${p(slug, sid)}/episodes/${n}/prompts`),
-  packageUrl: (slug: string, sid: string, n: number) => `/api${p(slug, sid)}/episodes/${n}/package`,
+  packageUrl: (slug: string, sid: string, n: number, target: 'higgsfield' | 'flow' = 'higgsfield') =>
+    `/api${p(slug, sid)}/episodes/${n}/package${target === 'flow' ? '?target=flow' : ''}`,
   fixStory: (slug: string, sid: string) => request<Job>(`${p(slug, sid)}/story/fix`, { method: 'POST' }),
   archiveEpisodes: (slug: string, sid: string, body: { episodes?: number[]; rewrite?: boolean }) =>
     request<{ archived: number[]; dir: string; files: number; job?: Job }>(`${p(slug, sid)}/episodes/archive`, { method: 'POST', body: JSON.stringify(body) }),
