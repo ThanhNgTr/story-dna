@@ -79,6 +79,8 @@ from canon + the style skill's Story Bible / Character Bible templates. Add a sh
 previous bible" list at the top.
 
 ### C3 — Outline → `outline_vN.md` (+ `.json`)
+Before planning, read `.claude/skills/story-contract/references/minors-on-screen.md`: new scenes with a child are staged in daylight /
+open places (no sleep, bed, touching, secret phone at night), even when the produced videos did otherwise.
 
 - Episodes 1..k: one row each, marked `PRODUCED (canon)` with a one-line on-screen summary. Do not
   rewrite them. They still carry the story-contract outline fields as seen on screen (`act`,

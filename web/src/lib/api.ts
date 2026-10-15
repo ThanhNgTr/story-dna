@@ -52,13 +52,15 @@ export interface PromptShot {
   continuity_in?: string
   opening_state?: string; closing_state?: string; performance?: string
   on_screen_text: string[]
-  veo_parts: { part: number; start_sec: number; end_sec: number; cuts?: number[]; refs?: string[]; video_prompt: string }[]
+  veo_parts: { part: number; start_sec: number; end_sec: number; duration_sec?: number; cuts?: number[]; refs?: string[]; video_prompt: string }[]
   cuts: { cut: number; start_sec: number; end_sec: number; camera?: string; action?: string }[]
 }
 export interface PromptsData {
   unit: 'clip' | 'shot'
   aspect_ratio: string; total_duration_sec: number; style_suffix: string; stale: boolean; built_at: string
   names: Record<string, string>; shots: PromptShot[]
+  /** "flow" / "higgsfield": which prompts the file has (older files: both). */
+  targets?: string[]
   check: { errors: string[]; warnings: string[] } | null
 }
 export interface SeriesSettings { auto_editor_outline: boolean; auto_editor_episodes: boolean }
@@ -118,6 +120,8 @@ export interface Project {
   final_complete: boolean
   final_stale: (number | 'bible' | 'outline' | 'assets')[]
   settings: SeriesSettings
+  /** Video tools the prompts are made for ("flow", "higgsfield"); Flow only for now. */
+  video_targets?: string[]
   cost_usd: number
   docs: Record<'adaptation' | 'bible' | 'outline' | 'canon', number[]>
   episodes: EpisodeInfo[]

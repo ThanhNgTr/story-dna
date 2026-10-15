@@ -19,7 +19,29 @@ async function copy(text: string, what: string) {
 
 const sec = (s: number | null | undefined) => (s == null ? '?' : `${Number(s).toFixed(1)}s`)
 
-function ShotCard({ s, imgBase, names, unit }: { s: PromptShot; imgBase: string; names: Record<string, string>; unit: string }) {
+function FlowParts({ s, unit }: { s: PromptShot; unit: string }) {
+  return (
+    <div className="space-y-2">
+      {s.veo_parts.map((vp) => (
+        <div key={vp.part} className="space-y-1">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="font-mono text-muted-foreground">
+              Phần {vp.part} · kịch bản {sec(vp.start_sec)}–{sec(vp.end_sec)}{vp.duration_sec ? ` · tạo ${vp.duration_sec}s trên Flow` : ''}
+            </span>
+            <Button size="xs" variant="outline" className="ml-auto gap-1"
+              onClick={() => copy(vp.video_prompt, `prompt Flow ${unit} ${s.shot_number} phần ${vp.part}`)}>
+              <Copy className="size-3" /> Sao chép
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Ảnh cho phần này: {vp.refs?.length ? vp.refs.map((r) => r.split('/').pop()).join(', ') : 'không (tạo từ chữ)'}</p>
+          <pre className="max-h-48 overflow-y-auto rounded bg-muted/60 p-2 font-mono text-xs leading-relaxed whitespace-pre-wrap">{vp.video_prompt}</pre>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ShotCard({ s, imgBase, names, unit, flowOnly }: { s: PromptShot; imgBase: string; names: Record<string, string>; unit: string; flowOnly: boolean }) {
   const [done, setDone] = useState(false)
   return (
     <article className="rounded-xl border bg-card">
@@ -27,10 +49,12 @@ function ShotCard({ s, imgBase, names, unit }: { s: PromptShot; imgBase: string;
         <span className="rounded-md bg-foreground px-1.5 py-0.5 font-mono text-xs text-background">#{s.shot_number}</span>
         <span className="font-mono text-xs text-muted-foreground">{sec(s.start_sec)}–{sec(s.end_sec)} · {sec(s.duration_sec)}</span>
         <span className="text-xs text-muted-foreground">{s.scene}{s.camera ? ` · ${s.camera}` : ''}</span>
-        <Button size="xs" variant={done ? 'secondary' : 'outline'} className="ml-auto gap-1"
-          onClick={async () => { await copy(s.video_prompt || '', `prompt ${unit} ${s.shot_number}`); setDone(true) }}>
-          {done ? <Check className="size-3" /> : <Copy className="size-3" />} Sao chép prompt{s.veo_parts.length ? ' (Seedance)' : ''}
-        </Button>
+        {!flowOnly && (
+          <Button size="xs" variant={done ? 'secondary' : 'outline'} className="ml-auto gap-1"
+            onClick={async () => { await copy(s.video_prompt || '', `prompt ${unit} ${s.shot_number}`); setDone(true) }}>
+            {done ? <Check className="size-3" /> : <Copy className="size-3" />} Sao chép prompt{s.veo_parts.length ? ' (Seedance)' : ''}
+          </Button>
+        )}
       </header>
       <div className="grid gap-4 p-4 md:grid-cols-[1fr_auto]">
         <div className="min-w-0 space-y-3 text-sm">
@@ -68,10 +92,11 @@ function ShotCard({ s, imgBase, names, unit }: { s: PromptShot; imgBase: string;
               ))}
             </div>
           )}
+          {flowOnly ? <FlowParts s={s} unit={unit} /> : <>
           <pre className="max-h-64 overflow-y-auto rounded-lg bg-muted/60 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">{s.video_prompt}</pre>
           {s.veo_parts.length > 0 && (
             <details className="rounded-lg border px-3 py-2 text-xs">
-              <summary className="cursor-pointer text-muted-foreground">Bản Google Flow / Veo 3.1: {s.veo_parts.length} phần ≤ 8s, gọi nhân vật bằng vai, tối đa 1 ảnh nhân vật</summary>
+              <summary className="cursor-pointer text-muted-foreground">Bản Google Flow / Veo 3.1: {s.veo_parts.length} phần 6/8/10s (giãn ~1.3 lần), gọi nhân vật bằng vai, tối đa 3 ảnh (nhân vật trước, rồi bối cảnh)</summary>
               <div className="mt-2 space-y-2">
                 {s.veo_parts.map((vp) => (
                   <div key={vp.part} className="space-y-1">
@@ -89,6 +114,7 @@ function ShotCard({ s, imgBase, names, unit }: { s: PromptShot; imgBase: string;
               </div>
             </details>
           )}
+          </>}
           {s.sfx && <p className="text-xs text-muted-foreground">Âm thanh: {s.sfx}</p>}
           {s.pace_warning.map((w, i) => (
             <p key={i} className="flex items-start gap-1.5 text-xs text-amber-700 dark:text-amber-400">
@@ -119,7 +145,10 @@ export function PromptsView({ slug, sid, n }: { slug: string; sid: string; n: nu
   const imgBase = `/series/${slug}/${sid}/assets`
   const unit = v.unit === 'clip' ? 'clip' : 'shot'
   const cuts = v.shots.reduce((k, s) => k + s.cuts.length, 0)
-  const all = v.shots.map((s) => `#${s.shot_number} (${sec(s.start_sec)}-${sec(s.end_sec)})\n${s.video_prompt}`).join('\n\n')
+  const flowOnly = !(v.targets ?? ['higgsfield']).includes('higgsfield')
+  const all = flowOnly
+    ? v.shots.flatMap((s) => s.veo_parts.map((vp) => `#${s.shot_number}.${vp.part} (${vp.duration_sec ?? '?'}s)\n${vp.video_prompt}`)).join('\n\n')
+    : v.shots.map((s) => `#${s.shot_number} (${sec(s.start_sec)}-${sec(s.end_sec)})\n${s.video_prompt}`).join('\n\n')
   const noRefs = v.shots.filter((s) => !s.refs.length).length
   return (
     <div className="space-y-3">
@@ -134,9 +163,11 @@ export function PromptsView({ slug, sid, n }: { slug: string; sid: string; n: nu
           <Button size="sm" variant="outline" className="gap-1.5" render={<a href={api.packageUrl(slug, sid, n, 'flow')} download />}>
             <Download className="size-3.5" /> Tải gói Flow
           </Button>
-          <Button size="sm" variant="ghost" className="gap-1.5" render={<a href={api.packageUrl(slug, sid, n)} download />}>
-            <Download className="size-3.5" /> Gói Higgsfield
-          </Button>
+          {!flowOnly && (
+            <Button size="sm" variant="ghost" className="gap-1.5" render={<a href={api.packageUrl(slug, sid, n)} download />}>
+              <Download className="size-3.5" /> Gói Higgsfield
+            </Button>
+          )}
         </div>
       </div>
       {v.unit !== 'clip' ? (
@@ -173,7 +204,7 @@ export function PromptsView({ slug, sid, n }: { slug: string; sid: string; n: nu
           <p className="mt-2 font-mono text-xs">{v.style_suffix}</p>
         </details>
       )}
-      {v.shots.map((s) => <ShotCard key={s.shot_number} s={s} imgBase={imgBase} names={v.names} unit={unit} />)}
+      {v.shots.map((s) => <ShotCard key={s.shot_number} s={s} imgBase={imgBase} names={v.names} unit={unit} flowOnly={flowOnly} />)}
     </div>
   )
 }

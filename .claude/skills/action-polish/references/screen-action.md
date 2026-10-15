@@ -80,6 +80,12 @@ it fails.
 | MCU 2.0s, con nghe | Con nhìn mẹ | Con: `does` "đưa tay đỡ lấy ấm trà khỏi tay mẹ"; `face` "nhíu mày, nhìn bàn tay mẹ"; `holds` "ấm trà" |
 | CU 1.6s, ông chủ: "Đầu tư thì phải có lời." | Ông Hữu nói | Ông Hữu: `does` "gõ ngón tay lên mặt đồng hồ vàng, ngả lưng ra ghế"; `face` "nhếch mép, nhìn con gái từ đầu tới chân"; `holds` "" |
 
+## Children on screen
+
+Any character under 18 also follows `.claude/skills/story-contract/references/minors-on-screen.md`: no sleep, bed or touching with an adult, full
+clothing, no secret phone at night, a hand habit instead of a mouth habit, distress shown without tears.
+Lint flag `minor_risk` (strict).
+
 ## Checks
 
 `python3 .claude/skills/action-polish/_action_lint.py lint <session> [N...]` -> `action_check.json`.

@@ -130,23 +130,23 @@ function VideoPackageButton({ n, busy }: { n: number; busy: boolean }) {
     return (
       <>
         <Button variant="outline" size="sm" className="gap-1.5" render={<a href={api.packageUrl(p.slug, p.session_id, n, 'flow')} download />}
-          title="Gói zip cho Google Flow / Veo 3.1: mỗi phần ≤8s một lần tạo, đúng ảnh của phần đó, hàng đợi flow_queue, phụ đề .srt, danh sách dựng .csv">
+          title="Gói zip cho Google Flow / Veo 3.1: mỗi phần 6/8/10s một lần tạo, đúng ảnh của phần đó, hàng đợi flow_queue, phụ đề .srt, danh sách dựng .csv">
           <Download className="size-3.5" /> Tải gói Flow
         </Button>
-        <Button variant="ghost" size="sm" className="gap-1.5" render={<a href={api.packageUrl(p.slug, p.session_id, n)} download />}
+        {(p.video_targets ?? ['higgsfield']).includes('higgsfield') && <Button variant="ghost" size="sm" className="gap-1.5" render={<a href={api.packageUrl(p.slug, p.session_id, n)} download />}
           title="Gói zip cho Higgsfield (Seedance 2 / Kling): mỗi clip 10-15s một lần tạo, ảnh tham chiếu, phụ đề .srt, danh sách dựng .csv">
           <Download className="size-3.5" /> Gói Higgsfield
-        </Button>
+        </Button>}
         <ConfirmAction
           trigger={<Button variant={ep.prompts_outdated ? 'outline' : 'ghost'} size="sm" className="gap-1.5"
             disabled={busy || !ep.in_final || make.isPending}
-            title={ep.prompts_outdated ? 'Prompt theo định dạng cũ: chưa có khung đầu/cuối, lệnh cấm, bản Veo 8s' : 'Viết lại prompt video của tập này'}>
+            title={ep.prompts_outdated ? 'Prompt theo định dạng cũ: phần Flow chưa giãn thời lượng 6/8/10s, chưa có quy tắc trẻ em (hoặc thiếu khung đầu/cuối, lệnh cấm)' : 'Viết lại prompt video của tập này'}>
             <Clapperboard className="size-3.5" /> {ep.prompts_outdated ? 'Nâng cấp prompt video' : 'Tạo lại prompt'}
           </Button>}
           title={`Tạo lại prompt video tập ${n}?`} confirmLabel="Tạo lại" pending={make.isPending}
           onConfirm={() => make.mutateAsync()}
           description={<>Claude chia lại tập thành các clip và viết prompt mới (khoảng 3–8 phút), thay cho prompt hiện tại của tập này.
-            {ep.prompts_outdated && ' Bản mới có khung đầu/cuối mỗi clip, diễn xuất, lệnh cấm phụ đề / thêm thoại, tối đa 5 cảnh cắt mỗi clip và bản tách ≤8s cho Veo 3.1 / Flow.'}</>} />
+            {ep.prompts_outdated && ' Bản mới có khung đầu/cuối mỗi clip, diễn xuất, lệnh cấm phụ đề / thêm thoại, tối đa 5 cảnh cắt mỗi clip và bản tách cho Veo 3.1 / Flow giãn ~1.3 lần theo thời lượng Flow nhận (6/8/10s) cho đủ thời gian diễn, và quy tắc an toàn cho cảnh có trẻ em.'}</>} />
       </>
     )
   }

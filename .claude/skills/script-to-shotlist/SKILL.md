@@ -37,6 +37,8 @@ What it does:
 
 ```bash
 /script-to-shotlist "# My Script\n\n## Scene 1\nAlice walks into the office..."
+/script-to-shotlist data/series/<slug>/<session>/final/ep01.md --targets flow              # default: Google Flow only
+/script-to-shotlist data/series/<slug>/<session>/final/ep01.md --targets flow,higgsfield   # also the 10-15s clip prompts
 ```
 
 Or paste script Markdown and it will output:
@@ -196,6 +198,17 @@ Write to `final/shots/epNN/`:
 - `prompts.json` - one entry per CLIP (10-15s, one video generation), for video gen tools / agents
 - `prompts.md` - numbered list for humans
 
+### Targets (`--targets`, default `flow`)
+`prompts.json` records `"targets"`. The clips (10-15s groups of cuts) are planned the same way for every
+target: they hold the cuts, timed dialogue, `opening_state` / `closing_state`, `performance`,
+`on_screen_text`, `continuity_in`, and their `veo_parts`.
+- `flow` (current focus): `"targets": ["flow"]`. Each clip's own `video_prompt` is `""` and its `refs`
+  is `[]`: do NOT write the 10-15s Seedance prompt. All the prompt work goes into `veo_parts` (Google
+  Flow), which follow every rule below (anchors, dialogue tags, guard block, Flow-safe, minors).
+  `prompts.md` lists the Flow parts per clip.
+- `higgsfield`: also write each clip's 10-15s `video_prompt` and `refs` (Seedance 2 / Kling), as the
+  sections below describe. Both: `"targets": ["flow", "higgsfield"]`.
+
 Why clips: a 1-2s prompt per shot means 30-40 separate generations per episode; faces, outfits,
 light and voices drift between them, and a dialogue exchange gets cut into pieces that never match.
 Current video models (Seedance 2, Kling, Veo) take one prompt with several timed cuts and keep the
@@ -215,12 +228,13 @@ same people and place inside it. The style's fast cutting stays: it lives INSIDE
 - At most 5 cuts per clip (aim 3-4): video models execute 3-4 timed cuts reliably and blur the rest.
   Each cut 1.5-5s. When the style cuts faster, merge neighbouring cuts on the same subject into one
   shot with a camera move (push-in from MCU to CU, rack focus to the prop) instead of adding cuts.
-- Clips are 10-15s for multi-shot models (Seedance 2, Kling). Veo 3.1 / Google Flow makes at most 8s
-  per generation: every clip longer than 8s also carries `veo_parts` (see below).
+- Clips are 10-15s for multi-shot models (Seedance 2, Kling). Google Flow makes only 4, 6, 8 or 10s
+  per generation: every clip also carries `veo_parts` stretched to those lengths (see below).
 - Clips are contiguous: `end_sec` of clip N = `start_sec` of clip N+1; last `end_sec` = episode length.
 - Check before reporting done: `python3 -m app.pipeline.package check <session-dir> <episode>` ->
   0 errors (clip inside one scene, 15s max, contiguous, every line timed inside its clip, Opening /
-  Ending / Rules in every prompt, `veo_parts` on every clip and valid; Flow-safe warnings fixed). Fix and re-run; also fix "more than 5 cuts" warnings.
+  Ending / Rules in every prompt, `veo_parts` on every clip and valid: `duration_sec` = the stretched Flow
+  length (6/8/10s), prompt starting "<duration_sec>-second"; minors rule; Flow-safe warnings fixed). Fix and re-run; also fix "more than 5 cuts" warnings.
 
 ### Character, outfit and location anchors
 Source of looks, first that exists: `final/assets.json`, else the latest `assets/assets_vN.json`
@@ -325,10 +339,28 @@ Rules:
   /dialogue-polish; `package check` warns on it.
 
 ### Veo parts (every clip): the Google Flow / Veo 3.1 version
-`veo_parts`: the same clip for an 8-second model, each part one Veo / Flow generation. A clip of 8s or
-less is one part; a longer clip is split:
-- Split ONLY at cut boundaries, never inside a dialogue line; parts are contiguous, cover the clip
-  exactly (first `start_sec` = clip start, last `end_sec` = clip end), each at most 8s.
+`veo_parts`: the same clip for Google Flow, each part one generation. Flow accepts ONLY these lengths:
+**4, 6, 8 or 10 seconds** (any other number is refused). A part played at script speed looked rushed in
+Flow (a 6s part could not show its action), so every part is generated LONGER than its script time:
+- `start_sec` / `end_sec`: the script time the part covers (absolute, as in the cuts). Script length =
+  `end_sec - start_sec`, at most 8s.
+- `duration_sec`: the Flow length = the smallest step that holds ~1.3x the script length
+  (`app.pipeline.package.flow_duration`): up to 4.7s -> 6s, 4.7-6.2s -> 8s, 6.2-8s -> 10s (under 3.1s -> 4s).
+  The whole generation is kept in the edit: the episode video runs ~1.3x the script.
+
+Plan the split per clip so every part lands in those bands:
+- Prefer parts of 5-6s of script (-> 8s) and 6.5-8s (-> 10s); 3.5-4.7s (-> 6s) for a short scene end.
+  Never over 2x (a 3s part in 8s plays in slow motion): merge it with a neighbour cut.
+- Examples: 13.8s clip with cuts ending at 3.0, 5.8, 8.5, 13.8 -> parts 0-5.8 (8s) + 5.8-13.8 (10s).
+  12s clip -> 6 + 6 (8s + 8s). 15s clip -> 7.5 + 7.5 (10s + 10s). A clip of 8s or less is one part.
+- Splits stay at cut boundaries, never inside a dialogue line; parts are contiguous and cover the clip
+  exactly (first `start_sec` = clip start, last `end_sec` = clip end).
+- The part prompt is written for `duration_sec`: it starts
+  `"<duration_sec>-second vertical 9:16 multi-shot clip, ..."`, and every cut and line time is the
+  script time scaled by `duration_sec / script length` (relative to the part), so the shots run from 0
+  to `duration_sec` with no held tail. Use the extra time for the acting the script already has
+  (`acting`: hands, face, what is in hand; a beat of reaction before and after a line), never for new
+  events or new lines. Line delivery may be calmer; the words stay exactly the same.
 - Each part is self-contained (`video_prompt` in the same layout: its own Cast = who is on screen in
   THAT part, its own Opening = the part's real first frame, only its cuts and lines with times
   relative to the part, the guard block, the style suffix). Part 1 opens on the clip's
@@ -347,18 +379,64 @@ less is one part; a longer clip is split:
     full facial anatomy list (eyes, brows, nose, lips, jaw, skin), no height in cm. Never leave a face
     with no mark at all: the model then fills in a default "pretty" face, and a young woman described
     only by hair and a silk blouse was refused as a famous person even with no image of her attached.
-  - `refs`: at most ONE character image plus the location plate; other characters are text only.
-    Pick the character the part is ABOUT (most screen time, the face the camera holds on), not merely
-    the first speaker.
+  - `refs` (Flow "Ingredients to Video", at most 3 images per part): one image for EVERY character on
+    screen in the part (outfit image when one exists for the worn outfit, else the character sheet),
+    ordered by screen time in the part (the face the camera holds on first), then the location plate
+    if a slot is left. More than 3 characters on screen: the 3 with most screen time get images, the
+    rest are text only; the location is then text only too. Each image must show ONE character (no
+    group sheets), and the Cast line describes every character whose image is attached, in the same
+    order, by role label.
   - No lettering at all (signs, phone screens, title cards go to post): the guard line reads
     "... on-screen text except: none" and the location text drops sign wording.
   - Start the Cast line with "Original fictional characters, not real people."
+- Minors (every character the asset registry gives an `age` under 18). The script should already follow
+  `.claude/skills/story-contract/references/minors-on-screen.md`; this is the second net for what got through. Flow refused a part with a
+  10-year-old as "harmful content involving minors": the child was described by body ("small and skinny",
+  "barefoot", "floral shorts"), next to a man in a tank top and shorts, late at night, a bed in the room,
+  touching (ruffling hair, sitting pressed beside him), sleeping side by side, and her photo attached.
+  In EVERY prompt (Flow parts and the 10-15s clip prompt) where a minor is on screen:
+  - No photo of the child in `refs` (text only; an adult in the part may keep theirs). Frame the child
+    so a face model is not needed: medium or wide, profile, from behind, hands on a prop.
+  - Describe the child by relation + age + full clothing only: "his younger sister, a 10-year-old
+    schoolgirl in a white school shirt and navy trousers, chin-length hair, a red keypad phone on a
+    neck strap". No body or face words (skinny, small, slim, tanned, lips, pouting mouth), no bare feet,
+    shorts, sleeveless tops, sleepwear; the adults in the same part fully dressed too (T-shirt, long
+    trousers).
+  - Use a relation label for the child in `flow_labels` ("the younger sister", "the son"), and name the
+    relation of the adults in the Cast line ("her older brother").
+  - No physical contact between an adult and the child (no hug, ruffling hair, carrying, holding, lap,
+    leaning on): keep "an arm's length apart"; show care through objects and looks (hands her a bowl).
+  - No bed, bedroom, sleeping, bathing, changing clothes, "late night", "alone with": move the moment to
+    the evening, a doorway, a porch with the alley behind, a kitchen; a sleeping adult becomes "resting
+    his head on his arms at the table" with the child sitting across.
+  - No adult asleep, dozing, "eyes closed", "resting his head", "does not stir" while the child is on
+    screen (renaming sleep does not help: the ep04 review found "rests his head on his arms, eyes closed"
+    + "she checks he does not stir"). Keep the story beat, move the adult OUT of the frame: busy inside,
+    seen from behind through a door, gone to the shop. The child then acts alone with the object.
+  - Never mention a child sleeping, even off screen ("afraid to wake his sister" in a delivery tag, in
+    `performance` or `continuity_in`), and no sleeping mat / bed in the text of a home where a child
+    lives.
+  - No shot on a child's mouth, lips or teeth: a mouth habit from the bible `tell` (chewing a strap)
+    becomes a hand action (twisting the strap around a finger).
+  - No crying or hurt child (tears, red-rimmed eyes, crying) next to an adult; a child's distress is a
+    set jaw, fast blinking, a hand or a prop, the face in a medium shot.
+  - A child using a phone to contact someone (messaging, dialling, scrolling contacts, pressing send),
+    or a child alone at night: the child is OFF SCREEN in the Flow parts. Flow refused ep04 7_1 and 8_1
+    (a 10-year-old alone on a porch after dark, secretly taking her brother's phone, typing, praying to
+    the parents' photo, pressing send) even after every risky word was removed. Tell the beat with
+    objects and sound: the phone on the step lifted out of frame, the screen as an insert (text in post),
+    keys lighting up, the photo; her lines become an OFF-SCREEN VOICE ("a young girl's soft whisper").
+    The part's `characters` then leaves her out, `refs` has no character image of her, and the Cast line
+    says "no person on screen". Quoted lines stay word for word.
+  - Quoted dialogue stays word for word. `package check` makes these errors: a photo of a minor in
+    `refs`, or risky words in a prompt with a minor on screen.
 
 ### `prompts.json`
 ```json
 {
   "unit": "clip",
-  "prompt_format": 2,
+  "prompt_format": 4,
+  "targets": ["flow", "higgsfield"],
   "source_script": "data/series/<slug>/20261001-143000/final/ep01.md",
   "skill": "write-series-<slug>",
   "skill_version": "v3",
@@ -384,7 +462,7 @@ less is one part; a longer clip is split:
       "cuts": [
         {"cut": 1, "start_sec": 0, "end_sec": 2.5, "camera": "handheld tracking WS, push-in",
          "action": "Lan runs toward camera through the fog, glances back", "dialogue": []},
-        {"cut": 2, "start_sec": 2.5, "end_sec": 5, "camera": "static CU",
+        {"cut": 2, "start_sec": 2.5, "end_sec": 5.8, "camera": "static CU",
          "action": "Lan stops, out of breath",
          "dialogue": [{"character": "char_01", "line": "Nó vẫn còn ở đây.", "delivery": "thì thào, sợ",
                        "voiceover": false, "mode": "speaks", "start_sec": 2.8, "end_sec": 4.6}]}
@@ -397,14 +475,14 @@ less is one part; a longer clip is split:
       "performance": "Lan's panic turns into suspicion when Minh blocks her; Minh stays calm, hiding something.",
       "on_screen_text": [],
       "pace_warning": [],
-      "video_prompt": "12.5-second vertical 9:16 multi-shot clip, EXT, night, dense foggy pine forest (...location anchor...).\nCast: Lan: teen girl, 16, ... ; Minh: ... .\nVoices: Lan: teenage girl, thin breathy voice; Minh: teenage boy, low calm voice.\nOpening: Wide: Lan, far in the fog, running toward camera, torch in her right hand.\nShot 1 (0-2.5s): handheld tracking wide shot, Lan runs toward camera through the fog, glances back. Shot 2 (2.5-5s): static close-up on Lan, out of breath. SPEAKS (lip-synced): Lan (alone in frame, torch in hand), whispering in Vietnamese, terrified, 2.8-4.6s: \"Nó vẫn còn ở đây.\" Shot 3 (...) ...\nPerformance: ...\nEnding: Close-up: Lan and Minh face to face, ... Sound: heavy breathing, snapping branches, wind.\nRules: Speak only the quoted lines, ... No subtitles, captions, watermarks or on-screen text except: none. ...\nvertical 9:16 frame, photoreal, ...",
+      "video_prompt": "12.5-second vertical 9:16 multi-shot clip, EXT, night, dense foggy pine forest (...location anchor...).\nCast: Lan: teen girl, 16, ... ; Minh: ... .\nVoices: Lan: teenage girl, thin breathy voice; Minh: teenage boy, low calm voice.\nOpening: Wide: Lan, far in the fog, running toward camera, torch in her right hand.\nShot 1 (0-2.5s): handheld tracking wide shot, Lan runs toward camera through the fog, glances back. Shot 2 (2.5-5.8s): static close-up on Lan, out of breath. SPEAKS (lip-synced): Lan (alone in frame, torch in hand), whispering in Vietnamese, terrified, 2.8-4.6s: \"Nó vẫn còn ở đây.\" Shot 3 (...) ...\nPerformance: ...\nEnding: Close-up: Lan and Minh face to face, ... Sound: heavy breathing, snapping branches, wind.\nRules: Speak only the quoted lines, ... No subtitles, captions, watermarks or on-screen text except: none. ...\nvertical 9:16 frame, photoreal, ...",
       "veo_parts": [
-        {"part": 1, "start_sec": 0, "end_sec": 5, "cuts": [1, 2], "continuity_in": "",
+        {"part": 1, "start_sec": 0, "end_sec": 5.8, "duration_sec": 8, "cuts": [1, 2], "continuity_in": "",
          "refs": ["assets/characters/char_01/char_01_sheet_v1.png", "assets/locations/loc_02/loc_02_night_v1.png"],
-         "video_prompt": "5-second vertical 9:16 multi-shot clip, EXT, night, foggy pine forest. Cast: Original fictional characters, not real people. The schoolgirl: teenage girl, slim, dark wavy shoulder-length hair, navy blazer, torch in hand. Opening: ... Ending: Close-up: the schoolgirl out of breath, eyes on the fog. ..."},
-        {"part": 2, "start_sec": 5, "end_sec": 12.5, "cuts": [3, 4], "continuity_in": "the schoolgirl still out of breath, torch in her right hand, same fog and light",
+         "video_prompt": "8-second vertical 9:16 multi-shot clip, EXT, night, foggy pine forest. Cast: Original fictional characters, not real people. The schoolgirl: teenage girl, slim, dark wavy shoulder-length hair, navy blazer, torch in hand. Opening: ... Ending: Close-up: the schoolgirl out of breath, eyes on the fog. ..."},
+        {"part": 2, "start_sec": 5.8, "end_sec": 12.5, "duration_sec": 10, "cuts": [3, 4], "continuity_in": "the schoolgirl still out of breath, torch in her right hand, same fog and light",
          "refs": ["assets/characters/char_02/char_02_sheet_v1.png", "assets/locations/loc_02/loc_02_night_v1.png"],
-         "video_prompt": "7.5-second vertical 9:16 multi-shot clip, ... Opening: Over-the-shoulder: the tall boy steps out of the fog in front of the schoolgirl. ..."}
+         "video_prompt": "10-second vertical 9:16 multi-shot clip, ... (cut and line times x10/6.7) ... Opening: Over-the-shoulder: the tall boy steps out of the fog in front of the schoolgirl. ..."}
       ]
     }
   ]

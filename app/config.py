@@ -25,6 +25,9 @@ BROWSE_ROOTS = [Path(p).expanduser().resolve()
 
 # Max Claude processes running at once (each video-analyst reads ~40 images)
 CLAUDE_PARALLEL = int(os.environ.get("STORY_DNA_PARALLEL", "4"))
+# Video tools the prompts are written for: "flow" (Google Flow / Veo parts) and/or "higgsfield" (10-15s clip prompts
+# for Seedance / Kling). Flow only for now; STORY_DNA_VIDEO_TARGETS=flow,higgsfield writes both (slower).
+VIDEO_TARGETS = tuple(t.strip() for t in os.environ.get("STORY_DNA_VIDEO_TARGETS", "flow").split(",") if t.strip()) or ("flow",)
 
 # Tools the headless Claude sessions may use without asking. acceptEdits covers file writes
 # inside the project; Bash is limited to the commands the skills need.

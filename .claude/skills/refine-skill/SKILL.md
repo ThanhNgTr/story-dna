@@ -109,6 +109,8 @@ reading, apply it as `story` scope (never a rule change on a guess), and log the
   before episodes exist) -> 0 errors; fix what fails in the same round (next file versions).
   Feedback that would break the contract (e.g. "no ending", "leave everything open") -> apply it
   to episodes 1..N-1 only and say so in the change summary.
+- Scenes with a minor on screen follow `.claude/skills/story-contract/references/minors-on-screen.md` (also when the
+  feedback asks for a new scene); `_action_lint.py` `minor_risk` = 0.
 - Rewritten beats keep or write `acting` / scene `blocking` per
   `.claude/skills/action-polish/references/screen-action.md` (a changed line gets matching hands and
   face; unchanged beats keep theirs); run `python3 .claude/skills/action-polish/_action_lint.py lint <session> <NN...>`.

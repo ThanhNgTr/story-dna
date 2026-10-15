@@ -51,6 +51,10 @@ Codex CLI on the user's ChatGPT login (built-in image_gen, no OpenAI API key)
   them down. `_action_lint.py lint <session>` (`missing` / `prop_vanish` / `no_blocking` must be 0);
   `/action-polish` adds it to existing episodes (only action/acting/blocking change; `action/polish_vN.json`).
   Shotlist cuts and `performance` are built from it. Web: button "Bổ sung diễn xuất" per episode.
+- **Minors on screen** (`.claude/skills/story-contract/references/minors-on-screen.md`): read BEFORE the outline and each episode. Child characters
+  (registry/bible age < 18) get daylight / open-place scenes; no sleep, bed, touching, bare skin, secret phone at night,
+  mouth habits, crying next to an adult (Google Flow refused ep04 as "harmful content involving minors").
+  `_action_lint.py` flag `minor_risk` is strict; `script-to-shotlist` "Minors" is the second net.
 - **Feedback loop**: `rule` feedback patches the skill (new version), `story` feedback edits only
   this series. Live SKILL.md = latest; immutable `versions/SKILL_vN.md`.
 
@@ -107,15 +111,20 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
 5. **Continue after production** (`/continue-series --session <dir> --canon <run>/dna.json --style write-series-<slug> --produced <k> --direction follow|new-arc --new-episodes <m>`)
    - Produced videos are analyzed with step 1, then reconciled with the scripts as CANON (video wins) -> `canon_vN`, bible/outline next version; approve -> only missing episodes are written
    - Works for series produced outside the app (no scripts: bible built from the videos)
-6. **Optional production**: `/script-to-shotlist final/epNN.md` -> `final/shots/epNN/prompts.json` (`"unit": "clip"`: one
+6. **Optional production** (focus: Google Flow; `STORY_DNA_VIDEO_TARGETS` default `flow`, `flow,higgsfield` also writes the
+   10-15s clip prompts and enables the Higgsfield zip): `/script-to-shotlist final/epNN.md --targets flow` -> `final/shots/epNN/prompts.json` (`"unit": "clip"`: one
    prompt per 10-15s clip with <=5 timed cuts + timed lines; older per-shot files count as `prompts_stale`).
    `"prompt_format": 2`: each clip has opening/closing state, performance, `on_screen_text`, a fixed Rules guard
-   block, and `veo_parts` on EVERY clip (Google Flow / Veo 3.1 version, <=8s each, split on cuts): role labels
-   (`flow_labels`) not names, short looks, <=1 character image per part, no lettering (Flow refused names +
-   detailed faces + 4 portraits as "famous people"); `package check` enforces it, older files only warn. Web "Tải gói video"
+   block, and `veo_parts` on EVERY clip (Google Flow / Veo 3.1 version, split on cuts; `prompt_format: 3`: each part's
+   `duration_sec` is a Flow length 4/6/8/10s = ~1.3x its script time (`flow_duration`: 4s -> 6s, 6s -> 8s), cuts and lines
+   retimed over the whole length, the edit keeps it all (video ~1.3x the script); `prompt_format: 4` also: minors
+   (registry `age` < 18) get no photo ref, no body / bare-skin / bed / touching words (`minor_problems`, Flow refused a 10-year-old)): role labels
+   (`flow_labels`) not names, short looks, <=3 images per part (every on-screen character first, then the location), no lettering (Flow refused
+   names + an idol-like face as "famous people"; the number of images was not the trigger); `package check` enforces it, older files only warn. Web "Tải gói video"
    (`app/pipeline/package.py`) zips per episode: shot prompts + approved refs + `subtitles.srt` + `edit_list.csv`
    (Higgsfield = 10-15s clips; "Tải gói Flow" `?target=flow` = one Google Flow generation per `veo_parts` entry:
-   `parts/clip_NN_K.txt`, only that part's images, `flow_queue.json/.csv` for batch tools, `trim_to_sec` because Flow makes 8s). Then `/direct-video`,
+   `parts/clip_NN_K.txt`, only that part's images (each ref swapped for the NEWEST approved image of its item:
+   `package.current_ref`; never a minor's photo), `flow_queue.json/.csv` for batch tools, `trim_to_sec` because Flow makes 8s). Then `/direct-video`,
    `/cinematographer-brief`, `/sound-design-brief`, `/production-design-brief`
 
 ## PROJECT RESET (new reference video)

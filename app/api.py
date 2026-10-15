@@ -410,6 +410,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             "outline_approved": st["outline_approved"], "final_complete": st["final_complete"],
             "final_stale": st["final_stale"],
             "settings": series.session_settings(d),
+            "video_targets": list(config.VIDEO_TARGETS),
             "cost_usd": round(sum(float(j.data.get("cost_usd") or 0) for j in jobs.list()
                                   if (j.data.get("params") or {}).get("session_id") == sid), 2),
             "docs": {k: ([series._version(p) for p in st["versions"][k]] if k in st["versions"]

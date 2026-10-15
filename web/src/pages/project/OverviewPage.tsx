@@ -277,9 +277,11 @@ export function OverviewPage() {
                   <a href={api.packageUrl(p.slug, p.session_id, e.n, 'flow')} download className="inline-flex items-center gap-1 hover:underline">
                     <Download className="size-3" /> {e.prompts_stale ? 'Gói Flow (prompt cũ, nên tạo lại)' : 'Tải gói Flow'}
                   </a>
-                  <a href={api.packageUrl(p.slug, p.session_id, e.n)} download className="inline-flex items-center gap-1 opacity-70 hover:underline">
-                    Higgsfield
-                  </a>
+                  {(p.video_targets ?? ['higgsfield']).includes('higgsfield') && (
+                    <a href={api.packageUrl(p.slug, p.session_id, e.n)} download className="inline-flex items-center gap-1 opacity-70 hover:underline">
+                      Higgsfield
+                    </a>
+                  )}
                 </div>
               )}
               </div>

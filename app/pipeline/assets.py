@@ -72,12 +72,31 @@ def ref_image(session: Path, index: dict, key: str) -> Path | None:
     return None
 
 
+def built_on_replaced(index: dict, img: dict) -> bool:
+    """The image was made from a reference image that was later rejected or replaced: an outfit that still shows
+    a face the user threw away (Flow refused ep06 for the old idol-like face carried by an approved outfit)."""
+    refs = set(img.get("refs") or [])
+    return bool(refs) and any(i.get("file") in refs and i.get("status") in ("rejected", "old")
+                              for item in index["items"].values() for i in item.get("images", []))
+
+
+def newest_approved(index: dict, file_rel: str) -> str | None:
+    """Newest approved image of the item that `file_rel` belongs to."""
+    for item in index["items"].values():
+        if any(i.get("file") == file_rel for i in item.get("images", [])):
+            ok = [i for i in item.get("images", []) if i.get("status") == "approved"]
+            return ok[-1]["file"] if ok else None
+    return None
+
+
 def approved_refs(session: Path) -> dict[str, str]:
-    """{key: path relative to assets/} of approved images (what shotlist prompts attach)."""
+    """{key: path relative to assets/} of approved images (what shotlist prompts attach). An image built on a
+    replaced reference is left out, so its character falls back to the current identity sheet."""
+    index = load_index(session)
     out = {}
-    for key, item in load_index(session)["items"].items():
+    for key, item in index["items"].items():
         ok = [i for i in item.get("images", []) if i["status"] == "approved"]
-        if ok:
+        if ok and not built_on_replaced(index, ok[-1]):
             out[key] = ok[-1]["file"]
     return out
 
@@ -227,7 +246,7 @@ def plan(session: Path, kinds=DEFAULT_KINDS, ids: set[str] | None = None, force:
         if ids and key not in ids and (owner or key) not in ids:
             return
         imgs = index["items"].get(key, {}).get("images", [])
-        if not force and any(i["status"] in ("approved", "draft") for i in imgs):
+        if not force and any(i["status"] in ("approved", "draft") and not built_on_replaced(index, i) for i in imgs):
             return
         tasks.append({"key": key, "kind": kind, "folder": folder, "prompt": prompt,
                       "refs_from": list(refs_from), "registry": reg_path.name})
@@ -289,10 +308,19 @@ def plan(session: Path, kinds=DEFAULT_KINDS, ids: set[str] | None = None, force:
 
 
 def _next_file(session: Path, folder: str, stem: str) -> Path:
+    """Next free `<stem>_vN.png`, reserved by a `.<name>.pending` marker until the image is written: two jobs
+    making the same item at once (CLI + web) both took v2 and the later one overwrote the earlier file."""
     d = session / "assets" / folder
-    n = 1 + max([int(m.group(1)) for p in d.glob(f"{stem}_v*.png")
-                 if (m := re.fullmatch(rf"{re.escape(stem)}_v(\d+)\.png", p.name))] or [0])
-    return d / f"{stem}_v{n}.png"
+    d.mkdir(parents=True, exist_ok=True)
+    while True:
+        n = 1 + max([int(m.group(1)) for p in d.glob(f"*{stem}_v*.png*")
+                     if (m := re.fullmatch(rf"\.?{re.escape(stem)}_v(\d+)\.png(\.pending)?", p.name))] or [0])
+        out = d / f"{stem}_v{n}.png"
+        try:
+            (d / f".{out.name}.pending").open("x").close()
+            return out
+        except FileExistsError:
+            continue
 
 
 async def generate_images(job, session: Path, kinds=DEFAULT_KINDS, ids: set[str] | None = None,
@@ -309,7 +337,10 @@ async def generate_images(job, session: Path, kinds=DEFAULT_KINDS, ids: set[str]
             continue
         stem = f"{t['key']}_sheet" if t["kind"] == "character" else t["key"]
         out = _next_file(session, t["folder"], stem)
-        res = await codex_runner.generate_image(t["prompt"], out, refs=refs, log=job.log)
+        try:
+            res = await codex_runner.generate_image(t["prompt"], out, refs=refs, log=job.log)
+        finally:
+            (out.parent / f".{out.name}.pending").unlink(missing_ok=True)
         index = load_index(session)
         item = index["items"].setdefault(t["key"], {"kind": t["kind"], "images": []})
         if res.ok:
@@ -376,7 +407,7 @@ def view_model(session: Path) -> dict | None:
 
     def images(key):
         item = index["items"].get(key, {})
-        imgs = [dict(i, name=Path(i["file"]).name, outdated=outdated(key, i))
+        imgs = [dict(i, name=Path(i["file"]).name, outdated=outdated(key, i) or built_on_replaced(index, i))
                 for i in item.get("images", []) if i["status"] != "old"]
         return {"images": list(reversed(imgs)), "error": (item.get("last_error") or {}).get("error")}
 

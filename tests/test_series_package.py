@@ -291,7 +291,8 @@ def test_check_clips_format2_prompt_layout(app_session):
     good = _fmt2_clip(1, 0, 8, cuts=[{"cut": 1, "start_sec": 0, "end_sec": 8}],
                       parts=[{"part": 1, "start_sec": 0, "end_sec": 8, "video_prompt": "Opening: a Ending: b No subtitles"}])
     _write_fmt2(d, [good], 8)
-    assert package.check_clips(d, 1) == ([], [])
+    errs, warns = package.check_clips(d, 1)
+    assert errs == [] and len(warns) == 1 and "not stretched" in warns[0]
     bad = {**good, "video_prompt": "Shot 1 only", "closing_state": ""}
     _write_fmt2(d, [bad], 8)
     errs, _ = package.check_clips(d, 1)
@@ -336,6 +337,10 @@ def test_old_prompt_format_is_outdated_not_stale(app_session):
     write(pf, {"unit": "clip", "shots": []})
     assert package.prompts_outdated(d, 1) and not package.prompts_stale(d, 1)
     write(pf, {"unit": "clip", "prompt_format": 2, "shots": []})
+    assert package.prompts_outdated(d, 1)  # Veo parts without a Flow length (4/6/8s)
+    write(pf, {"unit": "clip", "prompt_format": 3, "shots": []})
+    assert package.prompts_outdated(d, 1)  # Flow parts not stretched, no minors rule
+    write(pf, {"unit": "clip", "prompt_format": 4, "shots": []})
     assert not package.prompts_outdated(d, 1)
 
 
@@ -353,9 +358,14 @@ def test_flow_warnings_names_and_faces():
             "refs": ["assets/characters/char_01/a.png", "assets/characters/char_03/b.png", "assets/locations/x.png"]}
     w = package.flow_warnings("p1", part, names)
     assert any("Ông Hữu" in x and "Phong" not in x for x in w)  # name in dialogue is fine, "Huu" is not
-    assert any("2 character images" in x for x in w)
-    ok = {"video_prompt": 'The businessman points up. The worker: "Phong đây."', "refs": ["assets/characters/char_01/a.png"]}
+    assert not any("images" in x for x in w)  # 2 characters + location fit Flow's 3 images
+    ok = {"video_prompt": 'The businessman points up. The worker: "Phong đây."', "characters": ["char_01", "char_03"],
+          "refs": ["assets/characters/char_01/a.png", "assets/characters/char_03/b.png"]}
     assert package.flow_warnings("p1", ok, names) == []
+    one = {**ok, "refs": ["assets/characters/char_01/a.png", "assets/locations/x.png"]}
+    assert any("without an image (char_03)" in x for x in package.flow_warnings("p1", one, names))
+    many = {**ok, "refs": ["assets/characters/char_01/a.png", "assets/characters/char_03/b.png", "c.png", "d.png"]}
+    assert any("4 images, Flow takes 3" in x for x in package.flow_warnings("p1", many, names))
 
 
 def test_dialogue_tags_catch_lip_synced_thoughts_and_wrong_speakers():
@@ -444,3 +454,190 @@ def test_flow_package_needs_veo_parts(app_session):
         {"shot_number": 1, "start_sec": 0, "end_sec": 12, "video_prompt": "p"}]})
     with pytest.raises(FileNotFoundError):
         package.build_flow_package(d, 1, "Demo")
+
+
+def test_flow_duration_stretches_to_a_step():
+    from app.pipeline import package
+    # script seconds -> Flow length: ~1.3x, rounded up to 4/6/8/10 (4s -> 6s, 6s -> 8s, at most 10s)
+    assert [package.flow_duration(x) for x in (3.0, 4.0, 4.7, 5.0, 6.0, 6.3, 7.5, 8.0, 10.5)] == [4, 6, 6, 8, 8, 10, 10, 10, None]
+    assert [package.fit_duration(x) for x in (3.2, 4.1, 5.0, 8.1, 10.1, 10.2)] == [4, 4, 6, 8, 10, None]
+
+
+def test_check_clips_flow_lengths(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    cuts = [{"cut": k, "start_sec": a, "end_sec": b} for k, (a, b) in enumerate([(0, 3), (3, 5.8), (5.8, 8.5), (8.5, 13.8)], 1)]
+    part = lambda k, a, b, dur, text=None: {"part": k, "start_sec": a, "end_sec": b, "duration_sec": dur,
+                                            "video_prompt": (text or f"{dur}-second clip") + " Opening: a Ending: b No subtitles"}
+
+    def check(parts):
+        ep = episode(1)
+        ep["scenes"] = [{"id": "SC1", "start_sec": 0, "end_sec": 13.8, "loc_id": "loc_01", "beats": []}]
+        write(d / "final" / "ep01.json", ep)
+        write(d / "final" / "shots" / "ep01" / "prompts.json", {"unit": "clip", "prompt_format": 4, "total_duration_sec": 13.8,
+                                                                 "shots": [_fmt2_clip(1, 0, 13.8, cuts=cuts, parts=parts)]})
+        return package.check_clips(d, 1)
+
+    assert check([part(1, 0, 5.8, 8), part(2, 5.8, 13.8, 10)]) == ([], [])
+    errs, _ = check([part(1, 0, 5.8, 5), part(2, 5.8, 13.8, 6)])
+    assert any("not a Flow length" in e for e in errs) and any("does not fit duration_sec 6s" in e for e in errs)
+    errs, _ = check([part(1, 0, 5.8, 8, "5.8-second clip"), part(2, 5.8, 13.8, 10)])
+    assert any('must start with "8-second"' in e for e in errs)
+    errs, warns = check([part(1, 0, 5.8, 10), part(2, 5.8, 13.8, 10)])
+    assert errs == [] and any("5.8s of script -> 8s, duration_sec is 10s" in w for w in warns)
+    errs, warns = check([part(1, 0, 3, 8), part(2, 3, 5.8, 4), part(3, 5.8, 13.8, 10)])
+    assert errs == [] and any("plays too slow" in w for w in warns) and any("-> 4s, duration_sec is 4s" not in w for w in warns)
+
+
+def test_minor_problems_flag_photos_and_risky_words(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    write(d / "assets" / "assets_v1.json", {"characters": [{"char_id": "char_01", "age": 26}, {"char_id": "char_05", "age": 10}]})
+    kids = package.minor_ids(d)
+    assert kids == {"char_05"}
+    bad = {"characters": ["char_05", "char_01"], "refs": ["assets/characters/char_05/char_05_o2_v1.png"],
+           "video_prompt": 'Late night. The little girl, small and skinny, barefoot in shorts, sits right beside the worker '
+                           'in a tank top; he ruffles her hair. She says: "Anh ngủ đi."'}
+    w = package.minor_problems("p1", bad, kids)
+    assert any("photo of a minor" in x for x in w)
+    risky = next(x for x in w if "risky words" in x)
+    for word in ("barefoot", "shorts", "skinny", "small and", "tank top", "ruffles", "right beside", "late night"):
+        assert word in risky, word
+    ok = {"characters": ["char_05", "char_01"], "refs": ["assets/characters/char_01/a.png"],
+          "video_prompt": "Evening. The younger sister, a 10-year-old schoolgirl in a white school shirt and navy trousers, "
+                          "sits on the step an arm's length from her older brother."}
+    assert package.minor_problems("p1", ok, kids) == []
+    assert package.minor_problems("p1", {**bad, "characters": ["char_01"]}, kids) == []
+
+
+def test_flow_package_keeps_stretched_parts_and_retimes_subtitles(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    finalize(d)
+    line = {"character": "char_01", "line": "Anh đi đâu đấy?", "voiceover": False, "start_sec": 7.0, "end_sec": 9.0}
+    write(d / "final" / "shots" / "ep01" / "prompts.json", {
+        "unit": "clip", "prompt_format": 4, "aspect_ratio": "9:16", "shots": [
+            {"shot_number": 1, "start_sec": 0, "end_sec": 12, "characters": ["char_01"], "dialogue": [line],
+             "video_prompt": "x", "veo_parts": [
+                 {"part": 1, "start_sec": 0, "end_sec": 6, "duration_sec": 8, "characters": [], "video_prompt": "8-second A"},
+                 {"part": 2, "start_sec": 6, "end_sec": 12, "duration_sec": 8, "characters": ["char_01"], "video_prompt": "8-second B"}]}]})
+    path, _ = package.build_flow_package(d, 1, "Demo")
+    try:
+        z = zipfile.ZipFile(path)
+        root = z.namelist()[0].split("/")[0]
+        q = json.loads(z.read(f"{root}/flow_queue.json"))["parts"]
+        assert [(r["duration_sec"], r["trim_to_sec"], r["video_start"]) for r in q] == [(8, 8.0, 0.0), (8, 8.0, 8.0)]
+        # line at script 7.0-9.0 = 1-3s into part 2, stretched x8/6 -> 1.33-4.0s, after 8s of part 1
+        assert "00:00:09,330 --> 00:00:12,000" in z.read(f"{root}/subtitles.srt").decode()
+        assert "giữ nguyên cả clip" in z.read(f"{root}/parts/clip_01_2.txt").decode()
+        assert "video dựng xong khoảng 16s" in z.read(f"{root}/HUONG_DAN_FLOW.txt").decode()
+    finally:
+        path.unlink()
+
+
+def test_flow_only_prompts_skip_clip_prompt_and_higgsfield_package(app_session):
+    series, d = app_session
+    from app import config
+    from app.pipeline import package
+    assert config.VIDEO_TARGETS == ("flow",)  # Flow only unless STORY_DNA_VIDEO_TARGETS says otherwise
+    finalize(d)
+    ep = episode(1)
+    ep["scenes"] = [{"id": "SC1", "start_sec": 0, "end_sec": 6, "loc_id": "loc_01", "beats": []}]
+    write(d / "final" / "ep01.json", ep)
+    clip = _fmt2_clip(1, 0, 6, cuts=[{"cut": 1, "start_sec": 0, "end_sec": 6}],
+                      parts=[{"part": 1, "start_sec": 0, "end_sec": 6, "duration_sec": 8,
+                              "video_prompt": "8-second clip. Opening: a Ending: b No subtitles"}])
+    clip["video_prompt"] = ""
+    write(d / "final" / "shots" / "ep01" / "prompts.json",
+          {"unit": "clip", "prompt_format": 4, "targets": ["flow"], "total_duration_sec": 6, "shots": [clip]})
+    assert package.check_clips(d, 1) == ([], [])  # no "Opening:" error for the empty clip prompt
+    assert package.prompts_view(d, 1)["targets"] == ["flow"]
+    with pytest.raises(FileNotFoundError, match="chỉ có bản Google Flow"):
+        package.build_episode_package(d, 1, "Demo")
+    path, _ = package.build_flow_package(d, 1, "Demo")
+    path.unlink()
+
+
+def test_refs_follow_the_newest_approved_image(app_session):
+    """An image made again (e.g. after a Flow refusal) replaces the old one in prompts and packages written earlier."""
+    series, d = app_session
+    from app.pipeline import package
+    finalize(d)
+    for v in (1, 2):
+        write(d / "assets" / "characters" / "char_01" / f"char_01_o2_v{v}.png", "PNG" * 400)
+    write(d / "assets" / "images.json", {"items": {"char_01_o2": {"kind": "outfit", "images": [
+        {"file": "characters/char_01/char_01_o2_v1.png", "status": "rejected"},
+        {"file": "characters/char_01/char_01_o2_v2.png", "status": "approved"}]}}})
+    old = "assets/characters/char_01/char_01_o2_v1.png"
+    assert package.current_ref(d, old) == "characters/char_01/char_01_o2_v2.png"
+    assert package.current_ref(d, "assets/locations/x/unknown.png") == "locations/x/unknown.png"
+    write(d / "final" / "shots" / "ep01" / "prompts.json", {"unit": "clip", "prompt_format": 4, "aspect_ratio": "9:16", "shots": [
+        {"shot_number": 1, "start_sec": 0, "end_sec": 6, "characters": ["char_01"], "refs": [old], "video_prompt": "x",
+         "veo_parts": [{"part": 1, "start_sec": 0, "end_sec": 6, "duration_sec": 8, "characters": ["char_01"],
+                        "refs": [old], "video_prompt": "8-second x"}]}]})
+    view = package.prompts_view(d, 1)
+    assert view["shots"][0]["refs"] == ["characters/char_01/char_01_o2_v2.png"]
+    assert view["shots"][0]["veo_parts"][0]["refs"] == ["characters/char_01/char_01_o2_v2.png"]
+    path, _ = package.build_flow_package(d, 1, "Demo")
+    try:
+        names = zipfile.ZipFile(path).namelist()
+        assert any(n.endswith("char_01_vu_o2_v2.png") for n in names) and not any("o2_v1" in n for n in names)
+    finally:
+        path.unlink()
+    # every image of the item rejected: the old file is not attached
+    write(d / "assets" / "images.json", {"items": {"char_01_o2": {"kind": "outfit", "images": [
+        {"file": "characters/char_01/char_01_o2_v1.png", "status": "rejected"},
+        {"file": "characters/char_01/char_01_o2_v2.png", "status": "rejected"}]}}})
+    assert package.prompts_view(d, 1)["shots"][0]["veo_parts"][0]["refs"] == []
+
+
+def test_flow_package_never_attaches_a_minor_photo(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    finalize(d)
+    write(d / "assets" / "assets_v1.json", {"characters": [{"char_id": "char_02", "age": 10}]})
+    kid = write(d / "assets" / "characters" / "char_02" / "char_02_sheet_v1.png", "PNG" * 400)
+    write(d / "final" / "shots" / "ep01" / "prompts.json", {"unit": "clip", "prompt_format": 4, "aspect_ratio": "9:16", "shots": [
+        {"shot_number": 1, "start_sec": 0, "end_sec": 6, "video_prompt": "", "veo_parts": [
+            {"part": 1, "start_sec": 0, "end_sec": 6, "duration_sec": 8, "characters": ["char_02"],
+             "refs": [str(kid.relative_to(d))], "video_prompt": "8-second x"}]}]})
+    path, _ = package.build_flow_package(d, 1, "Demo")
+    try:
+        z = zipfile.ZipFile(path)
+        assert not any("/refs/" in n for n in z.namelist())
+        q = json.loads(z.read([n for n in z.namelist() if n.endswith("flow_queue.json")][0]))
+        assert q["parts"][0]["images"] == [] and q["parts"][0]["mode"] == "Text to Video"
+    finally:
+        path.unlink()
+
+
+def test_minor_problems_catch_a_sleeping_adult_and_the_childs_mouth():
+    from app.pipeline import package
+    kids = {"char_05"}
+    part = {"characters": ["char_05", "char_01"], "continuity_in": "the young worker asleep off frame",
+            "video_prompt": "The young worker rests his head on his arms, eyes closed; the younger sister checks he does "
+                            "not stir, holds the strap between her teeth, eyes red-rimmed."}
+    risky = package.minor_problems("p", part, kids)[0]
+    for word in ("eyes closed", "stir", "teeth", "red-rimmed", "asleep"):
+        assert word in risky, word
+    ok = {"characters": ["char_05"], "video_prompt": "The younger sister twists the strap around one finger, jaw set, "
+                                                     "blinking fast; her brother is inside at the sink, back to camera."}
+    assert package.minor_problems("p", ok, kids) == []
+
+
+def test_outfit_built_on_a_rejected_face_falls_back_to_the_new_sheet(app_session):
+    """ep06: Flow refused a clip whose outfit image still carried the rejected idol-like face (sheet_v1)."""
+    series, d = app_session
+    from app.pipeline import assets, package
+    sheet1, sheet2 = "characters/char_02/char_02_sheet_v1.png", "characters/char_02/char_02_sheet_v2.png"
+    outfit = "characters/char_02/char_02_o3_v1.png"
+    write(d / "assets" / "images.json", {"items": {
+        "char_02": {"kind": "character", "images": [{"file": sheet1, "status": "rejected"},
+                                                    {"file": sheet2, "status": "approved"}]},
+        "char_02_o3": {"kind": "outfit", "images": [{"file": outfit, "status": "approved", "refs": [sheet1]}]}}})
+    assert package.current_ref(d, "assets/" + outfit) == sheet2
+    assert "char_02_o3" not in assets.approved_refs(d) and assets.approved_refs(d)["char_02"] == sheet2
+    index = assets.load_index(d)
+    index["items"]["char_02_o3"]["images"][0]["refs"] = [sheet2]
+    assets.save_index(d, index)
+    assert package.current_ref(d, "assets/" + outfit) == outfit

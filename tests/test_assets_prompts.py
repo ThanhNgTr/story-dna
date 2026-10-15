@@ -71,3 +71,12 @@ def test_character_sheet_prompt_asks_for_a_non_famous_face(tmp_path):
     write(d / "assets" / "assets_v1.json", reg)
     prompt = assets.plan(d, ("character",), force=True)[0]["prompt"]
     assert assets.IDENTITY_GUARD in prompt and "must not resemble any real" in prompt
+
+
+def test_next_file_is_reserved_so_parallel_jobs_never_share_a_name(tmp_path):
+    first = assets._next_file(tmp_path, "characters/c", "c_o3")
+    second = assets._next_file(tmp_path, "characters/c", "c_o3")
+    assert (first.name, second.name) == ("c_o3_v1.png", "c_o3_v2.png")
+    (first.parent / f".{first.name}.pending").unlink()
+    first.write_bytes(b"png")
+    assert assets._next_file(tmp_path, "characters/c", "c_o3").name == "c_o3_v3.png"

@@ -1,7 +1,7 @@
 ---
 name: write-series-fantasy-romance-h
-version: v4
-stable_version: v4
+version: v5
+stable_version: v5
 description: |
   Turn a rough or fragmented story idea into a 10-20 episode vertical series (60-120s episodes)
   told the way a fantasy-romance "humiliated then face-slapped" short drama is told: a 25-30s
@@ -80,6 +80,10 @@ Save `input.json` first: the raw idea, every flag value, and this skill's versio
 - **Outline:** one row per episode — title, logline, beats, which Story Template beat(s) it carries
   (% position), reveal/clue, cliffhanger type (Hook Patterns), characters.
 - **Spread:** beat at p% -> episode `ceil(p/100 * N)`; no episode carries more than 3 beats.
+- **Minors on screen (before planning)**: read `.claude/skills/story-contract/references/minors-on-screen.md`. A child character
+  (the matchmaker) gets daylight / early-evening scenes in open or shared places; no sleep, bed or
+  touching with an adult, no secret phone contact at night, a hand habit instead of a mouth habit (bible
+  `tell`). Every outline row with a minor on screen names when and where. Video tools refuse the rest.
 - **Looks**: after the bible, run `/series-assets --session <session-dir>` (bible-only) ->
   `assets/assets_v1.md/.json`: fixed face/hair/body per character, default + planned outfits,
   canonical locations with day/night variants, key props (the warm object, the summoning device,
@@ -109,6 +113,9 @@ Save `input.json` first: the raw idea, every flag value, and this skill's versio
   summing to `--episode-sec`.
 - Then `python3 .claude/skills/series-assets/_assets.py lint <session-dir>` -> 0 errors, and
   `/series-assets --session <session-dir>` (scene map, `new_assets` get real IDs, drift report).
+- Minors on screen: re-read `.claude/skills/story-contract/references/minors-on-screen.md` before writing an episode with a child;
+  `_action_lint.py` flags `minor_risk` (night scene, sleep / bed / touching / bare skin / crying / secrecy /
+  body words with a child on screen) as strict: 0 before the episode is done. Subagents get the path too.
 - Acting: every beat carries `acting` (per visible character, listener included: `does` = body +
   hands, `face`, `holds` = what is in hand) and every 2+ character scene a `blocking` line, following
   `.claude/skills/action-polish/references/screen-action.md`: lines are said WHILE doing something
@@ -389,7 +396,7 @@ Logline: ... | Story beats: <template beats + %> | Cliffhanger: <type>
 
 ```json
 {
-  "skill": "write-series-fantasy-romance-h", "skill_version": "v4", "session": "<session-id>",
+  "skill": "write-series-fantasy-romance-h", "skill_version": "v5", "session": "<session-id>",
   "episode": 3, "title": "...", "total_duration_sec": 90, "aspect_ratio": "9:16",
   "logline": "...", "story_beats": "<template beats + %>", "cliffhanger_type": "<hook pattern name>",
   "characters": {"char_01": {"name": "...", "visual_signature": "<bible, verbatim>", "outfits": ["char_01_o1"]}},
@@ -442,6 +449,8 @@ ledger}], never_answered[]}`; last episode `ending` + `cliffhanger_type: "resolu
       a spoken exchange
 - [ ] Every beat has `acting` for each visible character (listener too), every 2+ character scene a
       `blocking`; `_action_lint.py` reports 0 `missing` / `prop_vanish` / `no_blocking`
+- [ ] Scenes with a minor follow minors-on-screen.md (daylight / open place, no sleep, bed, touching,
+      secret phone at night); `_action_lint.py` reports 0 `minor_risk`
 
 ## Data limits
 
@@ -480,3 +489,6 @@ ledger}], never_answered[]}`; last episode `ending` + `cliffhanger_type: "resolu
 - v4 (2026-10-14T00:00:00Z): on-screen action per beat: `acting` [{character, does, face, holds}]
   for every visible character, scene `blocking`, objects kept in hand
   (`action-polish/references/screen-action.md`, lint `_action_lint.py`).
+- v5 (2026-10-14T12:00:00Z): minors on screen (`.claude/skills/story-contract/references/minors-on-screen.md`): child scenes staged in daylight / open places, no
+  sleep, bed, touching or secret phone at night; read at outline and episode time; lint `minor_risk` strict.
+  Learned from Google Flow refusing ep04 ("harmful content involving minors").

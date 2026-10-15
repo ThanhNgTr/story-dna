@@ -32,6 +32,12 @@ def prompts_file(session: Path, n: int) -> Path | None:
     return p if p.exists() else None
 
 
+def has_higgsfield(data: dict) -> bool:
+    """prompts.json carries the 10-15s clip prompts (Higgsfield: Seedance / Kling). Files without `targets` are
+    older ones that always had them; `"targets": ["flow"]` files have only the Flow parts."""
+    return "higgsfield" in (data.get("targets") or ["higgsfield", "flow"])
+
+
 def is_clip_format(pf: Path) -> bool:
     """10-15s clips (one generation, timed cuts inside). Older prompts were one per 1-5s shot."""
     try:
@@ -88,15 +94,39 @@ def _ts(sec: float, srt: bool = False) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}" if srt else f"{m:02d}:{s:02d}"
 
 
+def current_ref(session: Path, ref: str) -> str | None:
+    """A ref written into prompts.json -> the image to use NOW, relative to assets/: the newest approved image of the
+    same registry item (an image made again after a refusal replaces the old one everywhere), None when that item
+    has no approved image any more. An image built on a replaced face (outfit made from a rejected sheet) gives way to
+    the current identity sheet. Files the image index does not know are kept as written."""
+    index = asset_images.load_index(session)
+    rel = ref.removeprefix("assets/")
+    for item in index["items"].values():
+        if any(i.get("file") == rel for i in item.get("images", [])):
+            ok = [i for i in item.get("images", []) if i.get("status") == "approved"]
+            if not ok:
+                return None
+            if asset_images.built_on_replaced(index, ok[-1]):
+                return next((c for r in ok[-1]["refs"] if (c := asset_images.newest_approved(index, r))), None)
+            return ok[-1]["file"]
+    return rel
+
+
 def _shot_refs(session: Path, shot: dict, approved: dict[str, str]) -> list[Path]:
-    """Images to attach: the shot's own refs, else approved images for its characters/outfits, location, props."""
+    """Images to attach: the shot's own refs (each swapped for the newest approved image of its item), else approved
+    images for its characters/outfits, location, props."""
     out: list[Path] = []
+    dropped = False  # an item with no approved image left: attach nothing for it rather than guess
     for r in shot.get("refs") or []:
-        for p in (session / r, session / "assets" / r):
-            if p.is_file():
+        cur = current_ref(session, r)
+        if cur is None:
+            dropped = True
+            continue
+        for p in (session / "assets" / cur, session / cur):
+            if p.is_file() and p not in out:
                 out.append(p)
                 break
-    if out:
+    if out or dropped:
         return out
     outfits = shot.get("outfits") or {}
     keys = [outfits[c] if outfits.get(c) in approved else c for c in shot.get("characters") or []]
@@ -149,23 +179,32 @@ def prompts_view(session: Path, n: int) -> dict | None:
         shots.append({**{k: sh.get(k) for k in ("shot_number", "scene", "start_sec", "end_sec", "duration_sec",
                                                  "action", "dialogue", "camera", "sfx", "loc_id", "video_prompt",
                                                  "continuity_in", "opening_state", "closing_state", "performance")},
-                      "on_screen_text": sh.get("on_screen_text") or [], "veo_parts": sh.get("veo_parts") or [],
+                      "on_screen_text": sh.get("on_screen_text") or [],
+                      "veo_parts": [{**vp, "refs": [c for r in vp.get("refs") or [] if (c := current_ref(session, r))]}
+                                    for vp in sh.get("veo_parts") or []],
                       "cuts": sh.get("cuts") or [],
                       "characters": [{"id": c, "name": names.get(c, c)} for c in sh.get("characters") or []],
                       "pace_warning": sh.get("pace_warning") or [], "refs": refs})
     return {"unit": "clip" if data.get("unit") == "clip" else "shot",
             "aspect_ratio": data.get("aspect_ratio"), "total_duration_sec": data.get("total_duration_sec"),
             "style_suffix": data.get("style_suffix"), "names": names, "stale": prompts_stale(session, n),
+            "targets": data.get("targets") or ["higgsfield", "flow"],
             "check": dict(zip(("errors", "warnings"), check_clips(session, n))) if data.get("unit") == "clip" else None,
             "built_at": datetime.fromtimestamp(pf.stat().st_mtime, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "shots": shots}
 
 
 CLIP_MAX_SEC = 15.5  # 15s + rounding
-VEO_MAX_SEC = 8.25   # Veo 3.1 / Flow: 8s per generation + rounding
+VEO_STEPS = (4, 6, 8, 10)  # lengths Google Flow accepts (s); the longest model step in use is 10s
+VEO_TOLERANCE = 0.15   # a length this much over a step still uses that step
+FLOW_STRETCH = 1.3     # a part of script time t is generated over ~1.3 t (4s -> 6s, 6s -> 8s): room to act and speak
+FLOW_MAX_RATIO = 2.0   # generated / script length above this plays too slow
+VEO_MAX_SEC = 8.25     # script time per part (generated up to 10s)
+FLOW_MAX_REFS = 3      # images per Flow "Ingredients to Video" generation (characters first, then the location)
 MAX_CUTS = 5         # timed cuts a video model executes reliably in one generation
 EPS = 0.25           # seconds of overlap that do not count (rounded timecodes)
-PROMPT_FORMAT = 2    # opening/closing state, performance, guard block, veo_parts
+PROMPT_FORMAT = 4    # 2: opening/closing state, performance, guard block, veo_parts; 3: veo_parts[].duration_sec on a Flow
+                     # step; 4: parts stretched (~1.3x, cuts and lines retimed over the whole step), minors rule
 PROMPT_MARKERS = ("Opening:", "Ending:", "No subtitles")
 
 
@@ -259,28 +298,102 @@ def _fold(text: str) -> str:
     return "".join(ch for ch in text if not unicodedata.combining(ch)).lower()
 
 
-def flow_warnings(tag: str, part: dict, names: dict[str, str]) -> list[str]:
-    """Google Flow refused a personal name + a detailed face + several portrait refs, and accepted a role
-    label + a short look + one portrait: warn on names outside quoted dialogue and on >1 character image."""
+def flow_warnings(tag: str, part: dict, names: dict[str, str], minors: set[str] = frozenset()) -> list[str]:
+    """Google Flow refused a personal name + a detailed face (the trigger was an idol-like face, not the number of
+    images): warn on names outside quoted dialogue, on more images than Flow takes, and on a character on screen
+    in the part with no image while a slot is free."""
     out = []
     spoken_removed = _fold(re.sub(r'"[^"]*"|“[^”]*”', " ", part.get("video_prompt") or ""))
     found = sorted({n for n in names.values() for w in [_fold(n).split()[-1]] if len(w) >= 2
                     and re.search(rf"(?<![a-z]){re.escape(w)}(?![a-z])", spoken_removed)})
     if found:
         out.append(f"{tag}: names outside dialogue ({', '.join(found)}): use the role labels (flow_labels)")
-    faces = [r for r in part.get("refs") or [] if "characters/" in r]
-    if len(faces) > 1:
-        out.append(f"{tag}: {len(faces)} character images, Flow accepts one (keep the main subject)")
+    refs = part.get("refs") or []
+    if len(refs) > FLOW_MAX_REFS:
+        out.append(f"{tag}: {len(refs)} images, Flow takes {FLOW_MAX_REFS} (characters first, then the location)")
+    elif len(refs) < FLOW_MAX_REFS:
+        have = {m.group(1) for r in refs for m in [re.search(r"(char_\d+)", r)] if m and "characters/" in r}
+        missing = [c for c in part.get("characters") or [] if c in names and c not in have and c not in minors]
+        if missing:
+            out.append(f"{tag}: on screen without an image ({', '.join(missing)}) while a slot is free")
     return out
 
 
-def _check_veo_parts(tag: str, c: dict, a: float, b: float) -> list[str]:
-    """Every clip carries veo_parts (the Flow / Veo 3.1 version): contiguous, cover the clip, <= 8s each,
-    split on cut boundaries and never inside a dialogue line."""
+# Flow refused a part with a 10-year-old ("harmful content involving minors"): body words for the child, bare feet and
+# shorts, a man in a tank top and shorts, late night, a bed in the room, touching, sleeping side by side, a child photo.
+MINOR_RISK = re.compile(
+    r"\b(barefoot|bare (feet|legs|arms|shoulders|skin)|shorts|tank top|vest top|singlet|underwear|pajamas?|pyjamas?|"
+    r"nightgown|swimsuit|skinny|slim|small and|petite|tiny body|lips|pouting|bed|bedroom|blanket|asleep|sleeping|sleeps|"
+    r"lies down|lying|bath|bathing|shower|changing clothes|undress\w*|hug\w*|cuddl\w*|embrac\w*|kiss\w*|ruffl\w*|"
+    r"strok\w*|caress\w*|pats? her|pats? his|on (his|her) lap|carries her|carries him|leans on|pressed against|"
+    r"right beside|late night|midnight|alone with|"
+    # an adult asleep beside the child, the child's mouth, a crying child (ep04 review after the first refusal)
+    r"eyes closed|doz\w*|naps?|napping|stirs?|breathing|wakes?|waking|teeth|tears?|tearful|crying|cries|"
+    r"red-rimmed|straw mat|sleeping mat)\b", re.I)
+
+
+def minor_ids(session: Path) -> set[str]:
+    """Characters under 18 in the asset registry (final/assets.json, else the latest assets_vN.json)."""
+    reg = session / "final" / "assets.json"
+    if not reg.exists():
+        regs = sorted((session / "assets").glob("assets_v*.json"), key=lambda p: int(re.search(r"_v(\d+)", p.name).group(1)))
+        reg = regs[-1] if regs else None
+    try:
+        chars = json.loads(reg.read_text(encoding="utf-8")).get("characters") or [] if reg else []
+    except (OSError, json.JSONDecodeError):
+        return set()
+    out = set()
+    for c in chars:
+        age = c.get("age") if isinstance(c, dict) else None
+        if isinstance(age, (int, float)) and age < 18 and c.get("char_id"):
+            out.add(c["char_id"])
+    return out
+
+
+def minor_problems(tag: str, item: dict, minors: set[str]) -> list[str]:
+    """A clip or Flow part with a character under 18 on screen: no photo of the child, no words Flow's minors filter
+    reads as unsafe (body, bare skin, bed / sleep, touching, late night alone). Quoted dialogue is not checked."""
+    kids = [c for c in item.get("characters") or [] if c in minors]
+    if not kids:
+        return []
+    out = []
+    photos = [r for r in item.get("refs") or [] if any(f"/{k}/" in r or f"/{k}_" in r for k in kids)]
+    if photos:
+        out.append(f"{tag}: photo of a minor ({', '.join(kids)}) in refs: describe the child in text only")
+    text = re.sub(r'"[^"]*"|“[^”]*”', " ", f"{item.get('video_prompt') or ''} {item.get('continuity_in') or ''}")
+    hits = sorted({m.group(0).lower() for m in MINOR_RISK.finditer(text)})
+    if hits:
+        out.append(f"{tag}: minor on screen ({', '.join(kids)}) with risky words: {', '.join(hits)}")
+    return out
+
+
+def fit_duration(real: float) -> int | None:
+    """Smallest Flow step that holds `real` seconds as written (format 3 parts: trimmed, held tail). None: too long."""
+    for step in VEO_STEPS:
+        if real <= step + VEO_TOLERANCE:
+            return step
+    return None
+
+
+def flow_duration(real: float) -> int | None:
+    """Flow generation length for a part of `real` seconds of script: the smallest step that holds ~1.3x it, so the
+    action and lines are not rushed (4s -> 6s, 6s -> 8s, 7s -> 10s); the longest step when only that one holds it."""
+    target = real * FLOW_STRETCH
+    for step in VEO_STEPS:
+        if target <= step + VEO_TOLERANCE:
+            return step
+    return max(VEO_STEPS) if real <= max(VEO_STEPS) + VEO_TOLERANCE else None
+
+
+def _check_veo_parts(tag: str, c: dict, a: float, b: float, fmt: int = 2) -> tuple[list[str], list[str]]:
+    """(errors, warnings). Every clip carries veo_parts (the Flow / Veo 3.1 version): contiguous, cover the clip,
+    <= 8s of script each, split on cut boundaries and never inside a dialogue line. Format 3+: each part has
+    duration_sec = a Flow length and its prompt is written for it; format 4: that length is the stretched one
+    (flow_duration: ~1.3x the script time) and the whole generation is kept."""
     parts = c.get("veo_parts") or []
     if not parts:
-        return [f"{tag}: no veo_parts (the Google Flow / Veo version, one part per 8s at most)"]
-    errors, prev = [], a
+        return [f"{tag}: no veo_parts (the Google Flow / Veo version, one part per 8s at most)"], []
+    errors, warns, prev = [], [], a
     cut_ends = {round(float(x.get("end_sec", 0)), 2) for x in c.get("cuts") or []}
     for part in parts:
         p0, p1 = float(part.get("start_sec", 0)), float(part.get("end_sec", 0))
@@ -296,10 +409,24 @@ def _check_veo_parts(tag: str, c: dict, a: float, b: float) -> list[str]:
             if s0 is not None and s1 is not None and float(s0) < p1 - EPS < float(s1) - EPS and p1 < b - EPS:
                 errors.append(f"{ptag}: splits the line {str(d.get('line'))[:40]}")
         errors += _check_prompt(ptag, part.get("video_prompt", ""))
+        if fmt >= 3:
+            dur, real = part.get("duration_sec"), p1 - p0
+            if dur not in VEO_STEPS:
+                errors.append(f"{ptag}: duration_sec {dur} is not a Flow length {'/'.join(map(str, VEO_STEPS))}s")
+            elif real > dur + VEO_TOLERANCE:
+                errors.append(f"{ptag}: {real:.1f}s does not fit duration_sec {dur}s")
+            else:
+                if not re.match(rf"\s*{dur}(\.0+)?-second\b", part.get("video_prompt") or ""):
+                    errors.append(f"{ptag}: prompt must start with \"{dur}-second\" (its Flow length)")
+                want = flow_duration(real) if fmt >= 4 else fit_duration(real)
+                if fmt >= 4 and real > 0 and dur / real > FLOW_MAX_RATIO:
+                    warns.append(f"{ptag}: {real:.1f}s of script over {dur}s plays too slow: merge with a neighbour cut")
+                elif want is not None and dur != want:
+                    warns.append(f"{ptag}: {real:.1f}s of script -> {want}s, duration_sec is {dur}s")
         prev = p1
     if abs(prev - b) > EPS:
         errors.append(f"{tag}: veo_parts end at {prev}, clip ends at {b}")
-    return errors
+    return errors, warns
 
 
 def check_clips(session: Path, n: int) -> tuple[list[str], list[str]]:
@@ -317,10 +444,15 @@ def check_clips(session: Path, n: int) -> tuple[list[str], list[str]]:
     scenes = json.loads(ep_f.read_text(encoding="utf-8")).get("scenes", []) if ep_f.exists() else []
     errors, warns = [], []
     clips = data.get("shots") or []
-    fmt2 = int(data.get("prompt_format") or 1) >= PROMPT_FORMAT
+    fmt = int(data.get("prompt_format") or 1)
+    fmt2, fmt3 = fmt >= 2, fmt >= PROMPT_FORMAT
+    minors = minor_ids(session)
+    clip_prompts = has_higgsfield(data)  # Flow-only files have no 10-15s clip prompt to check
     names = _bible_names(session)
     if clips and not fmt2:
         warns.append("older prompt format (no opening/closing state, guard block or Veo parts): remake the prompts")
+    elif clips and not fmt3:
+        warns.append("older prompt format (Flow parts not stretched to 6/8/10s, no minors rule): remake the prompts")
     prev_end = 0.0
     for c in clips:
         no, a, b = c.get("shot_number"), float(c.get("start_sec", 0)), float(c.get("end_sec", 0))
@@ -334,22 +466,36 @@ def check_clips(session: Path, n: int) -> tuple[list[str], list[str]]:
         if len(c.get("cuts") or []) > MAX_CUTS:
             warns.append(f"{tag}: {len(c['cuts'])} cuts, at most {MAX_CUTS} per generation (merge cuts)")
         if fmt2:
-            errors += _check_prompt(tag, c.get("video_prompt", ""))
+            if clip_prompts:
+                errors += _check_prompt(tag, c.get("video_prompt", ""))
             errors += [f"{tag}: no {k}" for k in ("opening_state", "closing_state") if not c.get(k)]
-            errors += _check_veo_parts(tag, c, a, b)
+            e, w = _check_veo_parts(tag, c, a, b, fmt)
+            errors += e
+            warns += w
+            if minors:
+                found = minor_problems(tag, c, minors) if clip_prompts else []
+                (errors if fmt3 else warns).extend(found)
+                for vp in c.get("veo_parts") or []:
+                    found = minor_problems(f"{tag} veo part {vp.get('part')}", vp, minors)
+                    (errors if fmt3 else warns).extend(found)
             on_screen = set(c.get("characters") or [])
             lines = sorted(c.get("dialogue") or [], key=lambda d: float(d.get("start_sec") or 0))
-            if lines and "Voices:" not in (c.get("video_prompt") or ""):
-                warns.append(f"{tag}: no Voices: line (one voice per speaker)")
-            warns += dialogue_tag_warnings(tag, c.get("video_prompt", ""), lines, on_screen)
-            warns += shot_dialogue_warnings(tag, c.get("video_prompt", ""))
+            if clip_prompts:
+                if lines and "Voices:" not in (c.get("video_prompt") or ""):
+                    warns.append(f"{tag}: no Voices: line (one voice per speaker)")
+                warns += dialogue_tag_warnings(tag, c.get("video_prompt", ""), lines, on_screen)
+                warns += shot_dialogue_warnings(tag, c.get("video_prompt", ""))
             warns += pace_warnings(tag, lines)
             for vp in c.get("veo_parts") or []:
                 ptag = f"{tag} veo part {vp.get('part')}"
-                warns += flow_warnings(ptag, vp, names)
+                warns += flow_warnings(ptag, vp, names, minors)
                 p0, p1 = float(vp.get("start_sec", 0)), float(vp.get("end_sec", 0))
                 inside = [d for d in lines if p0 - EPS <= float(d.get("start_sec") or 0) < p1 - EPS]
-                warns += dialogue_tag_warnings(ptag, vp.get("video_prompt", ""), inside, on_screen)
+                seen = set(vp["characters"]) if isinstance(vp.get("characters"), list) else on_screen
+                # a part may keep a speaker out of frame (e.g. a child, for Flow): the line is then an off-screen voice
+                inside = [{**x, "mode": "offscreen"} if x.get("mode") == "speaks" and x.get("character") not in seen else x
+                          for x in inside]
+                warns += dialogue_tag_warnings(ptag, vp.get("video_prompt", ""), inside, seen)
                 warns += shot_dialogue_warnings(ptag, vp.get("video_prompt", ""))
         prev_end = b
         inside = [sc for sc in scenes
@@ -378,6 +524,9 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
     if not pf:
         raise FileNotFoundError(f"ep{n:02d}: chưa có final/shots/ep{n:02d}/prompts.json (chạy /script-to-shotlist)")
     data = json.loads(pf.read_text(encoding="utf-8"))
+    if not has_higgsfield(data):
+        raise FileNotFoundError(f"Tập {n}: prompt chỉ có bản Google Flow (không có prompt clip 10-15s cho Higgsfield). "
+                                "Dùng 'Tải gói Flow'.")
     shots = data.get("shots") or []
     approved = asset_images.approved_refs(session)
     ep_json = session / "final" / f"ep{n:02d}.json"
@@ -447,7 +596,7 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
                  + (f"Diễn xuất: {s['performance']}\n" if s.get("performance") else "")
                  + f"\nPROMPT (Seedance 2 / Kling, {dur}s, copy nguyên văn):\n{s.get('video_prompt', '')}\n"
                  + "".join(f"\nPROMPT VEO 3.1 / FLOW phần {vp.get('part')} [{_ts(vp.get('start_sec', 0))}-"
-                           f"{_ts(vp.get('end_sec', 0))}] (lưu thành clips/{unit}_{no:02d}_{vp.get('part')}.mp4)\n"
+                           f"{_ts(vp.get('end_sec', 0))}] {_part_len(vp)}s (lưu thành clips/{unit}_{no:02d}_{vp.get('part')}.mp4)\n"
                            f"Ảnh cho phần này (chỉ những ảnh này): "
                            f"{', '.join('refs/' + r for r in part_refs.get((i, vp.get('part')), [])) or 'không'}\n"
                            f"{vp.get('video_prompt', '')}\n" for vp in s.get("veo_parts") or []))
@@ -485,7 +634,8 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
              "Prompt bằng tiếng Anh (cho model video); thoại giữ nguyên ngôn ngữ kịch bản.\n"
              "Seedance 2 / Kling: dùng PROMPT chính (một clip tối đa 15s) với mọi ảnh tham chiếu của clip.\n"
              "Veo 3.1 / Google Flow (tối đa 8s): dùng các 'PROMPT VEO phần 1, 2...' và CHỈ upload ảnh ghi ở phần đó\n"
-             "  (tối đa 1 ảnh nhân vật; gọi nhân vật bằng vai, không tên riêng, để Flow không chặn vì 'người nổi tiếng').\n"
+             f"  (tối đa {FLOW_MAX_REFS} ảnh: các nhân vật trên hình trước, rồi bối cảnh; gọi nhân vật bằng vai, không tên riêng,\n"
+             "  để Flow không chặn vì 'người nổi tiếng').\n"
              + ("\nCẢNH BÁO: prompt kiểu cũ (mỗi shot 1-5s một video, dễ lệch nhân vật). Tạo lại prompt video (clip 10-15s).\n"
                 if not clip else
                 "\nCẢNH BÁO: prompt được tạo từ bản kịch bản cũ hơn bản chốt hiện tại. Tạo lại prompt video trước khi quay.\n"
@@ -493,6 +643,15 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
              + (f"\nLưu ý: {missing_refs} {unit} chưa có ảnh tham chiếu đã duyệt (duyệt ảnh ở mục Ngoại hình rồi tải lại).\n"
                 if missing_refs else ""))
     return tmp, f"{root}_higgsfield.zip"
+
+
+def _part_len(vp: dict) -> int | None:
+    """Flow generation length of a veo part: its duration_sec when it is a Flow step, else the step that holds it
+    as written (older prompts were written for the script length)."""
+    dur = vp.get("duration_sec")
+    if dur in VEO_STEPS:
+        return int(dur)
+    return fit_duration(float(vp.get("end_sec", 0)) - float(vp.get("start_sec", 0)))
 
 
 def _flow_mode(images: list[str]) -> str:
@@ -529,8 +688,10 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
     orient = "Portrait (dọc)" if aspect == "9:16" else "Landscape (ngang)" if aspect == "16:9" else aspect
     unit = "clip" if data.get("unit") == "clip" else "shot"
 
+    stretched = int(data.get("prompt_format") or 1) >= 4  # parts written for the whole generation: keep all of it
+    minors = minor_ids(session)  # never attach a child's photo to Flow (refused as harmful content involving minors)
     refs: dict[Path, str] = {}
-    rows, skipped = [], []
+    rows, skipped, clock = [], [], 0.0  # clock: time in the edited Flow video
     for i, s in enumerate(shots, 1):
         no = int(s.get("shot_number") or i)
         parts = s.get("veo_parts") or []
@@ -541,21 +702,30 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
         for vp in parts:
             k = vp.get("part") or 1
             a, b = float(vp.get("start_sec", 0)), float(vp.get("end_sec", 0))
-            found = [f for f in _shot_refs(session, {"refs": vp.get("refs") or []}, {}) if f.is_file()]
+            found = [f for f in _shot_refs(session, {"refs": vp.get("refs") or []}, {}) if f.is_file()
+                     and not any(f.name.startswith(f"{k}_") for k in minors)]
             for f in found:
                 refs.setdefault(f, _ref_name(f, names))
             images = [f"refs/{refs[f]}" for f in found]
             lines = [(x, y, d) for x, y, d in timed if a - 0.05 <= x < b]
+            dur = _part_len(vp)
+            keep = float(dur) if stretched and dur else min(b - a, dur or b - a)
+            scale = keep / (b - a) if b > a else 1.0  # script second -> second in the generated clip
             rows.append({
                 "episode": n, unit: no, "part": k, "scene": s.get("scene"),
-                "id": f"{unit}_{no:02d}_{k}", "start_sec": a, "end_sec": b, "duration_sec": round(b - a, 2),
-                "trim_to_sec": round(b - a, 2), "aspect_ratio": aspect, "mode": _flow_mode(images),
+                "id": f"{unit}_{no:02d}_{k}", "start_sec": a, "end_sec": b, "duration_sec": dur,
+                "needed_sec": round(b - a, 2), "trim_to_sec": round(keep, 2),
+                "video_start": round(clock, 2), "video_end": round(clock + keep, 2),
+                "aspect_ratio": aspect, "mode": _flow_mode(images),
                 "images": images, "characters": [labels.get(c) or c for c in vp.get("characters") or []],
-                "dialogue": [{"who": labels.get(d.get("character")) or d.get("character"),
+                "dialogue": [{"who": labels.get(d.get("character")) or d.get("character"), "name": names.get(d.get("character")),
+                              "voiceover": bool(d.get("voiceover")),
                               "mode": line_mode(d, set(vp.get("characters") or [])), "line": d["line"],
-                              "start_sec": round(x, 2), "end_sec": round(y, 2)} for x, y, d in lines],
+                              "start_sec": round((x - a) * scale, 2), "end_sec": round((y - a) * scale, 2)}
+                             for x, y, d in lines],
                 "continuity_in": vp.get("continuity_in") or "",
                 "save_as": f"clips/{unit}_{no:02d}_{k}.mp4", "prompt": vp.get("video_prompt") or ""})
+            clock += keep
 
     tmp = Path(tempfile.mkstemp(suffix=".zip", prefix=f"{root}_")[1])
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
@@ -564,23 +734,27 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
 
         q, e = io.StringIO(), io.StringIO()
         qw, ew = csv.writer(q), csv.writer(e)
-        qw.writerow(["id", "save_as", "mode", "aspect_ratio", "duration_sec", "trim_to_sec", "images", "prompt"])
-        ew.writerow(["order", "clip_file", "start", "end", "trim_to_sec", "scene", "dialogue"])
+        qw.writerow(["id", "save_as", "mode", "aspect_ratio", "duration_sec", "needed_sec", "trim_to_sec", "images", "prompt"])
+        ew.writerow(["order", "clip_file", "start", "end", "keep_sec", "scene", "dialogue"])
         for j, r in enumerate(rows, 1):
-            said = "\n".join(f"  [{_ts(d['start_sec'])}] {d['who']}"
+            said = "\n".join(f"  [{d['start_sec']:.1f}s] {d['who']}"
                               + {"voiceover": " (VO, không mấp máy môi)", "offscreen": " (ngoài khung)"}.get(d["mode"], "")
                               + f": \"{d['line']}\"" for d in r["dialogue"])
+            dur = r["duration_sec"]
+            tail = (f"  (khi dựng lấy {r['trim_to_sec']}s đầu; {dur - r['trim_to_sec']:.1f}s cuối là khung giữ)"
+                    if dur and dur - r["trim_to_sec"] > 0.05 else "  (giữ nguyên cả clip khi dựng)")
             text(f"parts/{r['id']}.txt",
-                 f"{r['id'].upper()}   [{_ts(r['start_sec'])}-{_ts(r['end_sec'])}]   dài {r['duration_sec']}s   {aspect}\n\n"
-                 f"Flow: Veo 3.1, chế độ {r['mode']}, khung {orient}, 1 kết quả mỗi lần.\n"
-                 f"Ảnh (chỉ những ảnh này, đúng thứ tự): {', '.join(r['images']) or 'không có (tạo từ chữ)'}\n"
-                 f"Lưu video thành: {r['save_as']}  (Flow tạo 8s: khi dựng chỉ lấy {r['trim_to_sec']}s đầu)\n"
+                 f"{r['id'].upper()}   [{_ts(r['start_sec'])}-{_ts(r['end_sec'])}]   tạo {dur or '?'}s   {aspect}\n\n"
+                 + (f"Flow: thời lượng {dur}s, chế độ {r['mode']}, khung {orient}, 1 kết quả mỗi lần.\n" if dur else
+                    f"CẢNH BÁO: phần dài {r['needed_sec']}s, quá {max(VEO_STEPS)}s của Flow: tạo lại prompt video.\n")
+                 + f"Ảnh (chỉ những ảnh này, đúng thứ tự): {', '.join(r['images']) or 'không có (tạo từ chữ)'}\n"
+                 f"Lưu video thành: {r['save_as']}{tail}\n"
                  + (f"Nối tiếp phần trước: {r['continuity_in']}\n" if r["continuity_in"] else "")
                  + f"Thoại trong phần này:\n{said or '  (không thoại)'}\n"
                  f"\nPROMPT (copy nguyên văn vào Flow):\n{r['prompt']}\n")
-            qw.writerow([r["id"], r["save_as"], r["mode"], aspect, r["duration_sec"], r["trim_to_sec"],
+            qw.writerow([r["id"], r["save_as"], r["mode"], aspect, r["duration_sec"], r["needed_sec"], r["trim_to_sec"],
                          " ".join(r["images"]), r["prompt"]])
-            ew.writerow([j, Path(r["save_as"]).name, _ts(r["start_sec"]), _ts(r["end_sec"]), r["trim_to_sec"],
+            ew.writerow([j, Path(r["save_as"]).name, _ts(r["video_start"]), _ts(r["video_end"]), r["trim_to_sec"],
                          r["scene"] or "", " | ".join(f"{d['who']}: {d['line']}" for d in r["dialogue"])])
         text("flow_queue.json", json.dumps({"episode": n, "title": ep_title, "series": title, "aspect_ratio": aspect,
                                             "model": "Veo 3.1", "flow_labels": labels, "parts": rows},
@@ -588,8 +762,9 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
         text("flow_queue.csv", "\ufeff" + q.getvalue())
         text("edit_list.csv", "\ufeff" + e.getvalue())
         srt = []
-        for k, (a, b, d) in enumerate((x for s in shots for x in _clip_lines(s)), 1):
-            who = names.get(d.get("character")) or d.get("character") or ""
+        lines = [(r["video_start"] + d["start_sec"], r["video_start"] + d["end_sec"], d) for r in rows for d in r["dialogue"]]
+        for k, (a, b, d) in enumerate(lines, 1):
+            who = d.get("name") or d.get("who") or ""
             srt.append(f"{k}\n{_ts(a, True)} --> {_ts(b, True)}\n{who + ' (VO): ' if d.get('voiceover') else ''}{d['line']}\n")
         text("subtitles.srt", "\n".join(srt))
         text("clips/DAT_CLIP_VAO_DAY.txt", f"Lưu video của từng phần ở đây: {unit}_01_1.mp4, {unit}_01_2.mp4, ...\n")
@@ -599,9 +774,12 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
         total = shots[-1].get("end_sec") if shots else 0
         text("HUONG_DAN_FLOW.txt",
              f"{title + ' — ' if title else ''}Tập {n:02d}: {ep_title}\n"
-             f"{len(rows)} lần tạo trên Google Flow (Veo 3.1), {total}s, khung {aspect}. {len(refs)} ảnh tham chiếu.\n\n"
-             "Mỗi file parts/XX.txt là MỘT lần tạo trên Flow (mỗi phần <= 8s):\n"
-             "  1. Flow -> New project. Cài đặt: model Veo 3.1, khung " + orient + ", số kết quả 1.\n"
+             f"{len(rows)} lần tạo trên Google Flow, khung {aspect}. {len(refs)} ảnh tham chiếu.\n"
+             f"Kịch bản {total}s -> video dựng xong khoảng {round(clock)}s"
+             + (" (mỗi phần được giãn ~1.3 lần cho đủ thời gian diễn và nói).\n\n" if stretched else ".\n\n")
+             + "Mỗi file parts/XX.txt là MỘT lần tạo trên Flow:\n"
+             "  1. Flow -> New project. Cài đặt: model video của Flow, khung " + orient + ", số kết quả 1,\n"
+             "     thời lượng đúng số ghi trong file (6, 8 hoặc 10s: prompt được viết cho đúng độ dài đó).\n"
              "  2. Chế độ ghi trong file: 'Ingredients to Video' -> thêm ĐÚNG các ảnh ghi trong file (thư mục refs/);\n"
              "     'Text to Video' -> không thêm ảnh.\n"
              "  3. Copy PROMPT dán nguyên văn. Không thêm tên nhân vật: prompt gọi nhân vật bằng vai\n"
@@ -610,9 +788,9 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
              "Chạy hàng loạt: flow_queue.json / flow_queue.csv có đủ các phần theo thứ tự\n"
              "(id, save_as, mode, images, prompt, trim_to_sec).\n\n"
              "Dựng video:\n"
-             "  - Ghép clips/ theo thứ tự trong edit_list.csv; mỗi phần chỉ lấy trim_to_sec giây đầu\n"
-             "    (Flow luôn tạo 8s, phần ngắn hơn phải cắt).\n"
-             "  - subtitles.srt khớp thời gian khi các phần được cắt đúng độ dài.\n"
+             "  - Ghép clips/ theo thứ tự trong edit_list.csv, mỗi phần giữ keep_sec giây đầu\n"
+             "    (prompt mới: cả clip).\n"
+             "  - subtitles.srt đã tính theo thời gian của video dựng (không phải thời gian kịch bản).\n"
              + (f"\nCẢNH BÁO: {unit} {', '.join(map(str, skipped))} chưa có bản Veo; tạo lại prompt video.\n" if skipped else "")
              + ("\nCẢNH BÁO: prompt được tạo từ bản kịch bản cũ hơn bản chốt hiện tại. Tạo lại prompt video trước khi quay.\n"
                 if prompts_stale(session, n) else ""))
@@ -639,17 +817,23 @@ async def run_shotlist_job(job) -> dict:
     job.step("shotlist", "running", total=len(eps), done=0)
     slots = asyncio.Semaphore(config.CLAUDE_PARALLEL)
 
+    targets = ",".join(config.VIDEO_TARGETS)
+    clip_note = ("one prompt per 10-15s clip (Higgsfield) plus " if "higgsfield" in config.VIDEO_TARGETS
+                 else "10-15s clips WITHOUT a clip video_prompt (Flow only), ")
+
     async def one(n: int):
         async with slots:
             try:
-                await _claude(job, f"/script-to-shotlist {final / f'ep{n:02d}.md'}\n\nRun non-interactively: do not ask "
-                                   "questions. The episode is approved (final/). Write shotlist.json/.md and "
-                                   f"prompts.json/.md into {final / 'shots' / f'ep{n:02d}'}/. prompts.json is "
-                                   '"unit": "clip", "prompt_format": 2: one prompt per 10-15s clip, at most 5 timed '
-                                   "cuts, a start/end time on every dialogue line, opening/closing state, "
-                                   "performance, the Rules guard block, and veo_parts for clips over 8s "
-                                   "(skill Step 5); replace any older "
-                                   "per-shot prompts.json." + UI_NOTE,
+                await _claude(job, f"/script-to-shotlist {final / f'ep{n:02d}.md'} --targets {targets}\n\nRun "
+                                   "non-interactively: do not ask questions. The episode is approved (final/). Write "
+                                   f"shotlist.json/.md and prompts.json/.md into {final / 'shots' / f'ep{n:02d}'}/. "
+                                   f'prompts.json is "unit": "clip", "prompt_format": {PROMPT_FORMAT}, '
+                                   f'"targets": {json.dumps(list(config.VIDEO_TARGETS))}: {clip_note}'
+                                   "veo_parts on every clip (Flow lengths stretched ~1.3x to 6/8/10s, minors rule), "
+                                   "at most 5 timed cuts per clip, a start/end time on every dialogue line, "
+                                   "opening/closing state, performance, the Rules guard block (skill Step 5); "
+                                   "replace any older prompts.json. Then python3 -m app.pipeline.package check "
+                                   f"{d} {n} -> 0 errors." + UI_NOTE,
                               f"ep{n:02d}", 3600)
             except RuntimeError as e:
                 job.log(f"[ep{n:02d}] {e}")

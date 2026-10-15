@@ -66,3 +66,27 @@ def test_markdown_shows_acting_and_blocking():
     md = render_md(ep)
     assert "Vị trí: Mẹ ngồi bên bàn trà" in md
     assert "Bàn trà<br>**Mẹ**: tay run run rót trà; mặt: mím môi; cầm: ấm trà |" in md
+
+
+def test_minor_risk_flags_night_sleep_touching_and_mouth(tmp_path):
+    from conftest import write
+    write(tmp_path / "assets" / "assets_v1.json", {"characters": [{"char_id": "char_01", "age": 26}, {"char_id": "char_02", "age": 10}]})
+    write(tmp_path / "bible_v1.json", {"cast": [{"character_id": "char_03", "visual_signature": "8 tuổi, tóc ngắn"},
+                                               {"character_id": "char_01", "visual_signature": "26 tuổi"}]})
+    assert al.minor_ids(tmp_path) == {"char_02", "char_03"}
+    ep = scene([beat(0, 2, ["char_01", "char_02"], [{"character": "char_01", "does": "ngủ gục bên vách", "face": "", "holds": ""},
+                                                    {"character": "char_02", "does": "cắn đầu dây đeo", "face": "", "holds": ""}]),
+                beat(2, 4, ["char_01", "char_02"], [{"character": "char_01", "does": "xoa đầu em", "face": "", "holds": ""},
+                                                    {"character": "char_02", "does": "ôm bình giữ nhiệt", "face": "", "holds": "bình"}])])
+    ep["scenes"][0]["time_of_day"] = "night"
+    items, _ = al.check_episode(ep, {"char_02"})
+    risk = [(it["beat"], it.get("note")) for it in items if "minor_risk" in it["issues"]]
+    assert risk[0][0] is None and "night scene" in risk[0][1]
+    assert any(b == 0 and "ngủ" in n and "cắn" in n for b, n in risk)
+    assert any(b == 1 and n == "xoa đầu" for b, n in risk)  # hugging an object ("ôm bình") is fine
+    ep["scenes"][0]["time_of_day"] = "afternoon"
+    ok = scene([beat(0, 2, ["char_01", "char_02"], [{"character": "char_01", "does": "đẩy bát cơm sang cho em", "face": "cười", "holds": ""},
+                                                    {"character": "char_02", "does": "xoắn dây đeo quanh ngón tay", "face": "", "holds": ""}])])
+    ok["scenes"][0]["time_of_day"] = "day"
+    assert [it for it in al.check_episode(ok, {"char_02"})[0] if "minor_risk" in it["issues"]] == []
+    assert "minor_risk" in al.STRICT

@@ -289,6 +289,7 @@ Put overrides in `.env` (copy `.env.example`; gitignored, loaded by `./run_app.s
 | `PORT` | 8765 | Web app port |
 | `STORY_DNA_PARALLEL` | 4 | Claude processes at once during analysis |
 | `STORY_DNA_CODEX_PARALLEL` | 1 | Images generated at once |
+| `STORY_DNA_VIDEO_TARGETS` | `flow` | Video prompts to write: `flow` (Google Flow only) or `flow,higgsfield` (also 10-15s clip prompts + Higgsfield zip; slower) |
 | `STORY_DNA_CODEX_TIMEOUT` | 600 | Seconds before one image attempt is abandoned |
 | `STORY_DNA_BROWSE_ROOTS` | `~` | Folders the video picker may show (`:`-separated) |
 | `STORY_DNA_PERMISSION_MODE` | `acceptEdits` | Permission mode of the headless Claude runs |
