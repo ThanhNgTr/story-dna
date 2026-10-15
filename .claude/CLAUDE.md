@@ -53,8 +53,10 @@ Codex CLI on the user's ChatGPT login (built-in image_gen, no OpenAI API key)
   Shotlist cuts and `performance` are built from it. Web: button "Bổ sung diễn xuất" per episode.
 - **Minors on screen** (`.claude/skills/story-contract/references/minors-on-screen.md`): read BEFORE the outline and each episode. Child characters
   (registry/bible age < 18) get daylight / open-place scenes; no sleep, bed, touching, bare skin, secret phone at night,
-  mouth habits, crying next to an adult (Google Flow refused ep04 as "harmful content involving minors").
-  `_action_lint.py` flag `minor_risk` is strict; `script-to-shotlist` "Minors" is the second net.
+  mouth habits, crying next to an adult (Google Flow refused ep04 as "harmful content involving minors"); no phone /
+  screen in the child's shot and at most one (family) adult in it (ep06 refused 5x: child + phone strap + 2 men).
+  Starts at the bible: a child's `tell` / signature props are hand or school things (`_story_check.py` errors).
+  `_action_lint.py` flag `minor_risk` is strict; `script-to-shotlist` "Minors" is the second net (`package check`).
 - **Feedback loop**: `rule` feedback patches the skill (new version), `story` feedback edits only
   this series. Live SKILL.md = latest; immutable `versions/SKILL_vN.md`.
 

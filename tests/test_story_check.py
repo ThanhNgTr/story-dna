@@ -97,3 +97,19 @@ def test_older_field_names_are_accepted(session):
         b["mystery_ledger"] = b.pop("ledger_plan")
     edit(session / "bible_v1.json", rename)
     assert run(session) == []
+
+
+def test_minor_with_a_phone_tell_fails_r3(session):
+    """Na (10): tell 'chewing the phone strap' + a phone as signature put a phone in every scene Flow refused."""
+    def child(b):
+        b["cast"][-1].update(age=10, tell="Cắn đầu dây đeo điện thoại khi tính kế",
+                             visual_signature="10 tuổi, gầy nhỏ, áo thun vàng, điện thoại bàn phím đeo dây ở cổ")
+    edit(session / "bible_v1.json", child)
+    errs = [e for e in run(session) if "(minor, 10)" in e]
+    assert any("tell has cắn, điện thoại" in e for e in errs) and any("visual_signature has điện thoại" in e for e in errs)
+
+    def fixed(b):
+        b["cast"][-1].update(tell="Đếm trên đầu ngón tay khi tính kế",
+                             visual_signature="10 tuổi, áo thun vàng, cặp sách có móc khóa con mèo")
+    edit(session / "bible_v1.json", fixed)
+    assert not [e for e in run(session) if "(minor" in e]

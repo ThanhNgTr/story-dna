@@ -398,8 +398,9 @@ Plan the split per clip so every part lands in those bands:
   - No photo of the child in `refs` (text only; an adult in the part may keep theirs). Frame the child
     so a face model is not needed: medium or wide, profile, from behind, hands on a prop.
   - Describe the child by relation + age + full clothing only: "his younger sister, a 10-year-old
-    schoolgirl in a white school shirt and navy trousers, chin-length hair, a red keypad phone on a
-    neck strap". No body or face words (skinny, small, slim, tanned, lips, pouting mouth), no bare feet,
+    schoolgirl in a white school shirt and navy trousers, chin-length hair, a yellow schoolbag". Never a
+    phone or other device in the child's description, even when the registry lists one as her signature
+    item: drop it from the part. No body or face words (skinny, small, slim, tanned, lips, pouting mouth), no bare feet,
     shorts, sleeveless tops, sleepwear; the adults in the same part fully dressed too (T-shirt, long
     trousers).
   - Use a relation label for the child in `flow_labels` ("the younger sister", "the son"), and name the
@@ -428,8 +429,24 @@ Plan the split per clip so every part lands in those bands:
     keys lighting up, the photo; her lines become an OFF-SCREEN VOICE ("a young girl's soft whisper").
     The part's `characters` then leaves her out, `refs` has no character image of her, and the Cast line
     says "no person on screen". Quoted lines stay word for word.
+  - One adult at most in a part that shows a child, from the family (the older brother, the mother).
+    Flow judges every generation alone: ep06 clip 2 part 1 (the sister twisting her phone strap between
+    her brother and his co-worker, at the door after dark) was refused 5 times, also re-staged in
+    daylight; it passed with the child out of the frame. Split such a clip into parts on its cuts: the
+    child's cuts (alone, or with the one family member) in their own part, the other adults' cuts in
+    theirs; the edit joins them. A cut that shows the child and two adults is re-framed (the child's
+    side of the shot, the adults over the shoulder off frame). A line from an adult TO the child in
+    another part keeps the child's name so the cut reads.
+  - No device in a part that shows a child: no phone, screen, texting, dialling, keypad, tablet,
+    computer in the child's hands, around her neck or on the table beside her. The device belongs to
+    the adults' parts (the brother finds the sent message on his own phone, screen as a plain glow,
+    message text in post); the child's part keeps her line and her face (shrug, eye-roll, grin, hands
+    crossed or on a school thing). A child's line ABOUT the device stays word for word.
+  - Fallback when a child's part is still refused: the child goes off screen in that part (her line
+    becomes an OFF-SCREEN VOICE, Cast line "only <adults> appear on screen"), and a separate child-only
+    part (no device, no other people, lit room, her line lip-synced) is offered next to it.
   - Quoted dialogue stays word for word. `package check` makes these errors: a photo of a minor in
-    `refs`, or risky words in a prompt with a minor on screen.
+    `refs`, risky words, a device word, or two or more adults in a part with a minor on screen.
 
 ### `prompts.json`
 ```json

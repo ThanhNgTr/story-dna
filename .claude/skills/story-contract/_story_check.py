@@ -20,6 +20,13 @@ from pathlib import Path
 ENDINGS = {"happy", "bad"}
 LEVELS = {"minor", "major", "midpoint", "final"}
 TIERS = {"central", "major", "minor"}
+# references/minors-on-screen.md "The bible": a child's tell / signature puts it in every scene, and Google Flow refused
+# Na (10) whose tell was chewing her phone strap and whose signature prop was the phone (ep04, ep06)
+AGE_VI = re.compile(r"(\d{1,2})\s*tuổi")
+CHILD_MOUTH = re.compile(r"\b(cắn|nhai|ngậm|mút|liếm|môi|miệng|bite|bites|biting|chew\w*|suck\w*|lick\w*|lips|mouth)\b", re.I)
+CHILD_DEVICE = re.compile(r"\b(điện thoại|di động|máy tính bảng|máy tính|màn hình|nhắn tin|phones?|smartphone|keypad|"
+                          r"tablet|laptop|screen)\b", re.I)
+CHILD_BODY = re.compile(r"\b(gầy|ốm nhom|nhỏ con|da ngăm|da trắng|mắt to|môi|skinny|petite|slim|lips)\b", re.I)
 
 
 def _load(p: Path):
@@ -139,6 +146,22 @@ def check_bible(b: dict, n: int, r: Report):
                 r.err(7, f"{cid}: main character has no secret")
             elif not (_ep(c.get("secret_reveal_ep")) and 1 <= c["secret_reveal_ep"] <= n):
                 r.err(7, f"{cid}: secret_reveal_ep must be 1..{n}")
+
+    for c in cast:  # minors: the design every child scene inherits
+        cid = c.get("character_id") or c.get("name")
+        m = AGE_VI.search(str(c.get("visual_signature") or ""))
+        age = c.get("age") if isinstance(c.get("age"), (int, float)) else int(m.group(1)) if m else None
+        if age is None or age >= 18:
+            continue
+        tell, look = str(c.get("tell") or ""), str(c.get("visual_signature") or "")
+        for field, text, pats in (("tell", tell, (CHILD_MOUTH, CHILD_DEVICE)), ("visual_signature", look, (CHILD_DEVICE,))):
+            hits = sorted({h.group(0).lower() for pat in pats for h in pat.finditer(text)})
+            if hits:
+                r.err(3, f"{cid} (minor, {age}): {field} has {', '.join(hits)}: a hand / school-thing habit, no mouth "
+                         f"habit or device (minors-on-screen.md \"The bible\")")
+        body = sorted({h.group(0).lower() for h in CHILD_BODY.finditer(look)})
+        if body:
+            r.warn(3, f"{cid} (minor, {age}): visual_signature describes the body ({', '.join(body)}): clothes, hair, props")
 
     # R5: setting
     world = b.get("world") or {}

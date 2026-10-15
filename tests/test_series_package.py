@@ -510,6 +510,22 @@ def test_minor_problems_flag_photos_and_risky_words(app_session):
     assert package.minor_problems("p1", {**bad, "characters": ["char_01"]}, kids) == []
 
 
+def test_minor_problems_flag_a_device_and_two_adults(app_session):
+    """ep06 clip 2 part 1 (refused 5 times): the sister twisting her phone strap beside her brother and his co-worker."""
+    series, d = app_session
+    from app.pipeline import package
+    kids = {"char_05"}
+    part = {"characters": ["char_05", "char_06", "char_01"], "refs": [],
+            "video_prompt": "The younger sister stands inside the door, both hands twisting the strap of the red keypad "
+                            "phone. Rules: No subtitles, captions, watermarks or on-screen text."}
+    w = package.minor_problems("c2p1", part, kids)
+    assert any("device (keypad, phone)" in x for x in w) and any("2 adults" in x for x in w)
+    ok = {"characters": ["char_05", "char_01"], "refs": [],
+          "video_prompt": "Na stands on the mat, arms crossed, and shrugs, then speaks her dialogue. Only the listed cast appear on screen; "
+                          "no subtitles or on-screen text. OFF-SCREEN VOICE: none."}
+    assert package.minor_problems("c2p1", ok, kids) == []
+
+
 def test_flow_package_keeps_stretched_parts_and_retimes_subtitles(app_session):
     series, d = app_session
     from app.pipeline import package

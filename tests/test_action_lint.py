@@ -90,3 +90,20 @@ def test_minor_risk_flags_night_sleep_touching_and_mouth(tmp_path):
     ok["scenes"][0]["time_of_day"] = "day"
     assert [it for it in al.check_episode(ok, {"char_02"})[0] if "minor_risk" in it["issues"]] == []
     assert "minor_risk" in al.STRICT
+
+
+def test_minor_risk_flags_a_device_and_two_adults_in_the_childs_beat():
+    """ep06: Flow refused Na (10) twisting her phone strap next to her brother and his co-worker, 5 times."""
+    ep = scene([beat(0, 2, ["char_01", "char_02", "char_03"], [
+        {"character": "char_01", "does": "quay phắt lại", "face": "nghiến răng", "holds": ""},
+        {"character": "char_02", "does": "xoắn dây đeo điện thoại quanh ngón tay", "face": "", "holds": "điện thoại"},
+        {"character": "char_03", "does": "kéo nón xuống", "face": "", "holds": ""}])])
+    ep["scenes"][0]["cast"] = {}
+    ep["scenes"][0]["time_of_day"] = "afternoon"
+    note = next(it["note"] for it in al.check_episode(ep, {"char_02"})[0] if "minor_risk" in it["issues"])
+    assert "điện thoại" in note and "2 adults" in note
+    one = scene([beat(0, 2, ["char_01", "char_02"], [
+        {"character": "char_01", "does": "khoanh tay chờ", "face": "", "holds": ""},
+        {"character": "char_02", "does": "nhún vai, đảo mắt lên trần", "face": "", "holds": "cuốn vở"}])])
+    one["scenes"][0]["time_of_day"] = "afternoon"
+    assert [it for it in al.check_episode(one, {"char_02"})[0] if "minor_risk" in it["issues"]] == []

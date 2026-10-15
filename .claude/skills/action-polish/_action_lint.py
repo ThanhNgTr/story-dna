@@ -11,8 +11,9 @@ Flags (see references/screen-action.md):
   prop_vanish  an object held earlier in the scene is gone and no beat puts it down / hands it over
   no_blocking  2+ characters on screen in the scene and no `blocking`
   minor_risk   a character under 18 on screen in a night scene, or near sleep / bed / touching / bare skin /
-               crying / secrecy / body words (story-contract/references/minors-on-screen.md): Google Flow
-               refuses such clips as "harmful content involving minors"
+               crying / secrecy / body words / a phone or screen, or with 2+ adults in the same beat
+               (story-contract/references/minors-on-screen.md): Google Flow refuses such clips as
+               "harmful content involving minors"
 Writers fix missing / prop_vanish / no_blocking / minor_risk to 0; the others are hints.
 """
 
@@ -32,7 +33,10 @@ MINOR_RISK = re.compile(
     r"đồ ngủ|ôm (?:chầm|lấy|chặt|nhau|anh|em|chị|cô|chú|bé|con|cháu|ba|bố|mẹ|vai|cổ)|bế|cõng|xoa đầu|vuốt tóc|hôn|thơm má|dắt tay|nắm lấy tay|nắm tay nhau|lau nước mắt|khóc|nước mắt|"
     r"lén|khuya|nửa đêm|gầy|ốm nhom|môi|miệng|cắn|nhắm mắt|gục|thiếp|nằm (?:xuống|ngủ|co|nghiêng|dài|cạnh)|"
     r"sleep\w*|asleep|bed|blanket|mat|bath\w*|undress\w*|barefoot|shorts|tank top|hug\w*|carr(?:y|ies)|lap|"
-    r"kiss\w*|ruffl\w*|cr(?:y|ies|ying)|tears?|sneak\w*|secretly|skinny|lips|mouth|teeth|eyes closed|doz\w*)\b", re.I)
+    r"kiss\w*|ruffl\w*|cr(?:y|ies|ying)|tears?|sneak\w*|secretly|skinny|lips|mouth|teeth|eyes closed|doz\w*|"
+    # rule 8: a device in the child's beat (ep06: Flow refused Na twisting her phone strap 5 times)
+    r"điện thoại|di động|nhắn tin|tin nhắn|gọi điện|bấm số|danh bạ|màn hình|máy tính|"
+    r"phones?|smartphone|keypad|text(?:s|ing|ed)|text messages?|messag\w*|dial(?:s|ed|ing|led|ling)?|screens?|tablet|laptop)\b", re.I)
 AGE_VI = re.compile(r"(\d{1,2})\s*tuổi")
 FEELING = re.compile(r"(^|[\s,;])(buồn( bã)?|tức( giận| tối)?|giận( dữ)?|lo lắng|lo âu|xúc động|hồi hộp|bối rối|sợ hãi|"
                      r"cảm thấy|đau lòng|hạnh phúc|vui vẻ|thất vọng|ngại ngùng|xấu hổ|căng thẳng|bất an)(?=$|[\s,;.])", re.I)
@@ -102,6 +106,9 @@ def minor_problems(ep: dict, minors: set[str]) -> list[dict]:
             text = " ".join([str(b.get("action") or "")] + [f"{a.get('does') or ''} {a.get('face') or ''} {a.get('holds') or ''}"
                                                               for a in b.get("acting") or [] if isinstance(a, dict)])
             hits = sorted({m.group(0).lower() for m in MINOR_RISK.finditer(text)})
+            adults = [c for c in visible(sc, b) if c not in minors]
+            if len(adults) > 1:  # rule 9: the child's shot has at most one adult
+                hits.append(f"{len(adults)} adults in the child's beat ({', '.join(adults)}): give the child her own beat")
             if hits:
                 items.append({"scene": sc.get("id"), "beat": bi, "character": seen[0], "issues": ["minor_risk"],
                               "text": str(b.get("action") or "")[:120], "note": ", ".join(hits)})

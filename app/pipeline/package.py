@@ -330,6 +330,10 @@ MINOR_RISK = re.compile(
     # an adult asleep beside the child, the child's mouth, a crying child (ep04 review after the first refusal)
     r"eyes closed|doz\w*|naps?|napping|stirs?|breathing|wakes?|waking|teeth|tears?|tearful|crying|cries|"
     r"red-rimmed|straw mat|sleeping mat)\b", re.I)
+# ep06: a part with Na (10) twisting her phone strap beside her brother and his co-worker was refused 5 times (also in
+# daylight); it passed with the child out of the frame. A device near the child, or 2+ adults in her part, is an error.
+MINOR_DEVICE = re.compile(r"\b(phones?|smartphone|keypad|text(?:s|ing|ed)|text messages?|messag\w*|dial(?:s|ed|ing|led|ling)?|contacts list|tablet|laptop|"
+                          r"computer)\b|(?<![-\w])(?<!on )(?<!off )screens?\b", re.I)
 
 
 def minor_ids(session: Path) -> set[str]:
@@ -364,6 +368,14 @@ def minor_problems(tag: str, item: dict, minors: set[str]) -> list[str]:
     hits = sorted({m.group(0).lower() for m in MINOR_RISK.finditer(text)})
     if hits:
         out.append(f"{tag}: minor on screen ({', '.join(kids)}) with risky words: {', '.join(hits)}")
+    devices = sorted({m.group(0).lower() for m in MINOR_DEVICE.finditer(text)})
+    if devices:
+        out.append(f"{tag}: minor on screen ({', '.join(kids)}) with a device ({', '.join(devices)}): keep the device "
+                   "out of the child's part (adult's own part, or the child off screen)")
+    adults = [c for c in item.get("characters") or [] if c not in minors]
+    if len(adults) > 1:
+        out.append(f"{tag}: minor on screen ({', '.join(kids)}) with {len(adults)} adults ({', '.join(adults)}): split "
+                   "the part, the child alone or with one family member")
     return out
 
 

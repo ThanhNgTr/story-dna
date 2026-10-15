@@ -55,11 +55,15 @@ shell variables do not carry over between calls). `<session>` = the session dir.
      distinctive features (a mole, freckles, a slightly crooked tooth, uneven brows, a wide nose bridge,
      a chipped front tooth, acne marks, heavy eyelids). An idol-like face makes video tools (Google
      Flow) refuse every clip with that character as a "famous person", and is less memorable on screen. Each outfit has its own `prompt_en`.
-     Characters under 18 (`age` < 18): `prompt_en` names age, hair and one signature item only, no
-     body or face-shape words (skinny, small, slim, tanned skin, lips, mouth); their outfits are full
+     Characters under 18 (`age` < 18): `prompt_en` names age, hair and one signature item only (a
+     schoolbag, a hair clip, a toy; never a phone or other device), no body or face-shape words
+     (skinny, small, slim, tanned skin, lips, mouth); their outfits are full
      clothing (school uniform, T-shirt + long trousers), no shorts, sleeveless tops, sleepwear or bare
      feet. Video tools (Google Flow) refuse clips that describe a child's body ("harmful content
      involving minors"); see script-to-shotlist "Minors".
+     A new face (character sheet re-made after a refusal) means every outfit image made from the old
+     sheet is outdated: `python3 -m app.pipeline.assets plan` lists them again and packages attach the
+     new sheet until the new outfit images are approved (ep06 was refused for an outfit with the old face).
      Items with `prompt_stale: true` were edited by hand: rewrite their `prompt_en` from the Vietnamese
      fields (see references/schema.md) and drop the flag.
    - **wardrobe**: read every beat action that mentions the character. Default outfit from the

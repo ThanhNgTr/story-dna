@@ -23,7 +23,8 @@ Guide: `references/screen-action.md` (read it first, every time). Episodes then 
 ## Steps
 
 1. Read: `references/screen-action.md` and `.claude/skills/story-contract/references/minors-on-screen.md` (a child on screen:
-   no sleep, bed, touching, mouth habit, secret phone; `minor_risk` must reach 0); latest bible (`cast[]`: role, `tell`, `flaw`, `secret`,
+   no sleep, bed, touching, mouth habit, no phone / screen in the child's beat, at most one adult in the child's
+   beat (split the others into their own beats); `minor_risk` must reach 0); latest bible (`cast[]`: role, `tell`, `flaw`, `secret`,
    relationships); latest outline (what each episode turns on); the style skill
    `write-series-<slug>/SKILL.md` (body tells, character building, camera / shot sizes); the latest
    `assets/assets_vN.json` if it exists (props with names, locations with fixed elements: that is

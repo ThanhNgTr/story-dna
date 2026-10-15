@@ -47,6 +47,10 @@ undercuts).
    - Keep the meaning and the plot information of every line; clarity may ADD the missing piece
      (who / what / why) but never a new plot fact. Mystery answers stay hidden.
    - Same xung ho as `address_matrix` everywhere; VO one pronoun all season.
+   - A child on screen (minors-on-screen.md "Dialogue"): the first line TO the child in a scene names her
+     ("Na! Em nhắn hả?"), because her shots are generated apart from the adults' and cut in.
+     A child's line never narrates her secretly using a device; the denial / joke stays (the device is
+     shown on the adult side).
    - Write `episodes/epNN_vK+1.json` + `.md` (same md layout as the episode it replaces) with
      `"edited": {"by": "dialogue-polish", "at": ISO, "from_version": K}`.
 5. Re-run the lint; then `python3 .claude/skills/story-contract/_story_check.py <session>` and, when
