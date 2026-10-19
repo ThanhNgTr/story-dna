@@ -1,219 +1,126 @@
 ---
 name: analyze-videos
 description: |
-  Extract narrative DNA from local video files. Runs ffmpeg to extract frames,
-  then Claude Code reads frames directly (no external API needed) to analyze
-  pacing, characters, tone, visual style, and narrative structure. Produces
-  dna.json + dna.md for downstream skill generation. Triggers on: "analyze video",
-  "extract DNA", "video analysis", "analyze frames", "narrative analysis".
-  Input: local video file or directory. Output: manifest.json (frame paths),
-  dna.json (structured DNA), dna.md (human-readable report).
+  Learn the story and the craft of a reference video. Built for ONE long video
+  (many episodes edited into one continuous cut), also works on a folder of videos.
+  Detects real cuts, splits long videos into ~2-min units on cut boundaries,
+  transcribes dialogue locally (WhisperX), runs one video-analyst agent per unit in
+  parallel, then story-merger stitches everything into one plot + craft DNA:
+  plot, acts, reveals, main/supporting characters, storytelling, camera, sound,
+  color, pacing. Triggers on: "analyze video", "learn this story", "extract DNA",
+  "video analysis", "phan tich video", "hoc cot truyen". Output: dna.json, dna.md,
+  story.md for /skill-creator-from-dna.
 ---
 
-# Video Analysis → Narrative DNA
+# Analyze Videos -> Story + Craft DNA
 
 ## When to Use
 
-Use when you have local reference videos and want to extract narrative patterns:
-- Understand structure/pacing/tone from existing videos
-- Build DNA to feed into skill generation
-- Analyze shot composition, character archetypes, dialogue flow
-
-**Input**: Local video file or directory (MP4, MOV, MKV, AVI)
-**Output**: `manifest.json` + `dna.json` + `dna.md` + `frames/`
-
-## Quick Start
+- Project start, or a new reference video to learn from (rare, expensive step)
+- Input: one long video (e.g. 20-40 min of episodes edited into one), or a folder of videos
+- Output: `data/analyses/<run-id>/` with `dna.json`, `dna.md`, `story.md` -> `/skill-creator-from-dna`
 
 ```
-/analyze-videos --input data/analyses/ep1.mp4 --max-frames 30
+/analyze-videos --input data/input/reference.mp4
 ```
 
-## How It Works
+## Pipeline
 
-### Step 1 — Shot detection + frame extraction (Python + ffmpeg)
-Run `_analyze.py` to detect cuts, measure pacing, extract keyframes and write manifest:
+```
+video ─▶ [1] _analyze.py  shots on whole video ─▶ units of ~120s (cut boundaries) ─▶ keyframes per unit
+      ─▶ [2] _transcribe.py  WhisperX once per source ─▶ split per unit
+      ─▶ [3] video-analyst × N units (parallel) ─▶ dna/<unit_id>.dna.json
+      ─▶ [4] story-merger  (parts of ≤8 units if N > 8, then final) ─▶ dna.json + dna.md + story.md
+      ─▶ [4b] film-analyst (text only) ─▶ film_analysis.md + film_analysis.json
+```
+
+All times are absolute seconds in the source video, so units stitch back into one timeline.
+
+### Step 1 — Shots, units, frames (Python + ffmpeg, no deps)
 
 ```bash
-cd /path/to/story-dna
-python3 .claude/skills/analyze-videos/_analyze.py \
-  --input data/analyses/ep1.mp4 \
-  --max-frames 30 \
-  --output-dir data/analyses
+python3 .claude/skills/analyze-videos/_analyze.py --input data/input/reference.mp4
 ```
 
-Default `--sampling shot`:
-- ffmpeg scene score per frame, adaptive rule (cut = score ≥ 0.3, or ≥ `--scene-threshold` and 3× neighbor avg) → real cut timestamps
-- Pacing computed by code from the cut list (`pacing_measured`), not guessed from frames
-- 1 keyframe per shot (middle of shot); spare budget goes to long shots. If shots > `--max-frames`, hook shots (first 3s) are kept and the rest are spread evenly — pacing still covers ALL shots
-- Detection fails → falls back to `--sampling uniform` (old behavior, `--fps`)
+| Flag | Default | Meaning |
+|---|---|---|
+| `--chunk-sec` | 120 | Target unit length; each boundary snaps to the nearest real cut (±50%) |
+| `--chunk-min-video` | 240 | Videos shorter than this stay one unit |
+| `--max-frames` | 40 | Keyframes per unit (1 per shot, spare to long shots; hook shots kept) |
+| `--scene-threshold` | 0.12 | Adaptive cut sensitivity. Raise (0.2) if false cuts, lower (0.08) for dark footage |
+| `--sampling uniform` | | Fallback: evenly spaced frames (auto if detection fails) |
 
-Output in `data/analyses/<timestamp>/`:
-- `manifest.json`: per video `sampling`, `pacing_measured`, `shots_path`, `frames` (`path`, `t_sec`, `shot_id`)
-- `shots/<stem>.json`: full shot list (`t_start`, `t_end`, `duration_sec`, `cut_score`, `has_frame`) + `pacing_measured`
-- `frames/<stem>/frame_NNNN_tSSSS.SS_sNNN.jpg` (timestamp + shot id in filename)
+Output in `data/analyses/<run-id>/`:
+- `manifest.json`: `sources[]` (whole-video `pacing_measured`, `shots_path`, `units`) + `units[]` (`unit_id`, `t_start`, `t_end`, `chunk`, `frames[]`, `shots_path`, `pacing_measured`)
+- `shots/<stem>.json` (whole video) and `shots/<unit_id>.json`
+- `frames/<unit_id>/frame_NNNN_t<abs_sec>_<shot_id>.jpg`
 
-Known limits: fades/dissolves are often missed (merged into one long shot); lightning/flash inside one shot can add a false cut. Fast-cut videos (avg < 2.5s) need `--max-frames 40`+ to keep one frame per shot.
+Speed: ~17s for 3 min of 1080p (detection decodes at 320px). Known limits: fades/dissolves often merge into one shot; lightning/flashes can add a false cut.
 
-### Step 1b — Audio: transcript + speakers (WhisperX, local CPU)
-Adds real dialogue so agents stop lip-reading. Runs in the project venv (`.venv/`, gitignored):
+### Step 2 — Audio: transcript (+ speakers)
 
 ```bash
-# one-time setup (no sudo): uv + venv + whisperx (~2.5 GB)
-curl -LsSf https://astral.sh/uv/install.sh | sh -s -- --no-modify-path
-~/.local/bin/uv venv .venv --python 3.12
-~/.local/bin/uv pip install --python .venv/bin/python whisperx \
-  --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
-
-# per run
-.venv/bin/python .claude/skills/analyze-videos/_transcribe.py \
-  --manifest data/analyses/<run>/manifest.json [--model large-v3-turbo] [--language en]
+.venv/bin/python .claude/skills/analyze-videos/_transcribe.py --manifest data/analyses/<run-id>/manifest.json
 ```
 
-- Writes `transcripts/<stem>.json`: `segments[]` (`start`, `end`, `text`, `speaker`, `shot_id`, `words[]`), `silences[]` (ffmpeg silencedetect, < -40 dB for ≥ 0.5s), `audio` summary
-- Adds `transcript_path` + `audio` to each manifest video
-- Speaker labels (`SPEAKER_00`...) only when `HF_TOKEN` is set and the pyannote diarization model terms are accepted on Hugging Face; otherwise `speaker: null` and agents assign speakers from frames
-- No audio stream → `audio.has_audio: false`, skipped. ASR fails → silences still saved, agents fall back to visual-only
-- No venv → skip this step; pipeline still works (dialogue marked `inferred`)
+- WhisperX `large-v3-turbo` on CPU, word timestamps, ~0.65x realtime (30 min video ≈ 20 min)
+- Language is auto-detected from the first 30s only. If the user says the dialogue language (e.g.
+  Vietnamese) or the video opens with music, pass `--language vi` (etc.). After the run, check
+  `audio.language` in the manifest; wrong -> re-run with `--language`. Vietnamese word alignment
+  uses `nguyenvulebinh/wav2vec2-base-vi-vlsp2020` (downloaded on first use)
+- Writes `transcripts/<stem>.json` + `transcripts/<unit_id>.json` (segments with `shot_id`, silences, `audio` summary); adds `transcript_path` + `audio` to sources and units
+- Speaker labels only with `HF_TOKEN` set + pyannote diarization terms accepted on Hugging Face; otherwise agents assign speakers from frames
+- No audio stream -> skipped; ASR error -> silences kept, agents infer dialogue
+- No `.venv` -> skip this step (dialogue becomes `inferred`). One-time setup:
+  ```bash
+  curl -LsSf https://astral.sh/uv/install.sh | sh -s -- --no-modify-path
+  ~/.local/bin/uv venv .venv --python 3.12
+  ~/.local/bin/uv pip install --python .venv/bin/python whisperx \
+    --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
+  ```
 
-### Step 2 — Per-video analysis (subagent `video-analyst`, one per video)
-Frame images must NOT be read in the main context (30 frames ≈ 45k tokens). For each entry in `manifest.json`, launch one `video-analyst` agent **in parallel** with:
+### Step 3 — Unit analysis (`video-analyst`, one per unit, parallel)
 
-```
-frames_dir:  <videos[i].frames_dir>
-filename:    <videos[i].filename>
-duration_sec / sampling / frames_extracted from the manifest
-shots_path:  <videos[i].shots_path>  (shot mode only)
-fps_extracted: <videos[i].fps_extracted>  (uniform mode only)
-transcript_path: <videos[i].transcript_path>  (if Step 1b ran)
-output_path: <run_dir>/dna/<stem>.dna.json
-series_context: (optional) character visual signatures from earlier episodes
-```
-
-Each agent reads every frame, writes `<run_dir>/dna/<stem>.dna.json`, and returns a ≤250-word summary. Only the summaries enter the main context.
-
-### Step 3 — Series merge (subagent `series-merger`)
-After all analysts finish, launch one `series-merger` agent with:
+Frame images must NOT be read in the main context (40 frames ≈ 70k tokens). Launch all units in
+one message (background), passing from `manifest.units[i]`:
 
 ```
-dna_dir: <run_dir>/dna
-run_dir: <run_dir>
+unit_id, filename, t_start, t_end, duration_sec, chunk
+frames_dir, shots_path, transcript_path
+output_path: <run_dir>/dna/<unit_id>.dna.json
+context: (optional) known names + visual signatures
 ```
 
-It matches recurring characters across episodes by `visual_signature`, dedupes world rules, derives pacing/tone norms, and writes `<run_dir>/dna.json` + `<run_dir>/dna.md`. This series DNA is the input to `/skill-creator-from-dna`.
+Each returns a ≤250-word summary; only summaries enter the main context. If an agent fails, re-run
+that unit only. More than ~12 units: launch in waves of 8-12.
 
-### Step 4 — Hand off
-- First run / new series -> `/skill-creator-from-dna --dna <run_dir>/dna.json --name <slug>`
-- New viral idea for an existing skill -> `/skill-creator-from-dna --dna <run_dir>/dna.json --update <slug>`
+### Step 4 — Story merge (`story-merger`)
 
-Check `.claude/skills/write-story-*` and suggest which one to the user.
+- N ≤ 8 units: one call, `mode: final`, `inputs`: all `dna/*.dna.json` in order, `output`: run_dir
+- N > 8: `mode: part` per group of ≤8 consecutive units -> `parts/part_NN.json` (groups in parallel),
+  then one `mode: final` on the parts
 
-**No external API, no anthropic package needed** — agents read images natively.
+Produces `dna.json` (story + characters + craft, schema in `.claude/agents/story-merger.md`),
+`dna.md`, `story.md`.
 
-## DNA Output Format
+### Step 4b — Film analyst (`film-analyst`, text only)
 
-### `dna.json`
-```json
-{
-  "analysis_timestamp": "2025-10-01T14:30:00Z",
-  "videos_analyzed": [
-    {
-      "filename": "ep1.mp4",
-      "duration_sec": 91.3,
-      "frames_extracted": 30,
-      "fps_extracted": 1.0
-    }
-  ],
-  "narrative_structure": {
-    "setup_duration_sec": 5,
-    "setup_pct": 5,
-    "climax_timing_pct": 70,
-    "resolution_pct": 85,
-    "ending_hook": "Subscribe CTA with enthusiasm"
-  },
-  "pacing": {
-    "avg_shot_duration_sec": 6.1,
-    "cut_rhythm": "medium",
-    "transition_style": "straight cuts",
-    "fastest_shot_sec": 2.0,
-    "slowest_shot_sec": 12.0
-  },
-  "characters": [
-    {
-      "archetype": "Mentor/Expert",
-      "count": 1,
-      "screen_time_pct": 65,
-      "dialogue_style": "conversational, energetic"
-    },
-    {
-      "archetype": "Learner/Audience surrogate",
-      "count": 1,
-      "screen_time_pct": 35,
-      "dialogue_style": "curious, off-camera questions"
-    }
-  ],
-  "tone": {
-    "overall": "educational but engaging",
-    "formality": "casual",
-    "energy": "high",
-    "emotion": "inspiring"
-  },
-  "hooks": {
-    "opening_0_3s": "Direct address + enthusiastic hook question",
-    "midpoint": "Problem/objection raised + reassurance",
-    "closing": "CTA: subscribe + next tutorial teaser"
-  },
-  "visual_style": {
-    "color_palette": "warm professional tones",
-    "camera_movement": "mix static + dynamic pans",
-    "aspect_ratio": "16:9",
-    "lighting": "professional studio/natural"
-  },
-  "audio": {
-    "music_presence": true,
-    "music_style": "upbeat contemporary",
-    "voiceover": true,
-    "dialogue": true,
-    "sound_effects": true
-  }
-}
-```
+One call after the merge: `run_dir: <run_dir>`, `output: <run_dir>`. Reads dna.json, story.md,
+transcripts and unit files (no frames, cheap) and writes `film_analysis.md` + `film_analysis.json`:
+DNA audit (corrections with evidence), retention anatomy, reusable viral mechanisms, 1-2 min
+episode template, character engine, dialogue/VO craft, weaknesses not to copy.
+`/skill-creator-from-dna` uses it.
 
-## Examples
+### Step 5 — Review + hand off
 
-### Single video
-```bash
-python3 .claude/skills/analyze-videos/_analyze.py --input data/analyses/ep1.mp4
-```
-
-### More frames (fast-cut video, keep 1 frame per shot)
-```bash
-python3 .claude/skills/analyze-videos/_analyze.py \
-  --input data/analyses/ep1.mp4 --max-frames 45
-```
-
-### Too many / too few cuts detected
-```bash
-# fewer false cuts (bright, high-contrast footage)
---scene-threshold 0.2
-# catch more cuts (dark, low-contrast footage)
---scene-threshold 0.08
-```
-
-### Old uniform sampling
-```bash
-python3 .claude/skills/analyze-videos/_analyze.py \
-  --input data/analyses/ep1.mp4 --sampling uniform --max-frames 60 --fps 2.0
-```
-
-### Directory of videos
-```bash
-python3 .claude/skills/analyze-videos/_analyze.py --input data/samples/
-```
+Show the user: logline, act table, main/supporting characters, open questions, merge notes
+(uncertain character matches). Then:
+- New project -> `/skill-creator-from-dna --dna <run_dir>/dna.json --name <slug>`
+- More reference for an existing skill -> `/skill-creator-from-dna --dna <run_dir>/dna.json --update <slug>`
 
 ## Notes
 
-- Requires `ffmpeg` + `ffprobe` (check: `ffmpeg -version`)
-- Does NOT require `anthropic` package or API key
-- Shot detection + extraction: ~5–15s per 90s video (detection decodes the full video at 320px)
-- Vision analysis: Claude Code reads frames inline — no extra cost beyond session
-- All outputs reproducible in `data/analyses/<run-id>/`
+- Requires `ffmpeg` + `ffprobe`; audio step requires `.venv` (WhisperX)
+- No external API: agents read images natively
+- Reproducible: everything for a run lives in `data/analyses/<run-id>/`
+- Frames + transcripts are the evidence: DNA rules cite times/lines, so they can be checked

@@ -1,0 +1,103 @@
+{# Asset registry views: chars / locs / props / issues. Context: av (view_model), view, slug, sid #}
+
+{% macro gallery(key, kind, img, label) -%}
+{% set base = asset_base %}
+<div class="gallery">
+  {% for i in img.images %}{% set s = IMG_STATUS.get(i.status, (i.status, '')) %}
+  <figure class="{{ i.status }}">
+    <a href="{{ base }}/{{ i.file }}" target="_blank" title="Mở ảnh gốc"><img loading="lazy" src="{{ base }}/{{ i.file }}?w=480" alt="{{ label }}"></a>
+    <figcaption><span class="pill {{ s[1] }}">{{ s[0] }}</span> <span class="muted">{{ i.name }}</span>
+      <span class="actions">
+      {% if i.status != 'approved' %}<form method="post" action="/series/{{ slug }}/{{ sid }}/images/review">
+        <input type="hidden" name="file" value="{{ i.file }}"><input type="hidden" name="status" value="approved">
+        <input type="hidden" name="back" value="{{ view }}#{{ key }}"><button class="small good">Duyệt</button></form>{% endif %}
+      {% if i.status != 'rejected' %}<form method="post" action="/series/{{ slug }}/{{ sid }}/images/review">
+        <input type="hidden" name="file" value="{{ i.file }}"><input type="hidden" name="status" value="rejected">
+        <input type="hidden" name="back" value="{{ view }}#{{ key }}"><button class="small link">Bỏ</button></form>{% endif %}
+      </span></figcaption>
+  </figure>
+  {% else %}<p class="empty">Chưa có ảnh.</p>{% endfor %}
+</div>
+{% if img.error %}<p class="hint bad">Lần tạo gần nhất bị lỗi: {{ img.error[:200] }}</p>{% endif %}
+{% if not job and codex %}<form method="post" action="/series/{{ slug }}/{{ sid }}/images" class="inline"
+  {% if img.images %}onsubmit="return confirm('Tạo thêm một ảnh mới cho {{ label }}? Ảnh cũ vẫn giữ.')"{% endif %}>
+  <input type="hidden" name="kinds" value="{{ kind }}"><input type="hidden" name="ids" value="{{ key }}">
+  {% if img.images %}<input type="hidden" name="force" value="1">{% endif %}
+  <button class="small secondary">{{ 'Tạo ảnh khác' if img.images else 'Tạo ảnh' }}</button>
+  <span class="hint">khoảng 1–4 phút</span></form>{% endif %}
+{%- endmacro %}
+
+<div class="card doc">
+<p class="muted" style="margin-top:0">{{ av.file }} · ảnh: {{ av.counts.approved }} đã duyệt, {{ av.counts.draft }} chờ duyệt</p>
+
+{% if view == 'chars' %}
+  <h1>Nhân vật &amp; trang phục</h1>
+  {% if av.episodes %}<h2>Ai mặc gì ở tập nào</h2>
+  <table class="matrix"><tr><th>Nhân vật</th>{% for e in av.episodes %}<th>T{{ e }}</th>{% endfor %}</tr>
+    {% for c in av.reg.characters %}<tr><td><a href="#{{ c.char_id }}">{{ c.name }}</a></td>
+      {% for cell in c._matrix %}<td class="{{ 'muted' if not cell }}">{{ cell or '·' }}</td>{% endfor %}</tr>{% endfor %}</table>{% endif %}
+
+  {% for c in av.reg.characters %}
+  <section class="asset" id="{{ c.char_id }}">
+    <h2>{{ c.name }} <span class="muted" style="font-weight:400">{{ c.char_id }} · {{ c.tier }} · {{ c.age }} tuổi{{ ' (trông ' ~ c.apparent_age ~ ')' if c.apparent_age }}</span></h2>
+    <table class="kv">
+      {% if c.face is mapping %}<tr><th>Khuôn mặt</th><td>{% for k, val in c.face.items() if val %}{{ val }}{{ '; ' if not loop.last }}{% endfor %}</td></tr>
+      {% else %}<tr><th>Khuôn mặt</th><td>{{ c.face }}</td></tr>{% endif %}
+      <tr><th>Tóc</th><td>{{ c.hair }}</td></tr>
+      <tr><th>Dáng người</th><td>{% if c.body is mapping %}{% for k, val in c.body.items() if val %}{{ val }}{{ '; ' if not loop.last }}{% endfor %}{% else %}{{ c.body }}{% endif %}</td></tr>
+      {% if c.invariants %}<tr><th>Không bao giờ đổi</th><td>{{ c.invariants|join('; ') }}</td></tr>{% endif %}
+      {% if c.inferred %}<tr><th>Tự suy ra</th><td class="muted">{{ c.inferred|join(', ') }} (kịch bản không nói, Claude tự thêm để vẽ được)</td></tr>{% endif %}
+    </table>
+    <h3>Bảng nhân vật</h3>
+    {{ gallery(c.char_id, 'character', c._img, c.name) }}
+    {% for o in c.wardrobe %}
+    <h3 id="{{ o.outfit_id }}">Trang phục {{ o.outfit_id.removeprefix(c.char_id ~ '_') }}{{ ' — ' ~ o.name if o.name }}
+      <span class="muted" style="font-weight:400">{{ o.when }}{{ ' · tập ' ~ o.episodes|join(', ') if o.episodes }}</span></h3>
+    <p>{{ o.desc }}</p>
+    {% if o._default and not o._img.images %}<p class="hint">Trang phục mặc định đã có trong bảng nhân vật ở trên.</p>
+    {% else %}{{ gallery(o.outfit_id, 'outfit', o._img, c.name ~ ' ' ~ o.outfit_id) }}{% endif %}
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+{% elif view == 'locs' %}
+  <h1>Bối cảnh</h1>
+  {% for l in av.reg.locations %}
+  <section class="asset" id="{{ l.loc_id }}">
+    <h2>{{ l.name }} <span class="muted" style="font-weight:400">{{ l.loc_id }}{{ ' · bible ' ~ l.bible_id if l.bible_id }} · {{ l.int_ext }}{{ ' · nằm trong ' ~ l.parent if l.parent }}</span></h2>
+    <p>{{ l.desc }}</p>
+    <table class="kv">
+      {% if l.layout %}<tr><th>Bố trí</th><td>{{ l.layout }}</td></tr>{% endif %}
+      {% if l.fixed_elements %}<tr><th>Luôn có</th><td>{{ l.fixed_elements|join('; ') }}</td></tr>{% endif %}
+      {% if l.aliases %}<tr><th>Tên trong kịch bản</th><td class="muted">{{ l.aliases|join(' · ') }}</td></tr>{% endif %}
+      {% if l._scenes %}<tr><th>Cảnh</th><td class="muted">{{ l._scenes|join(', ') }}</td></tr>{% endif %}
+    </table>
+    {% for v in l.variants %}
+    <h3 id="{{ v.variant_id }}">{{ v.time_of_day }} <span class="muted" style="font-weight:400">{{ v.variant_id }}</span></h3>
+    <p class="hint">{{ v.lighting }}</p>
+    {{ gallery(v.variant_id, 'location', v._img, l.name ~ ' ' ~ v.time_of_day) }}
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+{% elif view == 'props' %}
+  <h1>Đạo cụ</h1>
+  {% for p in av.reg.props %}
+  <section class="asset" id="{{ p.prop_id }}">
+    <h2>{{ p.name }} <span class="muted" style="font-weight:400">{{ p.prop_id }}{{ ' · của ' ~ p.owner if p.owner }}{{ ' · tập ' ~ p.episodes|join(', ') if p.episodes }}</span></h2>
+    <p>{{ p.desc }}</p>
+    {{ gallery(p.prop_id, 'prop', p._img, p.name) }}
+  </section>
+  {% else %}<p class="empty">Chưa có đạo cụ.</p>{% endfor %}
+
+{% elif view == 'issues' %}
+  <h1>Lỗi liên tục giữa các tập</h1>
+  <p class="hint">Claude tìm thấy khi lập kho. Muốn sửa: gửi góp ý cho tập tương ứng (cột phải, chọn "Tài liệu" hoặc tập), kịch bản sẽ được viết lại thành phiên bản mới.</p>
+  {% if av.reg.issues %}<table>
+    <tr><th>Mức</th><th>Ở đâu</th><th>Vấn đề</th><th>Cách sửa</th></tr>
+    {% for i in av.reg.issues %}<tr>
+      <td><span class="pill {{ {'high':'bad','medium':'warn'}.get(i.severity, 'muted') }}">{{ {'high':'nặng','medium':'vừa','low':'nhẹ'}.get(i.severity, i.severity) }}</span></td>
+      <td>{{ i.where }}</td><td>{{ i.problem }}</td><td class="muted">{{ i.fix }}</td></tr>{% endfor %}
+  </table>{% else %}<p class="empty">Không có lỗi nào.</p>{% endif %}
+{% endif %}
+</div>

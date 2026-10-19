@@ -26,7 +26,7 @@ Use this skill after `/direct-video` to specify:
 ## Quick Start
 
 ```
-/production-design-brief --production-guide data/scripts/generated/production_guide.json \
+/production-design-brief --production-guide data/series/<slug>/<session-id>/final/shots/ep01/production_guide.json \
   --visual-reference "desaturated teal + warm amber practicals" \
   --production-quality "high-gloss AI photoreal"
 ```

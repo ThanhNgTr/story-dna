@@ -3,6 +3,9 @@
 Audio pass: transcript (WhisperX) + speaker labels (optional) + silence map.
 Runs after _analyze.py and adds audio info to the same manifest.
 
+Each SOURCE video is transcribed once (full context helps ASR), then segments are
+split into the analysis units (chunks) by time. Timestamps stay absolute.
+
 Needs the project venv (WhisperX + CPU torch):
     ~/.local/bin/uv venv .venv --python 3.12
     ~/.local/bin/uv pip install --python .venv/bin/python whisperx \
@@ -15,9 +18,12 @@ Speaker labels (diarization) turn on when HF_TOKEN is set and the pyannote model
 terms were accepted on Hugging Face. Without it: transcript only, speaker = null.
 
 Outputs:
-    <run_dir>/transcripts/<video>.json  - segments (start, end, text, speaker, shot_id, words) + silences
-    manifest.json                       - per video: transcript_path + audio summary
+    <run_dir>/transcripts/<stem>.json     - whole source: segments + silences + audio summary
+    <run_dir>/transcripts/<unit_id>.json  - same, cut to one unit's [t_start, t_end)
+    manifest.json                         - sources[] and units[] get transcript_path + audio
 """
+
+from __future__ import annotations
 
 import json
 import os
@@ -136,7 +142,8 @@ def build_transcript(raw: dict, find_shot) -> list[dict]:
     return segments
 
 
-def summarize(segments: list[dict], silences: list[dict], duration: float, raw: dict) -> dict:
+def summarize(segments: list[dict], silences: list[dict], t_start: float, t_end: float, raw: dict) -> dict:
+    duration = t_end - t_start
     speech_sec = sum(s["end"] - s["start"] for s in segments)
     words = sum(len(s["text"].split()) for s in segments)
     speakers = sorted({s["speaker"] for s in segments if s["speaker"]})
@@ -148,13 +155,20 @@ def summarize(segments: list[dict], silences: list[dict], duration: float, raw: 
         "speech_sec": round(speech_sec, 1),
         "speech_pct": round(speech_sec / duration * 100, 1) if duration else None,
         "words_per_min": round(words / duration * 60, 1) if duration else None,
-        "first_speech_sec": segments[0]["start"] if segments else None,
+        "first_speech_sec": round(segments[0]["start"] - t_start, 2) if segments else None,
         "speakers": speakers,
         "diarized": raw["diarized"],
         "word_aligned": raw["aligned"],
         "silence_count": len(silences),
         "silence_total_sec": round(sum(s["duration_sec"] for s in silences), 1),
     }
+
+
+def write_transcript(path: Path, header: dict, audio: dict, segments: list, silences: list) -> str:
+    path.write_text(json.dumps({**header, "created_at": datetime.utcnow().isoformat() + "Z",
+                                "audio": audio, "segments": segments, "silences": silences},
+                               indent=2, ensure_ascii=False))
+    return str(path.resolve())
 
 
 def main():
@@ -173,49 +187,62 @@ def main():
     run_dir = manifest_path.parent
     out_dir = run_dir / "transcripts"
     out_dir.mkdir(exist_ok=True)
+    units_by_id = {u["unit_id"]: u for u in manifest["units"]}
 
     transcriber = None
-    for video in manifest["videos"]:
-        name = Path(video["filename"]).stem
-        duration = video["duration_sec"]
-        print(f"Processing {video['filename']}...", file=sys.stderr)
+    for source in manifest["sources"]:
+        stem = source.get("source_id") or Path(source["filename"]).stem
+        duration = source["duration_sec"]
+        units = [units_by_id[uid] for uid in source["units"]]
+        print(f"Processing {source['filename']}...", file=sys.stderr)
 
-        if not has_audio(video["path"]):
+        if not has_audio(source["path"]):
             print("  No audio stream, skipping", file=sys.stderr)
-            video["audio"] = {"has_audio": False}
-            video["transcript_path"] = None
+            for target in [source] + units:
+                target["audio"] = {"has_audio": False}
+                target["transcript_path"] = None
             continue
 
-        silences = detect_silences(video["path"], duration)
+        silences = detect_silences(source["path"], duration)
         try:
             if transcriber is None:
                 transcriber = Transcriber(args.model, args.language, args.threads)
-            raw = transcriber.run(video["path"])
+            raw = transcriber.run(source["path"])
         except Exception as e:
             # Keep the silence map even if ASR fails; agents fall back to visual-only dialogue
             print(f"  Transcription failed ({str(e)[:300]})", file=sys.stderr)
             raw = None
 
-        segments = build_transcript(raw, shot_lookup(video.get("shots_path"))) if raw else []
-        audio = summarize(segments, silences, duration, raw) if raw else {
-            "has_audio": True, "transcribed": False, "silence_count": len(silences)}
-        if raw:
-            audio["transcribed"] = True
-            audio["model"] = args.model
+        segments = build_transcript(raw, shot_lookup(source.get("shots_path"))) if raw else []
 
-        transcript_path = out_dir / f"{name}.json"
-        transcript_path.write_text(json.dumps({
-            "filename": video["filename"],
-            "duration_sec": duration,
-            "created_at": datetime.utcnow().isoformat() + "Z",
-            "audio": audio,
-            "segments": segments,
-            "silences": silences,
-        }, indent=2, ensure_ascii=False))
-        video["transcript_path"] = str(transcript_path.resolve())
-        video["audio"] = audio
+        def audio_for(segs, sils, t_start, t_end):
+            if not raw:
+                return {"has_audio": True, "transcribed": False, "silence_count": len(sils)}
+            audio = summarize(segs, sils, t_start, t_end, raw)
+            audio.update({"transcribed": True, "model": args.model})
+            return audio
+
+        header = {"filename": source["filename"], "duration_sec": duration}
+        source["audio"] = audio_for(segments, silences, 0.0, duration)
+        source["transcript_path"] = write_transcript(out_dir / f"{stem}.json", header, source["audio"],
+                                                     segments, silences)
+
+        for unit in units:
+            if unit["unit_id"] == stem:  # unchunked: same file
+                unit["audio"], unit["transcript_path"] = source["audio"], source["transcript_path"]
+                continue
+            t_start, t_end = unit["t_start"], unit["t_end"]
+            unit_segs = [s for s in segments if t_start <= (s["start"] + s["end"]) / 2 < t_end]
+            unit_sils = [s for s in silences if s["end"] > t_start and s["start"] < t_end]
+            unit["audio"] = audio_for(unit_segs, unit_sils, t_start, t_end)
+            unit["transcript_path"] = write_transcript(
+                out_dir / f"{unit['unit_id']}.json",
+                {**header, "unit_id": unit["unit_id"], "t_start": t_start, "t_end": t_end},
+                unit["audio"], unit_segs, unit_sils)
+
+        audio = source["audio"]
         print(f"  {audio.get('segments', 0)} segments, {audio.get('words', 0)} words, "
-              f"speakers: {audio.get('speakers') or 'n/a'}", file=sys.stderr)
+              f"speakers: {audio.get('speakers') or 'n/a'}, {len(units)} unit(s)", file=sys.stderr)
 
     manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
     print(f"Updated {manifest_path}")

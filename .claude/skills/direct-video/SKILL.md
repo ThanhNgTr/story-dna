@@ -26,7 +26,7 @@ Use this skill when you have a `shotlist.json` from `/script-to-shotlist` and ne
 ## Quick Start
 
 ```
-/direct-video --shotlist data/scripts/generated/shotlist.json \
+/direct-video --shotlist data/series/<slug>/<session-id>/final/shots/ep01/shotlist.json \
   --tone "gothic thriller" \
   --visual-reference "desaturated teal + warm amber practicals"
 ```
@@ -37,19 +37,21 @@ Output: Scene-by-scene production notes with blocking, lighting, actor cues.
 
 ### Input Format
 
-The skill expects `shotlist.json` structured as:
+The skill reads `final/shots/epNN/shotlist.json` from `/script-to-shotlist` (field names below are
+the ones that skill writes; `prompts.json` next to it groups the shots into 10-15s clips):
 
 ```json
 {
   "script_title": "Episode Title",
-  "duration_sec": 90,
+  "total_duration_sec": 90,
   "aspect_ratio": "9:16",
   "shots": [
     {
-      "shot_id": "s01",
-      "timecode": "00:00-00:10",
+      "shot_number": 1,
+      "timecode_start": "00:00:00",
+      "timecode_end": "00:00:10",
       "duration_sec": 10,
-      "scene_name": "COLD OPEN",
+      "scene": "SC1",
       "location": "EXT. FOREST — NIGHT",
       "characters": ["char_01"],
       "action": "Protagonist running, terror",

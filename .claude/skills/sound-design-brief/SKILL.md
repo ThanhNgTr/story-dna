@@ -26,7 +26,7 @@ Use this skill after `/direct-video` to create:
 ## Quick Start
 
 ```
-/sound-design-brief --production-guide data/scripts/generated/production_guide.json \
+/sound-design-brief --production-guide data/series/<slug>/<session-id>/final/shots/ep01/production_guide.json \
   --tone "gothic thriller" \
   --music-style "low drones + sub-bass + tonal swells"
 ```

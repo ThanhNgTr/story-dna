@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}story-dna{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css?v=5">
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body>
+<header><a href="/">story-dna</a>
+<nav>{% set path = request.url.path %}
+  <a href="/" class="{{ 'active' if path == '/' }}">Tổng quan</a>
+  <a href="/analyze/new" class="{{ 'active' if path.startswith('/analyze') or path.startswith('/runs') }}">1 · Học video mẫu</a>
+  <a href="/series/new" class="{{ 'active' if path.startswith('/series') }}">2 · Viết series</a>
+</nav>
+<a href="/ui/" style="margin-left:auto;font-weight:500;color:var(--accent)">Giao diện mới →</a></header>
+<main class="{% block mainclass %}{% endblock %}">{% block content %}{% endblock %}</main>
+</body>
+</html>

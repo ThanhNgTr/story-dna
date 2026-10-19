@@ -1,0 +1,10 @@
+<div class="selected">
+  <b>{{ filename }}</b>{% if info.ok %} · {{ items|length }} video · tổng {{ info.minutes }} phút{% endif %}
+  {% if info.is_dir %}<ol style="margin:6px 0 0;padding-left:22px">{% for i in items %}<li>{{ i.name }}{% if i.dur %} <span class="muted">({{ (i.dur/60)|round(1) }} phút)</span>{% endif %}</li>{% endfor %}</ol>
+    <p class="hint">Các tập được học theo đúng thứ tự trên và ghép thành một mạch truyện.</p>{% endif %}
+  {% if info.ok %}<p class="hint">Ước tính khoảng <b>{{ info.est.total }}</b>: chép lời ~{{ info.est.transcribe }},
+    {{ info.est.units }} đoạn × Claude ~{{ info.est.analysts }}, gộp ~{{ info.est.merge }}. Có thể đóng tab, việc vẫn chạy nền.</p>{% endif %}
+  {% if existing %}<p class="warn">Đã từng học một phần hoặc toàn bộ:
+    {% for r in existing %}<a href="/runs/{{ r.id }}">{{ r.title or r.id }}</a> ({{ r.sources|join(', ') }}{% if not r.done %}, chưa xong{% endif %}) {% endfor %}
+    — nếu lần trước chỉ học thiếu tập thì cứ học lại cả thư mục.</p>{% endif %}
+</div>

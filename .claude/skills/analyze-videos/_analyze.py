@@ -1,27 +1,36 @@
 #!/usr/bin/env python3
 """
-Shot detection + frame extraction — no external API, only ffmpeg/ffprobe.
+Shot detection + chunking + frame extraction — no external API, only ffmpeg/ffprobe.
 
 Usage:
-    python3 _analyze.py --input video.mp4 --max-frames 30
-    python3 _analyze.py --input video.mp4 --sampling uniform --fps 1.0
+    python3 _analyze.py --input long_video.mp4
+    python3 _analyze.py --input videos/ --chunk-sec 120 --max-frames 40
+
+A long video (>= --chunk-min-video sec) is split into analysis units of ~--chunk-sec,
+each boundary placed on a real cut. Short videos are one unit each.
+All timestamps and shot ids are ABSOLUTE in the source video, so units can be
+stitched back into one timeline.
 
 Sampling modes:
     shot (default) - detect real cuts with ffmpeg scene scores (adaptive), measure
                      pacing from the cut list, extract 1+ keyframe per shot
-    uniform        - old behavior: frames evenly spaced over the video
+    uniform        - fallback: frames evenly spaced inside each unit
 
-Outputs:
-    data/analyses/<timestamp>/frames/<video>/   - frame_NNNN_tSSS.SS_sNNN.jpg
-    data/analyses/<timestamp>/shots/<video>.json - cut list + measured pacing
-    data/analyses/<timestamp>/manifest.json      - frame paths + video metadata
+Outputs (data/analyses/<timestamp>/):
+    manifest.json                    - sources (whole-video pacing) + units (frames, chunk window)
+    shots/<stem>.json                - full cut list + pacing for the whole source video
+    shots/<unit_id>.json             - cut list + pacing for one unit
+    frames/<unit_id>/frame_NNNN_tSSSS.SS_sNNNN.jpg
 
-After this, video-analyst agents read the frames and write per-video DNA.
+Next: _transcribe.py (audio), then one video-analyst agent per unit.
 """
+
+from __future__ import annotations
 
 import json
 import re
 import statistics
+import unicodedata
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -36,6 +45,7 @@ SCENE_RATIO = 3.0      # score / neighbor avg >= this is a cut (if score >= --sc
 SCENE_WINDOW_SEC = 1.0  # neighbor window on each side
 MIN_EXTRA_FRAME_GAP_SEC = 1.0  # don't add a 2nd+ frame to a shot if frames would be closer than this
 HOOK_WINDOW_SEC = 3.0
+VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
 
 
 def get_video_duration(video_path: str) -> float:
@@ -48,45 +58,6 @@ def get_video_duration(video_path: str) -> float:
         return float(probe.stdout.strip())
     except:
         return 0.0
-
-
-def clear_frames(output_dir: Path):
-    output_dir.mkdir(parents=True, exist_ok=True)
-    # Remove existing frames to avoid mixing old + new
-    for f in output_dir.glob("frame_*.jpg"):
-        f.unlink()
-
-
-def extract_frames_uniform(video_path: str, output_dir: str, duration: float,
-                           max_frames: int = 30, fps: float = 1.0):
-    output_dir = Path(output_dir)
-    clear_frames(output_dir)
-
-    frames_to_extract = min(max_frames, int(duration * fps)) if duration > 0 else max_frames
-    # When the cap would truncate the video, lower fps so frames span the whole duration
-    if duration > 0 and duration * fps > max_frames:
-        fps = max_frames / duration
-
-    frame_pattern = str(output_dir / "frame_%04d.jpg")
-    cmd = [
-        "ffmpeg", "-i", str(video_path),
-        "-vf", f"fps={fps:.6f}",
-        "-frames:v", str(frames_to_extract),
-        "-q:v", "2",
-        frame_pattern
-    ]
-
-    print(f"  Extracting {frames_to_extract} frames at {fps:.3f} fps (covers full {duration:.1f}s)...", file=sys.stderr)
-    result = subprocess.run(cmd, capture_output=True, timeout=300)
-    if result.returncode != 0:
-        print(f"  ffmpeg error: {result.stderr.decode()[:500]}", file=sys.stderr)
-        raise RuntimeError("ffmpeg failed")
-
-    frames = sorted(output_dir.glob("frame_*.jpg"))
-    frame_info = [{"path": str(f), "t_sec": round(i / fps, 2), "shot_id": None}
-                  for i, f in enumerate(frames)]
-    print(f"  Extracted {len(frames)} frames", file=sys.stderr)
-    return frame_info, fps
 
 
 def scene_scores(video_path: str, duration: float) -> tuple[list[float], list[float]]:
@@ -136,7 +107,7 @@ def build_shots(cuts: list[dict], duration: float) -> list[dict]:
         if end - start <= 0:
             continue
         shots.append({
-            "shot_id": f"s{len(shots) + 1:03d}",
+            "shot_id": f"s{len(shots) + 1:04d}",
             "t_start": round(start, 2),
             "t_end": round(end, 2),
             "duration_sec": round(end - start, 2),
@@ -145,7 +116,9 @@ def build_shots(cuts: list[dict], duration: float) -> list[dict]:
     return shots
 
 
-def measure_pacing(shots: list[dict], duration: float) -> dict:
+def measure_pacing(shots: list[dict], t_start: float, t_end: float) -> dict:
+    """Pacing for the shots inside [t_start, t_end). Times relative to t_start."""
+    duration = t_end - t_start
     durs = [s["duration_sec"] for s in shots]
     avg = sum(durs) / len(durs)
     buckets = {"<1s": 0, "1-2s": 0, "2-4s": 0, "4-8s": 0, ">=8s": 0}
@@ -156,7 +129,7 @@ def measure_pacing(shots: list[dict], duration: float) -> dict:
     # Avg shot length per quarter of the runtime: shows where the edit speeds up / slows down
     by_quarter = []
     for q in range(4):
-        q_start, q_end = duration * q / 4, duration * (q + 1) / 4
+        q_start, q_end = t_start + duration * q / 4, t_start + duration * (q + 1) / 4
         in_q = [s["duration_sec"] for s in shots if q_start <= (s["t_start"] + s["t_end"]) / 2 < q_end]
         by_quarter.append(round(sum(in_q) / len(in_q), 2) if in_q else None)
 
@@ -170,18 +143,31 @@ def measure_pacing(shots: list[dict], duration: float) -> dict:
         "slowest_shot_sec": round(max(durs), 2),
         "cuts_per_min": round((len(shots) - 1) / duration * 60, 1) if duration > 0 else None,
         "cut_rhythm": "fast" if avg < 2.5 else "medium" if avg < 5 else "slow",
-        "first_cut_sec": shots[1]["t_start"] if len(shots) > 1 else None,
-        "shots_in_first_3s": sum(1 for s in shots if s["t_start"] < HOOK_WINDOW_SEC),
+        "first_cut_sec": round(shots[1]["t_start"] - t_start, 2) if len(shots) > 1 else None,
+        "shots_in_first_3s": sum(1 for s in shots if s["t_start"] - t_start < HOOK_WINDOW_SEC),
         "shot_length_buckets": buckets,
         "avg_shot_sec_by_quarter": by_quarter,
     }
 
 
+def plan_chunks(cut_times: list[float], duration: float, chunk_sec: float) -> list[tuple[float, float]]:
+    """Split [0, duration] into ~chunk_sec windows, each boundary on the cut nearest the target."""
+    bounds = [0.0]
+    while duration - bounds[-1] > chunk_sec * 1.5:
+        target = bounds[-1] + chunk_sec
+        # Stay within 50% of the target so units keep a similar size
+        options = [c for c in cut_times if bounds[-1] + chunk_sec * 0.5 <= c <= bounds[-1] + chunk_sec * 1.5]
+        bounds.append(min(options, key=lambda c: abs(c - target)) if options else target)
+    bounds.append(duration)
+    return [(round(bounds[i], 2), round(bounds[i + 1], 2)) for i in range(len(bounds) - 1)]
+
+
 def allocate_frames(shots: list[dict], max_frames: int) -> list[tuple[dict, float]]:
     """Pick (shot, timestamp) pairs: 1 frame per shot, extra frames to long shots."""
     if len(shots) > max_frames:
-        # Too many shots: always keep the hook shots, spread the rest evenly by index
-        hook = [i for i, s in enumerate(shots) if s["t_start"] < HOOK_WINDOW_SEC][:max_frames]
+        # Too many shots: keep the opening shots, spread the rest evenly by index
+        unit_start = shots[0]["t_start"]
+        hook = [i for i, s in enumerate(shots) if s["t_start"] - unit_start < HOOK_WINDOW_SEC][:max_frames]
         rest = [i for i in range(len(shots)) if i not in hook]
         n = max_frames - len(hook)
         picked = [rest[round(k * (len(rest) - 1) / (n - 1))] for k in range(n)] if n > 1 else rest[:n]
@@ -206,48 +192,161 @@ def allocate_frames(shots: list[dict], max_frames: int) -> list[tuple[dict, floa
     return picks
 
 
-def grab_frame(video_path: str, t: float, out: Path):
-    cmd = ["ffmpeg", "-v", "error", "-ss", f"{t:.3f}", "-i", str(video_path),
-           "-frames:v", "1", "-q:v", "2", "-y", str(out)]
-    result = subprocess.run(cmd, capture_output=True, timeout=60)
-    if result.returncode != 0 or not out.exists():
-        raise RuntimeError(f"frame grab failed at {t}s: {result.stderr.decode()[:300]}")
+def grab_frame(video_path: str, t: float, out: Path) -> bool:
+    # Retry slightly earlier: timestamps at the very end of a file can land past the last frame
+    for attempt_t in (t, max(0.0, t - 0.5), max(0.0, t - 1.5)):
+        cmd = ["ffmpeg", "-v", "error", "-ss", f"{attempt_t:.3f}", "-i", str(video_path),
+               "-frames:v", "1", "-q:v", "2", "-y", str(out)]
+        result = subprocess.run(cmd, capture_output=True, timeout=60)
+        if result.returncode == 0 and out.exists() and out.stat().st_size > 0:
+            return True
+    print(f"  Frame grab failed at {t}s, skipped: {result.stderr.decode()[-200:]}", file=sys.stderr)
+    return False
 
 
-def extract_frames_by_shot(video_path: str, output_dir: str, duration: float, max_frames: int,
-                           scene_threshold: float, min_shot: float):
-    output_dir = Path(output_dir)
-    clear_frames(output_dir)
-
-    print(f"  Detecting shots...", file=sys.stderr)
-    times, scores = scene_scores(video_path, duration)
-    cuts = detect_cuts(times, scores, low=scene_threshold, min_shot=min_shot)
-    shots = build_shots(cuts, duration)
-    pacing = measure_pacing(shots, duration)
-    print(f"  {len(shots)} shots, avg {pacing['avg_shot_duration_sec']}s", file=sys.stderr)
-
-    picks = allocate_frames(shots, max_frames)
+def extract_frames(video_path: str, output_dir: Path, picks: list[tuple[dict | None, float]]) -> list[dict]:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Remove existing frames to avoid mixing old + new
+    for f in output_dir.glob("frame_*.jpg"):
+        f.unlink()
     frame_info = []
     for n, (shot, t) in enumerate(picks, start=1):
-        path = output_dir / f"frame_{n:04d}_t{t:07.2f}_{shot['shot_id']}.jpg"
-        frame_info.append({"path": str(path), "t_sec": t, "shot_id": shot["shot_id"]})
-
-    print(f"  Extracting {len(frame_info)} keyframes...", file=sys.stderr)
+        shot_id = shot["shot_id"] if shot else None
+        path = output_dir / f"frame_{n:04d}_t{t:07.2f}_{shot_id or 'u'}.jpg"
+        frame_info.append({"path": str(path), "t_sec": t, "shot_id": shot_id})
     with ThreadPoolExecutor(max_workers=4) as pool:
-        list(pool.map(lambda f: grab_frame(video_path, f["t_sec"], Path(f["path"])), frame_info))
+        ok = list(pool.map(lambda f: grab_frame(video_path, f["t_sec"], Path(f["path"])), frame_info))
+    return [f for f, good in zip(frame_info, ok) if good]
 
-    shots_with_frames = {f["shot_id"] for f in frame_info}
-    for s in shots:
-        s["has_frame"] = s["shot_id"] in shots_with_frames
-    return frame_info, shots, pacing
+
+def write_json(path: Path, data: dict) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2))
+    return str(path.resolve())
+
+
+def safe_id(name: str) -> str:
+    """ASCII id for folders/agents ("Tập 1" -> "Tap_1"): spaces and odd chars break globs and shell commands."""
+    name = name.replace("đ", "d").replace("Đ", "D")
+    name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return re.sub(r"[^A-Za-z0-9_-]+", "_", name).strip("_") or "video"
+
+
+def natural_key(path: str) -> list:
+    """Episode order: "Tap 2" before "Tap 10"."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", path)]
+
+
+def process_source(video_file: str, run_dir: Path, args) -> tuple[dict, list[dict]]:
+    stem = safe_id(Path(video_file).stem)
+    duration = get_video_duration(video_file)
+    source = {
+        "source_id": stem,
+        "filename": Path(video_file).name,
+        "path": str(Path(video_file).resolve()),
+        "duration_sec": round(duration, 1),
+    }
+    long_video = duration >= args.chunk_min_video
+
+    if args.audio_only:
+        # Transcript-only runs (e.g. checking produced episodes against their scripts): no shots, no frames
+        unit = {"unit_id": stem, "filename": source["filename"], "path": source["path"],
+                "source_duration_sec": source["duration_sec"], "chunk": None, "t_start": 0.0,
+                "t_end": round(duration, 2), "duration_sec": source["duration_sec"], "sampling": "none",
+                "frames_extracted": 0, "frames": [], "frame_paths": []}
+        source.update({"sampling": "none", "units": [stem]})
+        return source, [unit]
+
+    sampling = args.sampling
+    if sampling == "shot" and duration <= 0:
+        print("  Unknown duration, falling back to uniform sampling", file=sys.stderr)
+        sampling = "uniform"
+
+    shots = []
+    if sampling == "shot":
+        try:
+            print("  Detecting shots...", file=sys.stderr)
+            times, scores = scene_scores(video_file, duration)
+            shots = build_shots(detect_cuts(times, scores, args.scene_threshold, args.min_shot), duration)
+            pacing = measure_pacing(shots, 0.0, duration)
+            print(f"  {len(shots)} shots, avg {pacing['avg_shot_duration_sec']}s", file=sys.stderr)
+            source["pacing_measured"] = pacing
+            source["shots_path"] = write_json(run_dir / "shots" / f"{stem}.json", {
+                "filename": source["filename"],
+                "duration_sec": source["duration_sec"],
+                "params": {"scene_threshold": args.scene_threshold, "scene_hard": SCENE_HARD,
+                           "scene_ratio": SCENE_RATIO, "min_shot_sec": args.min_shot},
+                "pacing_measured": pacing,
+                "shots": shots,
+            })
+        except RuntimeError as e:
+            print(f"  {e}\n  Falling back to uniform sampling", file=sys.stderr)
+            sampling = "uniform"
+    source["sampling"] = sampling
+
+    cut_times = [s["t_start"] for s in shots[1:]]
+    windows = plan_chunks(cut_times, duration, args.chunk_sec) if long_video else [(0.0, round(duration, 2))]
+    print(f"  {len(windows)} unit(s)", file=sys.stderr)
+
+    units = []
+    for idx, (t_start, t_end) in enumerate(windows, start=1):
+        unit_id = f"{stem}_c{idx:02d}" if len(windows) > 1 else stem
+        unit = {
+            "unit_id": unit_id,
+            "filename": source["filename"],
+            "path": source["path"],
+            "source_duration_sec": source["duration_sec"],
+            "chunk": {"index": idx, "count": len(windows), "t_start": t_start, "t_end": t_end}
+                     if len(windows) > 1 else None,
+            "t_start": t_start,
+            "t_end": t_end,
+            "duration_sec": round(t_end - t_start, 1),
+            "sampling": sampling,
+        }
+        if sampling == "shot":
+            unit_shots = [s for s in shots if s["t_start"] >= t_start - 0.01 and s["t_end"] <= t_end + 0.01]
+            picks = allocate_frames(unit_shots, args.max_frames)
+            unit_pacing = measure_pacing(unit_shots, t_start, t_end)
+            picked_ids = {s["shot_id"] for s, _ in picks}
+            for s in unit_shots:
+                s["has_frame"] = s["shot_id"] in picked_ids
+            unit["pacing_measured"] = unit_pacing
+            unit["shots_path"] = write_json(run_dir / "shots" / f"{unit_id}.json", {
+                "unit_id": unit_id, "filename": source["filename"],
+                "t_start": t_start, "t_end": t_end,
+                "pacing_measured": unit_pacing, "shots": unit_shots,
+            })
+        else:
+            n = max(1, min(args.max_frames, int((t_end - t_start) * args.fps)))
+            picks = [(None, round(t_start + (k + 0.5) * (t_end - t_start) / n, 2)) for k in range(n)]
+            unit["fps_extracted"] = round(n / (t_end - t_start), 4)
+
+        print(f"  {unit_id}: {t_start:.1f}-{t_end:.1f}s, extracting {len(picks)} frames...", file=sys.stderr)
+        frames = extract_frames(video_file, run_dir / "frames" / unit_id, picks)
+        unit.update({
+            "frames_extracted": len(frames),
+            "frames_dir": str((run_dir / "frames" / unit_id).resolve()),
+            "frames": frames,
+            "frame_paths": [f["path"] for f in frames],
+        })
+        units.append(unit)
+
+    source["units"] = [u["unit_id"] for u in units]
+    return source, units
 
 
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Extract frames for Claude Code Vision analysis")
+    parser = argparse.ArgumentParser(description="Detect shots, split long videos, extract frames")
     parser.add_argument("--input", required=True, help="Video file or directory")
-    parser.add_argument("--max-frames", type=int, default=30, help="Max frames to extract per video")
+    parser.add_argument("--max-frames", type=int, default=40, help="Max frames per unit")
+    parser.add_argument("--chunk-sec", type=float, default=120,
+                        help="Target unit length for long videos (boundaries snap to cuts)")
+    parser.add_argument("--chunk-min-video", type=float, default=240,
+                        help="Videos at least this long get split into units")
+    parser.add_argument("--audio-only", action="store_true",
+                        help="No shot detection or frames: one unit per video, for _transcribe.py only")
     parser.add_argument("--sampling", choices=["shot", "uniform"], default="shot",
                         help="shot = keyframes per detected shot (default); uniform = evenly spaced")
     parser.add_argument("--fps", type=float, default=1.0, help="Frames per second (uniform mode only)")
@@ -263,10 +362,8 @@ def main():
     if input_path.is_file():
         video_files = [str(input_path)]
     elif input_path.is_dir():
-        exts = ["*.mp4", "*.mov", "*.mkv", "*.avi"]
-        video_files = []
-        for ext in exts:
-            video_files.extend([str(f) for f in input_path.glob(ext)])
+        video_files = sorted((str(f) for f in input_path.rglob("*") if f.suffix.lower() in VIDEO_EXTS),
+                             key=natural_key)
     else:
         print(f"Error: {input_path} not found", file=sys.stderr)
         sys.exit(1)
@@ -282,73 +379,30 @@ def main():
 
     print(f"Run: {run_dir}", file=sys.stderr)
 
-    # Extract frames per video
     manifest = {
         "run_id": run_id,
         "created_at": datetime.utcnow().isoformat() + "Z",
-        "videos": []
+        "params": {"max_frames": args.max_frames, "chunk_sec": args.chunk_sec,
+                   "chunk_min_video": args.chunk_min_video, "sampling": args.sampling},
+        "sources": [],
+        "units": [],
     }
 
     for video_file in video_files:
-        name = Path(video_file).stem
         print(f"Processing {Path(video_file).name}...", file=sys.stderr)
-
-        frames_dir = run_dir / "frames" / name
-        duration = get_video_duration(video_file)
-        entry = {
-            "filename": Path(video_file).name,
-            "path": str(Path(video_file).resolve()),
-            "duration_sec": round(duration, 1),
-        }
-
-        sampling = args.sampling
-        if sampling == "shot" and duration <= 0:
-            print("  Unknown duration, falling back to uniform sampling", file=sys.stderr)
-            sampling = "uniform"
-        if sampling == "shot":
-            try:
-                frames, shots, pacing = extract_frames_by_shot(
-                    video_file, str(frames_dir), duration, args.max_frames,
-                    args.scene_threshold, args.min_shot)
-                shots_path = run_dir / "shots" / f"{name}.json"
-                shots_path.parent.mkdir(parents=True, exist_ok=True)
-                shots_path.write_text(json.dumps({
-                    "filename": entry["filename"],
-                    "duration_sec": entry["duration_sec"],
-                    "params": {"scene_threshold": args.scene_threshold, "scene_hard": SCENE_HARD,
-                               "scene_ratio": SCENE_RATIO, "min_shot_sec": args.min_shot},
-                    "pacing_measured": pacing,
-                    "shots": shots,
-                }, indent=2))
-                entry.update({
-                    "sampling": "shot",
-                    "shots_path": str(shots_path.resolve()),
-                    "pacing_measured": pacing,
-                })
-            except RuntimeError as e:
-                print(f"  {e}\n  Falling back to uniform sampling", file=sys.stderr)
-                sampling = "uniform"
-        if sampling == "uniform":
-            frames, effective_fps = extract_frames_uniform(
-                video_file, str(frames_dir), duration, max_frames=args.max_frames, fps=args.fps)
-            entry.update({"sampling": "uniform", "fps_extracted": round(effective_fps, 4)})
-
-        entry.update({
-            "frames_extracted": len(frames),
-            "frames_dir": str(frames_dir.resolve()),
-            "frames": frames,
-            "frame_paths": [f["path"] for f in frames],
-        })
-        manifest["videos"].append(entry)
+        source, units = process_source(video_file, run_dir, args)
+        manifest["sources"].append(source)
+        manifest["units"].extend(units)
 
     # Write manifest
     manifest_path = run_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
-    print(f"\nDone. {sum(len(v['frame_paths']) for v in manifest['videos'])} frames extracted.")
+    print(f"\nDone. {len(manifest['units'])} unit(s), "
+          f"{sum(u['frames_extracted'] for u in manifest['units'])} frames extracted.")
     print(f"Output: {run_dir}")
     print(f"Manifest: {manifest_path}")
-    print(f"\nNext step: Claude Code reads frames from manifest and writes dna.json")
+    print(f"\nNext step: _transcribe.py on the manifest, then one video-analyst per unit")
 
     # Print manifest path to stdout for Claude Code to pick up
     print(str(manifest_path))

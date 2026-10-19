@@ -1,0 +1,367 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - link [ref=e6] [cursor=pointer]:
+          - /url: /ui
+        - navigation [ref=e13]:
+          - link "Dự án" [ref=e14] [cursor=pointer]:
+            - /url: /ui
+          - link "Học video mẫu" [ref=e15] [cursor=pointer]:
+            - /url: /ui/videos/new
+          - link "Hướng dẫn" [ref=e16] [cursor=pointer]:
+            - /url: /ui/guide
+        - generic [ref=e17]:
+          - button "Series mới" [ref=e18] [cursor=pointer]
+          - button "Việc" [ref=e19]
+          - 'button "Giao diện: Theo máy" [ref=e20]'
+    - main [ref=e21]:
+      - generic [ref=e22]:
+        - generic [ref=e23]: Hướng dẫn
+        - heading "story-dna làm gì?" [level=1] [ref=e27]
+        - paragraph [ref=e28]: "Học cách kể chuyện từ một bộ phim bạn thích, rồi dùng đúng cách kể đó để biến ý tưởng của bạn thành một series phim ngắn dọc 10–20 tập (mỗi tập 1–2 phút): có cốt truyện trọn vẹn, nhân vật, thoại, bối cảnh, và sẵn sàng đem đi làm video."
+      - generic [ref=e29]:
+        - heading "Toàn bộ quy trình" [level=2] [ref=e30]
+        - list [ref=e31]:
+          - listitem [ref=e32]:
+            - 'link "1 Học video mẫu Hiếm: mỗi video mẫu một lần" [ref=e33] [cursor=pointer]':
+              - /url: "#buoc-1"
+              - generic [ref=e34]: "1"
+              - generic [ref=e40]: Học video mẫu
+              - generic [ref=e41]: "Hiếm: mỗi video mẫu một lần"
+          - listitem [ref=e44]:
+            - 'link "2 Tạo phong cách viết Hiếm: mỗi video mẫu một lần" [ref=e45] [cursor=pointer]':
+              - /url: "#buoc-2"
+              - generic [ref=e46]: "2"
+              - generic [ref=e51]: Tạo phong cách viết
+              - generic [ref=e52]: "Hiếm: mỗi video mẫu một lần"
+          - listitem [ref=e55]:
+            - 'link "3 Viết series: ý tưởng → bible → outline Mỗi series một lần" [ref=e56] [cursor=pointer]':
+              - /url: "#buoc-3"
+              - generic [ref=e57]: "3"
+              - generic [ref=e61]: "Viết series: ý tưởng → bible → outline"
+              - generic [ref=e62]: Mỗi series một lần
+          - listitem [ref=e65]:
+            - link "4 Duyệt outline, viết tập, góp ý Lặp đến khi bạn hài lòng" [ref=e66] [cursor=pointer]:
+              - /url: "#buoc-4"
+              - generic [ref=e67]: "4"
+              - generic [ref=e71]: Duyệt outline, viết tập, góp ý
+              - generic [ref=e72]: Lặp đến khi bạn hài lòng
+          - listitem [ref=e75]:
+            - 'link "5 Ngoại hình: nhân vật, trang phục, bối cảnh Sau outline, cập nhật sau khi viết tập" [ref=e76] [cursor=pointer]':
+              - /url: "#buoc-5"
+              - generic [ref=e77]: "5"
+              - generic [ref=e81]: "Ngoại hình: nhân vật, trang phục, bối cảnh"
+              - generic [ref=e82]: Sau outline, cập nhật sau khi viết tập
+          - listitem [ref=e85]:
+            - link "6 Sản xuất video Sau khi chốt season" [ref=e86] [cursor=pointer]:
+              - /url: "#buoc-6"
+              - generic [ref=e87]: "6"
+              - generic [ref=e94]: Sản xuất video
+              - generic [ref=e95]: Sau khi chốt season
+        - generic [ref=e96]:
+          - generic [ref=e97]: "Bước 1–2: làm một lần cho mỗi video mẫu."
+          - generic [ref=e98]: "Bước 3–4: mỗi series, lặp góp ý đến khi hài lòng."
+          - generic [ref=e99]: "Bước 5–6: chuẩn bị và làm video."
+      - generic [ref=e100]:
+        - heading "Từng bước" [level=2] [ref=e101]
+        - generic [ref=e103]:
+          - generic [ref=e104]:
+            - generic [ref=e105]: "1"
+            - generic [ref=e106]:
+              - heading "Học video mẫu" [level=3] [ref=e107]
+              - paragraph [ref=e112]: Đưa vào một video dài (nhiều tập ghép liền) của bộ phim bạn muốn học cách kể. Máy bóc ra cốt truyện và tay nghề làm phim của nó.
+            - button "Học video mẫu" [ref=e113] [cursor=pointer]
+          - generic [ref=e114]:
+            - generic [ref=e115]:
+              - generic [ref=e116]: Bạn làm
+              - list [ref=e117]:
+                - listitem [ref=e118]: Chọn file video trên máy
+                - listitem [ref=e120]: Chọn ngôn ngữ thoại (hoặc để tự nhận)
+            - generic [ref=e122]:
+              - generic [ref=e123]: Claude làm
+              - list [ref=e124]:
+                - listitem [ref=e125]: Dò điểm cắt cảnh, chia video thành đoạn ~2 phút
+                - listitem [ref=e127]: Chép lời thoại (chạy trên máy, không gửi đi đâu)
+                - listitem [ref=e129]: Xem từng đoạn, ghi lại cảnh, nhân vật, thoại, góc máy, màu, âm thanh
+                - listitem [ref=e131]: Ghép thành một câu chuyện liền mạch
+                - listitem [ref=e133]: Nhà phân tích phim soát lỗi và giải thích vì sao video cuốn người xem
+            - generic [ref=e135]:
+              - generic [ref=e136]: Kết quả
+              - list [ref=e137]:
+                - listitem [ref=e138]: Cốt truyện, các hồi, các bí ẩn và lúc chúng được giải
+                - listitem [ref=e140]: "Nhân vật chính / phụ: muốn gì, cần gì, giọng nói, ngoại hình"
+                - listitem [ref=e142]: "Luật kể chuyện: nhịp cắt, góc máy, màu, âm thanh, cách móc câu cuối tập"
+          - generic [ref=e144]:
+            - generic [ref=e145]: "Thời gian: 20–60 phút (video 30 phút ≈ 40 phút)"
+            - generic [ref=e146]: "Tần suất: Hiếm: mỗi video mẫu một lần"
+        - generic [ref=e150]:
+          - generic [ref=e151]:
+            - generic [ref=e152]: "2"
+            - generic [ref=e153]:
+              - heading "Tạo phong cách viết" [level=3] [ref=e154]
+              - paragraph [ref=e158]: Biến những gì học được thành một "phong cách viết" dùng lại được. Phong cách giữ CÁCH kể (nhịp, cấu trúc, kiểu nhân vật), không giữ nội dung (tên, nơi chốn, sự kiện).
+          - generic [ref=e159]:
+            - generic [ref=e160]:
+              - generic [ref=e161]: Bạn làm
+              - list [ref=e162]:
+                - listitem [ref=e163]: Bấm tạo phong cách ở trang video mẫu, đặt tên
+            - generic [ref=e165]:
+              - generic [ref=e166]: Claude làm
+              - list [ref=e167]:
+                - listitem [ref=e168]: Rút cốt truyện mẫu thành khung các nhịp truyện theo % độ dài season
+                - listitem [ref=e170]: Viết khuôn vai nhân vật, luật kể chuyện, nhịp dựng, hình ảnh, âm thanh
+                - listitem [ref=e172]: Gắn yêu cầu cốt truyện bắt buộc (xem bên dưới)
+            - generic [ref=e174]:
+              - generic [ref=e175]: Kết quả
+              - list [ref=e176]:
+                - listitem [ref=e177]: "Một phong cách viết (ví dụ: \"hollow-pine\") dùng cho nhiều series"
+          - generic [ref=e179]:
+            - generic [ref=e180]: "Thời gian: 10–20 phút"
+            - generic [ref=e181]: "Tần suất: Hiếm: mỗi video mẫu một lần"
+        - generic [ref=e185]:
+          - generic [ref=e186]:
+            - generic [ref=e187]: "3"
+            - generic [ref=e188]:
+              - 'heading "Viết series: ý tưởng → bible → outline" [level=3] [ref=e189]'
+              - paragraph [ref=e192]: Đưa ý tưởng của bạn, dù chỉ là vài dòng rời rạc. Claude kể nó theo phong cách đã chọn và dừng lại cho bạn đọc trước khi viết tập.
+            - button "Series mới" [ref=e193] [cursor=pointer]
+          - generic [ref=e194]:
+            - generic [ref=e195]:
+              - generic [ref=e196]: Bạn làm
+              - list [ref=e197]:
+                - listitem [ref=e198]: "Dán ý tưởng: tóm tắt, vài cảnh, vài câu thoại, cái kết bạn muốn..."
+                - listitem [ref=e200]: Chọn phong cách, số tập (10–20), độ dài mỗi tập (60–120 giây)
+            - generic [ref=e202]:
+              - generic [ref=e203]: Claude làm
+              - list [ref=e204]:
+                - listitem [ref=e205]: "Ghép ý tưởng: ý nào của bạn ứng với nhịp truyện nào; chỗ trống thì sáng tác thêm"
+                - listitem [ref=e207]: "Viết series bible: thế giới, luật, bối cảnh, nhân vật, bí ẩn và lời giải, cái kết"
+                - listitem [ref=e209]: "Viết outline: từng tập làm gì, hé lộ gì, cao trào ở đâu, kết tập ra sao"
+                - listitem [ref=e211]: Tự kiểm tra cốt truyện, rồi tự biên tập chấm chiều sâu
+            - generic [ref=e213]:
+              - generic [ref=e214]: Kết quả
+              - list [ref=e215]:
+                - listitem [ref=e216]: Ghép ý tưởng, Series bible, Outline
+                - listitem [ref=e218]: Kết quả kiểm tra cốt truyện và bản biên tập
+          - generic [ref=e220]:
+            - generic [ref=e221]: "Thời gian: 10–25 phút"
+            - generic [ref=e222]: "Tần suất: Mỗi series một lần"
+        - generic [ref=e226]:
+          - generic [ref=e227]:
+            - generic [ref=e228]: "4"
+            - generic [ref=e229]:
+              - heading "Duyệt outline, viết tập, góp ý" [level=3] [ref=e230]
+              - paragraph [ref=e233]: Bạn đọc outline. Chưa ổn thì góp ý bằng lời; ổn thì duyệt để Claude viết từng tập. Sau đó đọc từng tập như đọc truyện, góp ý hoặc sửa trực tiếp, rồi chốt season.
+          - generic [ref=e234]:
+            - generic [ref=e235]:
+              - generic [ref=e236]: Bạn làm
+              - list [ref=e237]:
+                - listitem [ref=e238]: Đọc outline, bản biên tập; góp ý hoặc bấm "Duyệt outline"
+                - listitem [ref=e240]: Đọc từng tập; bôi một đoạn để góp ý, hoặc "Sửa trực tiếp"
+                - listitem [ref=e242]: "Ở trang Biên tập: chọn các điểm cần sửa, bấm \"Áp dụng\""
+                - listitem [ref=e244]: "Khi mọi tập ổn: \"Chốt season\""
+            - generic [ref=e246]:
+              - generic [ref=e247]: Claude làm
+              - list [ref=e248]:
+                - listitem [ref=e249]: "Viết các tập song song: cảnh, thời gian, hành động, thoại, góc máy, ánh sáng, âm thanh"
+                - listitem [ref=e251]: "Sửa theo góp ý: góp ý chung thì sửa vào phong cách (series sau cũng hưởng), góp ý riêng chỉ sửa series này"
+                - listitem [ref=e253]: Mỗi lần sửa là một phiên bản mới; bản cũ luôn được giữ để so sánh
+            - generic [ref=e255]:
+              - generic [ref=e256]: Kết quả
+              - list [ref=e257]:
+                - listitem [ref=e258]: Kịch bản từng tập (đọc trên web, tải file .md)
+                - listitem [ref=e260]: Bản cuối trong final/ khi chốt season
+          - generic [ref=e262]:
+            - generic [ref=e263]: "Thời gian: Viết 10 tập ≈ 20–30 phút; mỗi lần góp ý 3–10 phút"
+            - generic [ref=e264]: "Tần suất: Lặp đến khi bạn hài lòng"
+        - generic [ref=e268]:
+          - generic [ref=e269]:
+            - generic [ref=e270]: "5"
+            - generic [ref=e271]:
+              - 'heading "Ngoại hình: nhân vật, trang phục, bối cảnh" [level=3] [ref=e272]'
+              - paragraph [ref=e275]: Giữ mỗi nhân vật cùng một khuôn mặt, đúng trang phục, mỗi bối cảnh cùng một cách bày trí qua mọi tập. Có ảnh tham chiếu để làm video.
+          - generic [ref=e276]:
+            - generic [ref=e277]:
+              - generic [ref=e278]: Bạn làm
+              - list [ref=e279]:
+                - listitem [ref=e280]: "Mở nhóm \"Ngoại hình\": xem, sửa mô tả"
+                - listitem [ref=e282]: Tạo ảnh tham chiếu, duyệt hoặc bỏ từng ảnh
+            - generic [ref=e284]:
+              - generic [ref=e285]: Claude làm
+              - list [ref=e286]:
+                - listitem [ref=e287]: "Lập kho: mặt, tóc, dáng; trang phục theo từng tập; bối cảnh và biến thể ngày/đêm; đạo cụ"
+                - listitem [ref=e289]: Báo lỗi liên tục (ví dụ áo đổi màu giữa hai cảnh liền nhau)
+                - listitem [ref=e291]: Codex vẽ ảnh tham chiếu (bằng tài khoản ChatGPT của bạn)
+            - generic [ref=e293]:
+              - generic [ref=e294]: Kết quả
+              - list [ref=e295]:
+                - listitem [ref=e296]: Kho nhân vật & bối cảnh
+                - listitem [ref=e298]: Ảnh tham chiếu đã duyệt
+          - generic [ref=e300]:
+            - generic [ref=e301]: "Thời gian: Lập kho 5–15 phút; ảnh 1–4 phút mỗi ảnh (cả series ≈ 1 giờ)"
+            - generic [ref=e302]: "Tần suất: Sau outline, cập nhật sau khi viết tập"
+        - generic [ref=e306]:
+          - generic [ref=e307]:
+            - generic [ref=e308]: "6"
+            - generic [ref=e309]:
+              - heading "Sản xuất video" [level=3] [ref=e310]
+              - paragraph [ref=e316]: Chia mỗi tập đã chốt thành các shot 1–5 giây, mỗi shot một prompt video tự đủ nghĩa, rồi tải gói đem sang Higgsfield.
+          - generic [ref=e317]:
+            - generic [ref=e318]:
+              - generic [ref=e319]: Bạn làm
+              - list [ref=e320]:
+                - listitem [ref=e321]: Bấm "Tạo prompt video" (trang Tổng quan hoặc trang tập)
+                - listitem [ref=e323]: Bấm "Tải gói video" ở từng tập
+                - listitem [ref=e325]: "Với mỗi shot: upload ảnh tham chiếu, dán prompt, tải clip về"
+                - listitem [ref=e327]: Ghép clip theo thứ tự, thêm phụ đề
+            - generic [ref=e329]:
+              - generic [ref=e330]: Claude làm
+              - list [ref=e331]:
+                - listitem [ref=e332]: Chia shot, viết prompt tiếng Anh cho model video (thoại giữ nguyên ngôn ngữ)
+                - listitem [ref=e334]: Gắn ảnh tham chiếu đã duyệt cho từng shot
+            - generic [ref=e336]:
+              - generic [ref=e337]: Kết quả
+              - list [ref=e338]:
+                - listitem [ref=e339]: "Gói zip mỗi tập: prompt từng shot, ảnh tham chiếu, phụ đề .srt, danh sách dựng .csv"
+          - generic [ref=e341]:
+            - generic [ref=e342]: "Thời gian: 3–8 phút mỗi tập"
+            - generic [ref=e343]: "Tần suất: Sau khi chốt season"
+        - generic [ref=e350]:
+          - generic [ref=e351]: Viết tiếp sau khi đã quay
+          - paragraph [ref=e352]: "Đã làm vài tập thành video? Đưa các video đó vào, Claude đối chiếu với kịch bản (cái đã lên hình được giữ), cập nhật bible, rồi viết outline cho các tập tiếp theo: theo hướng cũ hoặc mở một mạch truyện mới. Làm được cả với series không viết ở đây."
+          - link "Viết tiếp series" [ref=e353] [cursor=pointer]:
+            - /url: /series/continue
+      - generic [ref=e356]:
+        - heading "Hai lớp kiểm tra chất lượng kịch bản" [level=2] [ref=e357]
+        - paragraph [ref=e358]: Chạy tự động sau khi có outline. Kết quả nằm ở trang Tổng quan và trang Biên tập của series.
+        - generic [ref=e359]:
+          - generic [ref=e360]:
+            - 'heading "Kiểm tra cốt truyện: có đủ chưa?" [level=3] [ref=e361]'
+            - paragraph [ref=e365]: Máy tự kiểm trong vài giây. Thiếu gì, Claude bổ sung (bấm "Sửa tự động").
+            - list [ref=e366]:
+              - listitem [ref=e367]:
+                - generic [ref=e368]: "1."
+                - text: Trọn vẹn từ mở đầu đến kết, kết có hậu hoặc kết buồn, xảy ra ngay trong tập cuối
+              - listitem [ref=e369]:
+                - generic [ref=e370]: "2."
+                - text: Có cốt truyện chính với một câu hỏi lớn
+              - listitem [ref=e371]:
+                - generic [ref=e372]: "3."
+                - text: Có nhân vật chính và các nhân vật phụ gắn với nhân vật chính
+              - listitem [ref=e373]:
+                - generic [ref=e374]: "4."
+                - text: Mỗi tập có lời thoại của ít nhất hai nhân vật
+              - listitem [ref=e375]:
+                - generic [ref=e376]: "5."
+                - text: Bối cảnh rõ ràng và thay đổi qua các tập
+              - listitem [ref=e377]:
+                - generic [ref=e378]: "6."
+                - text: Có cao trào giữa và cao trào cuối, không quá 3 tập liền không có cao trào
+              - listitem [ref=e379]:
+                - generic [ref=e380]: "7."
+                - text: Bí mật, bí ẩn có manh mối trước và lời giải sau
+          - generic [ref=e381]:
+            - 'heading "Biên tập: có hay không?" [level=3] [ref=e382]'
+            - paragraph [ref=e385]: Claude đọc như biên tập viên, chấm 1–5 mỗi tiêu chí kèm dẫn chứng, đề xuất cách sửa; bạn chọn điểm nào thì sửa điểm đó.
+            - list [ref=e386]:
+              - listitem [ref=e387]:
+                - generic [ref=e388]: "1."
+                - text: Chủ đề
+              - listitem [ref=e389]:
+                - generic [ref=e390]: "2."
+                - text: Chiều sâu nhân vật chính
+              - listitem [ref=e391]:
+                - generic [ref=e392]: "3."
+                - text: Nhân vật phụ
+              - listitem [ref=e393]:
+                - generic [ref=e394]: "4."
+                - text: Phản diện / lực cản
+              - listitem [ref=e395]:
+                - generic [ref=e396]: "5."
+                - text: Lời thoại và ẩn ý
+              - listitem [ref=e397]:
+                - generic [ref=e398]: "6."
+                - text: Gài và trả, cú lật công bằng
+              - listitem [ref=e399]:
+                - generic [ref=e400]: "7."
+                - text: Mức cược và leo thang
+              - listitem [ref=e401]:
+                - generic [ref=e402]: "8."
+                - text: Cảm xúc, cảnh có bước ngoặt
+              - listitem [ref=e403]:
+                - generic [ref=e404]: "9."
+                - text: Độc đáo, tránh sáo mòn
+            - paragraph [ref=e405]: Đạt khi mọi tiêu chí từ 3 trở lên và trung bình từ 3.5.
+      - generic [ref=e406]:
+        - heading "Thuật ngữ" [level=2] [ref=e407]
+        - generic [ref=e408]:
+          - generic [ref=e409]:
+            - term [ref=e410]: Video mẫu
+            - definition [ref=e411]: Bộ phim bạn muốn học cách kể. Chỉ học cách kể, không chép nội dung.
+          - generic [ref=e412]:
+            - term [ref=e413]: DNA
+            - definition [ref=e414]: "Mọi thứ học được từ video mẫu: cốt truyện, nhân vật, luật kể chuyện, kèm dẫn chứng (thời điểm, câu thoại)."
+          - generic [ref=e415]:
+            - term [ref=e416]: Phong cách viết
+            - definition [ref=e417]: Bộ luật viết rút từ DNA. Một phong cách dùng được cho nhiều series khác nhau.
+          - generic [ref=e418]:
+            - term [ref=e419]: Series bible
+            - definition [ref=e420]: "Sổ tay của series: thế giới, luật, bối cảnh, nhân vật, bí ẩn và lời giải, cái kết."
+          - generic [ref=e421]:
+            - term [ref=e422]: Outline
+            - definition [ref=e423]: "Dàn ý cả season: mỗi tập một dòng, tập đó làm gì, hé lộ gì, kết ra sao."
+          - generic [ref=e424]:
+            - term [ref=e425]: Phiên bản (v1, v2...)
+            - definition [ref=e426]: Mỗi lần sửa tạo bản mới. Bản cũ không bao giờ bị ghi đè, luôn so sánh được.
+          - generic [ref=e427]:
+            - term [ref=e428]: Chốt season
+            - definition [ref=e429]: Lưu bản mới nhất của mọi tập thành bản cuối (final/), dùng cho sản xuất.
+          - generic [ref=e430]:
+            - term [ref=e431]: Kho ngoại hình
+            - definition [ref=e432]: Mô tả cố định của từng nhân vật, trang phục, bối cảnh, đạo cụ để mọi tập khớp nhau.
+          - generic [ref=e433]:
+            - term [ref=e434]: Shot
+            - definition [ref=e435]: Một cú máy 1–5 giây. Mỗi tập 60–120 giây có khoảng 25–50 shot.
+          - generic [ref=e436]:
+            - term [ref=e437]: Canon
+            - definition [ref=e438]: Những gì đã lên hình ở các tập đã quay. Khi viết tiếp, canon thắng kịch bản cũ.
+      - generic [ref=e439]:
+        - heading "Câu hỏi thường gặp" [level=2] [ref=e440]
+        - generic [ref=e445]:
+          - group [ref=e446]:
+            - generic "› Tôi có phải ngồi chờ không?" [ref=e447] [cursor=pointer]:
+              - generic [ref=e448]: ›
+              - text: Tôi có phải ngồi chờ không?
+          - group [ref=e449]:
+            - generic "› Sao không bấm được nút khi đang có việc chạy?" [ref=e450] [cursor=pointer]:
+              - generic [ref=e451]: ›
+              - text: Sao không bấm được nút khi đang có việc chạy?
+          - group [ref=e452]:
+            - generic "› Ý tưởng của tôi khác video mẫu thì sao?" [ref=e453] [cursor=pointer]:
+              - generic [ref=e454]: ›
+              - text: Ý tưởng của tôi khác video mẫu thì sao?
+          - group [ref=e455]:
+            - generic "› Góp ý chung và góp ý riêng khác nhau thế nào?" [ref=e456] [cursor=pointer]:
+              - generic [ref=e457]: ›
+              - text: Góp ý chung và góp ý riêng khác nhau thế nào?
+          - group [ref=e458]:
+            - generic "› Kiểm tra cốt truyện và Biên tập khác nhau thế nào?" [ref=e459] [cursor=pointer]:
+              - generic [ref=e460]: ›
+              - text: Kiểm tra cốt truyện và Biên tập khác nhau thế nào?
+          - group [ref=e461]:
+            - generic "› Đã quay vài tập rồi muốn viết tiếp?" [ref=e462] [cursor=pointer]:
+              - generic [ref=e463]: ›
+              - text: Đã quay vài tập rồi muốn viết tiếp?
+          - group [ref=e464]:
+            - generic "› Dữ liệu có bị gửi đi đâu không?" [ref=e465] [cursor=pointer]:
+              - generic [ref=e466]: ›
+              - text: Dữ liệu có bị gửi đi đâu không?
+      - generic [ref=e467]:
+        - generic [ref=e468]:
+          - generic [ref=e469]: Bắt đầu từ đâu?
+          - paragraph [ref=e470]: "Chưa có phong cách viết nào: học một video mẫu trước. Đã có: tạo series mới ngay."
+        - generic [ref=e471]:
+          - button "Học video mẫu" [ref=e472] [cursor=pointer]
+          - button "Series mới" [ref=e473] [cursor=pointer]
+  - region "Notifications alt+T"

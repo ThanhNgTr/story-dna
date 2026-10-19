@@ -27,7 +27,7 @@ Use this skill after `/direct-video` to generate:
 ## Quick Start
 
 ```
-/cinematographer-brief --production-guide data/scripts/generated/production_guide.json \
+/cinematographer-brief --production-guide data/series/<slug>/<session-id>/final/shots/ep01/production_guide.json \
   --visual-style "desaturated teal + warm amber practicals" \
   --aspect-ratio "9:16"
 ```

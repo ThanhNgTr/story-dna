@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Học một video mẫu</h1>
+<p class="lead">Chọn một video dài (nhiều tập đã ghép liền) hoặc một thư mục chứa các tập. Claude sẽ xem hình, nghe thoại và rút ra cốt truyện, nhân vật, cách kể, góc quay, âm thanh, màu sắc.</p>
+<form class="card" method="post" action="/analyze">
+  <label>1. Chọn video hoặc cả thư mục</label>
+  <input type="hidden" name="video_path" id="video_path" required>
+  <div hx-get="/browse?path={{ start|urlencode }}" hx-trigger="load" id="browser"></div>
+  <div id="picked"><p class="hint">Bấm một video, hoặc mở thư mục của series rồi bấm "Chọn tất cả … video" để học nhiều tập cùng lúc.</p></div>
+
+  <label>2. Ngôn ngữ thoại trong video</label>
+  <select name="language">{% for code, name in languages %}<option value="{{ code }}" {{ 'selected' if code == 'vi' }}>{{ name }}</option>{% endfor %}</select>
+  <p class="hint">Chọn đúng ngôn ngữ giúp chép lời chính xác hơn (tự nhận diện dễ sai nếu video mở đầu bằng nhạc).</p>
+
+  <details class="adv"><summary>Tùy chọn nâng cao</summary>
+    <div class="row">
+      <div><label>Độ dài mỗi đoạn phân tích (giây)</label><input type="number" name="chunk_sec" value="120" min="60" max="300"></div>
+      <div><label>Số khung hình mỗi đoạn</label><input type="number" name="max_frames" value="40" min="10" max="60"></div>
+    </div>
+    <p class="hint">Mặc định phù hợp phim ngắn dọc. Tăng khung hình = chính xác hơn nhưng chậm và tốn hơn.</p>
+  </details>
+  <p style="margin-top:18px"><button id="start" disabled>Bắt đầu học video</button></p>
+</form>
+<script>
+function pickVideo(el) {
+  document.querySelectorAll('.browse div').forEach(d => d.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('video_path').value = el.dataset.path;
+  document.getElementById('start').disabled = false;
+  htmx.ajax('GET', '/probe?path=' + encodeURIComponent(el.dataset.path), '#picked');
+}
+</script>
+{% endblock %}
