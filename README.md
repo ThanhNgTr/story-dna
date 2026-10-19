@@ -117,6 +117,41 @@ you can close the tab, and you get a notification when a job finishes.
 http://127.0.0.1:8765/ (same data); every flow now exists in the new UI. Production briefs are commands
 (see [Command line](#command-line-claude-code)).
 
+### Share with a team on the company LAN
+
+Run the app on one machine with the dependencies installed and Claude/Codex logged in there.
+Add these settings to its `.env` (edit existing entries if present):
+
+```dotenv
+STORY_DNA_HOST=0.0.0.0
+PORT=8765
+STORY_DNA_BROWSE_ROOTS=./data/input
+```
+
+Create the upload folder with `mkdir -p data/input`, then run `./run_app.sh` (restart if already running).
+On Linux, `hostname -I` lists the machine's addresses; choose its company LAN address.
+Colleagues on a network that can reach that machine open `http://<server-LAN-IP>:8765/ui/`.
+Use the built UI served by Python; no Vite dev server is needed.
+
+If the firewall blocks access, allow TCP port 8765 from the company subnet only. For example, on a
+machine using UFW, **replace the example subnet with the actual company subnet** before running:
+
+```bash
+sudo ufw allow from 192.168.1.0/24 to any port 8765 proto tcp
+```
+
+Users choose upload in the browser to send videos from their own machines to the server's
+`data/input/` (up to 8 GB per file). The server stores and processes all videos and generated results;
+its disk must have space for videos, extracted frames and outputs. The server-side folder picker
+browses the server, not a colleague's computer. Use distinct upload folders or filenames for each project.
+
+This mode is for a trusted team: there is no login or per-user isolation. Everyone shares data and
+jobs run with the server's Claude/Codex accounts. Keep access on the company LAN; do not forward
+this port to the public internet. Keep the server awake while jobs run. Back up `data/` and generated
+`.claude/skills/write-series-*/` separately; Git is not a backup for ignored data.
+
+To return to local access, set `STORY_DNA_HOST=127.0.0.1` and restart the app.
+
 ## Using the app, step by step
 
 ### 1. Learn a reference video (rare, slowest step)
@@ -287,6 +322,7 @@ Put overrides in `.env` (copy `.env.example`; gitignored, loaded by `./run_app.s
 | `CLAUDE_BIN` | auto | Path to the `claude` binary |
 | `CODEX_BIN` | auto | Path to the `codex` binary |
 | `PORT` | 8765 | Web app port |
+| `STORY_DNA_HOST` | `127.0.0.1` | Bind address; `0.0.0.0` enables LAN access to the shared workspace |
 | `STORY_DNA_PARALLEL` | 4 | Claude processes at once during analysis |
 | `STORY_DNA_CODEX_PARALLEL` | 1 | Images generated at once |
 | `STORY_DNA_VIDEO_TARGETS` | `flow` | Video prompts to write: `flow` (Google Flow only) or `flow,higgsfield` (also 10-15s clip prompts + Higgsfield zip; slower) |
