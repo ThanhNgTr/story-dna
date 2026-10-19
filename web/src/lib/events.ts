@@ -28,6 +28,7 @@ export function useJobsStream() {
             qc.invalidateQueries({ queryKey: ['doc', j.slug, j.session_id] })
             qc.invalidateQueries({ queryKey: ['assets', j.slug, j.session_id] })
             qc.invalidateQueries({ queryKey: ['editor', j.slug, j.session_id] })
+            qc.invalidateQueries({ queryKey: ['continuity', j.slug, j.session_id] })
             qc.invalidateQueries({ queryKey: ['dialogue', j.slug, j.session_id] })
           }
           for (const k of [qk.projects, qk.skills, qk.analyses, ['analysis'], ['skill']]) qc.invalidateQueries({ queryKey: k })

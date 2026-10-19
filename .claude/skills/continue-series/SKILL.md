@@ -84,8 +84,9 @@ open places (no sleep, bed, touching, secret phone at night), even when the prod
 
 - Episodes 1..k: one row each, marked `PRODUCED (canon)` with a one-line on-screen summary. Do not
   rewrite them. They still carry the story-contract outline fields as seen on screen (`act`,
-  `main_plot_step`, `locations`, `climax`, `ledger`, `cliffhanger_type`, `characters`), so
-  `_story_check.py --stage outline` passes on the whole season.
+  `main_plot_step`, `locations`, `climax`, `ledger`, `cliffhanger_type`, `characters`) and the
+  cause chain as seen on screen (`events`, `because`, `opens_from`), so `_story_check.py --stage outline`
+  and `_continuity.py check --stage outline` pass on the whole season.
 - Episodes k+1..k+m, in the style skill's outline format (title, logline, beats, Story Template
   beats carried, reveal/clue, cliffhanger type, characters):
   - `follow`: take the remaining episodes of the old outline; keep their beats where canon allows;
@@ -96,6 +97,11 @@ open places (no sleep, bed, touching, secret phone at night), even when the prod
     user's idea file when given.
   - Both: the first new episode picks up exactly where episode k ended on screen (its last scene,
     cliffhanger, emotional state).
+  - Both: every new row has `events`, `because` (earlier event ids, canon episodes included) and
+    `opens_from` (`.claude/skills/story-continuity/references/continuity.md`). What characters know
+    at the end of episode k comes from canon: when the session has a state ledger
+    (`continuity/state_vN.md`), canon rows replace the plan's rows; `python3 .claude/skills/story-continuity/_continuity.py check <session> --stage outline`
+    -> 0 errors.
 - Story contract (`.claude/skills/story-contract/references/story-contract.md`) over the whole
   series 1..k+m: the next bible version updates `main_plot`, `ending`, `setting_timeline`,
   `climaxes`, `ledger_plan` so the story ends (happy/bad) in episode k+m. `new-arc`: the new arc

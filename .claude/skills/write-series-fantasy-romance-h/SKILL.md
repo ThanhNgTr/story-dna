@@ -1,6 +1,6 @@
 ---
 name: write-series-fantasy-romance-h
-version: v5
+version: v6
 stable_version: v5
 description: |
   Turn a rough or fragmented story idea into a 10-20 episode vertical series (60-120s episodes)
@@ -92,6 +92,12 @@ Save `input.json` first: the raw idea, every flag value, and this skill's versio
   `glossary` (ONLY invented/unusual terms + how a character or sign makes them clear; never
   everyday words like jobs, objects, places), and `voice.style` in the
   screenplay's language (see `.claude/skills/dialogue-polish/references/vi-dialogue.md`).
+- **Cause chain (outline)**: every outline row has `events` (1-4, ids `E<ep>.<k>`: what HAPPENS),
+  `because` (episodes 2..N: earlier event ids that make this episode happen; chance is not a cause)
+  and `opens_from` (how its first seconds pick up the previous cliffhanger), per
+  `.claude/skills/story-continuity/references/continuity.md`. A humiliation rung, a warm-object
+  callback or the matchmaker's scheme happens because of something someone did before.
+  `python3 .claude/skills/story-continuity/_continuity.py check <session-dir> --stage outline` -> 0 errors.
 - **Story contract (outline)**: bible + outline carry the contract fields (`main_plot`, `ending`,
   `relation_to_main`, `arc`, `setting_timeline`, `climaxes`, ledger `tier` + `answer`; outline
   `act`, `main_plot_step`, `locations`, `setting_change`, `climax`). Then
@@ -106,11 +112,22 @@ Save `input.json` first: the raw idea, every flag value, and this skill's versio
   `.claude/skills/series-assets/references/episode-contract.md`: every scene has `loc_id`,
   `variant_id`, `cast` (outfit per on-screen character), `referenced`, `props`; anything new goes in
   `new_assets`. Subagents get the registry path and the contract path too.
-- N > 6: write in parallel with general-purpose subagents, 3-4 episodes each. Give each the bible,
-  the outline, this SKILL.md path and its episode numbers.
+- N > 6: write in parallel with general-purpose subagents, 3-4 consecutive episodes each. Give each
+  the bible, the outline (its `events` / `because` / `opens_from` are the contract between writers:
+  an episode shows its own events and opens from the previous row's cliffhanger as planned), this
+  SKILL.md path, `.claude/skills/story-continuity/references/continuity.md` and its episode numbers.
+  Episodes written while others already exist (a second wave, missing episodes) read the latest
+  `continuity/state_vN.md` first: who knows what, who holds what, which day it is.
+- Seam pass after all writers replied: `python3 .claude/skills/story-continuity/_continuity.py seams <session-dir>`;
+  at every package boundary (and any pair that does not join) rewrite the first scene of the later
+  episode so its first 3s continue the exact cliffhanger moment of the episode before (Episode
+  Template "Hook").
 - Continuity pass after all episodes: names, visual signatures (verbatim from the bible), ledger
   timing, humiliation-rung wording (the payoff must quote rung 3), warm-object callbacks, timecodes
-  summing to `--episode-sec`.
+  summing to `--episode-sec`. Then build the state ledger (`/story-continuity` "Check + repair"
+  step 3: `continuity/state_vN.json` from the written episodes) and
+  `python3 .claude/skills/story-continuity/_continuity.py check <session-dir>` -> 0 errors (story
+  breaks fixed in the episodes, not in the ledger).
 - Then `python3 .claude/skills/series-assets/_assets.py lint <session-dir>` -> 0 errors, and
   `/series-assets --session <session-dir>` (scene map, `new_assets` get real IDs, drift report).
 - Minors on screen: re-read `.claude/skills/story-contract/references/minors-on-screen.md` before writing an episode with a child;
@@ -410,7 +427,8 @@ Logline: ... | Story beats: <template beats + %> | Cliffhanger: <type>
   "new_assets": [], "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}
 }
 ```
-Last episode adds `"ending": {"type": "happy|bad", "central_question_answer": "..."}`.
+Last episode adds `"ending": {"type": "happy|bad", "central_question_answer": "..."}`. A scene told as a flashback
+adds `"flashback": true` (continuity: the dead and the gone may appear there).
 
 `bible_vK.json`: `{title, logline, premise, theme, world: {setting, rules[], locations[], motifs[]},
 cast: [{character_id, name, tier, role, want, need, flaw, secret, tell, visual_signature, voice:
@@ -421,7 +439,8 @@ setting_timeline, climaxes, cast relation_to_main/arc/secret_reveal_ep).
 
 `outline_vK.json`: `{episodes: [{episode, title, logline, beats[], template_beats: [{pct, function}],
 reveal, cliffhanger_type, characters[], act, main_plot_step, locations[], setting_change, climax,
-ledger}], never_answered[]}`; last episode `ending` + `cliffhanger_type: "resolution"`.
+ledger, events: [{id, text}], because[], opens_from}], never_answered[]}`; last episode `ending` +
+`cliffhanger_type: "resolution"`.
 
 ## Self-check
 
@@ -444,6 +463,9 @@ ledger}], never_answered[]}`; last episode `ending` + `cliffhanger_type: "resolu
       registry; `_assets.py lint` reports 0 errors
 - [ ] Scene timecodes sum exactly to `--episode-sec`
 - [ ] Story contract: `_story_check.py` reports 0 errors
+- [ ] Continuity: every episode 2..N has `because` + `opens_from`; the state ledger covers every
+      written episode; `_continuity.py check` reports 0 errors (nobody knows a fact before learning
+      it, every planned clue and every plant is on screen, every episode picks up its cliffhanger)
 - [ ] Dialogue reads as natural spoken language, xưng hô per `address_matrix`; `_dialogue_lint.py`
       flags fixed or justified; 0 `definition` / `narrates_action`; every 2+ character scene has
       a spoken exchange
@@ -492,3 +514,7 @@ ledger}], never_answered[]}`; last episode `ending` + `cliffhanger_type: "resolu
 - v5 (2026-10-14T12:00:00Z): minors on screen (`.claude/skills/story-contract/references/minors-on-screen.md`): child scenes staged in daylight / open places, no
   sleep, bed, touching or secret phone at night; read at outline and episode time; lint `minor_risk` strict.
   Learned from Google Flow refusing ep04 ("harmful content involving minors").
+- v6 (2026-10-16T00:00:00Z): continuity across episodes (`.claude/skills/story-continuity/`): outline
+  cause chain (`events`, `because`, `opens_from`); parallel writers get it plus the state ledger;
+  seam pass at package boundaries; state ledger `continuity/state_vN.json` built after Stage 3,
+  `_continuity.py check` 0 errors.

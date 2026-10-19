@@ -97,7 +97,9 @@ named). The plan script resolves every source and target file; read only what it
    `.claude/skills/dialogue-polish/references/vi-dialogue.md`,
    `.claude/skills/story-contract/references/minors-on-screen.md` (a fix never adds a night / sleep / touching / secret-phone scene with a child),
    `.claude/skills/action-polish/references/screen-action.md` (new or changed beats carry `acting`,
-   scenes `blocking`), and the rules of step 4. Each writer:
+   scenes `blocking`), `.claude/skills/story-continuity/references/continuity.md` + the latest
+   `continuity/state_vN.md` when it exists (who knows what at that point; a fix never makes a
+   character use a fact before learning it), and the rules of step 4. Each writer:
    reads only its episodes' sources, applies only the notes for its episodes, writes the targets,
    renders md with `python3 .claude/skills/story-editor/_editor.py render <target.json>...`, runs
    `python3 .claude/skills/dialogue-polish/_dialogue_lint.py lint <session> <NN...>` and (when
@@ -111,6 +113,10 @@ named). The plan script resolves every source and target file; read only what it
 5. Check (you, after all writers replied): `python3 .claude/skills/story-contract/_story_check.py
    <session>` -> 0 errors, and when `assets/` exists `python3 .claude/skills/series-assets/_assets.py
    lint <session>` -> 0 errors. Fix what fails yourself (small edits to the targets, re-render md).
+   When episodes were rewritten and `continuity/` exists: write the next state ledger version for
+   them (`.claude/skills/story-continuity/SKILL.md` "Check + repair" steps 3-6) and
+   `python3 .claude/skills/story-continuity/_continuity.py check <session>` -> 0 errors; an outline
+   rewrite keeps `events` / `because` / `opens_from` true to the new beats.
 6. Write `editor/applied_vN.json`: `{"review": "review_vN.json", "applied": ["F1", ...],
    "skipped": [{"id": "F7", "reason": "..."}], "files_written": [...], "created_at": "..."}`
    (plus the plan's `skipped`).

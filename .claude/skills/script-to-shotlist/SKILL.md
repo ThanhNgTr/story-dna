@@ -314,8 +314,8 @@ Write each line with its tag, word for word, right before the quote:
 - voiceover: `VOICE-OVER (inner voice, nobody's lips move): <who>, <delivery>, <a>-<b>s: "<line>"`;
   when the speaker is in the shot add "<who> keeps his/her mouth closed".
 - offscreen: `OFF-SCREEN VOICE (not in frame): <who>, <through what>, <delivery>, <a>-<b>s: "<line>"`
-`<who>` = the same name as in Cast (Seedance) or the same role label (Flow parts); never a name in
-one place and a label in another. `<visual tag>` = what tells him apart in THIS frame ("on the left,
+`<who>` = the same character name as in Cast (Seedance and Flow parts alike); never a name in one
+place and a description in another. `<visual tag>` = what tells him apart in THIS frame ("on the left,
 grey T-shirt", "the one holding the shovel").
 
 Rules:
@@ -368,12 +368,13 @@ Plan the split per clip so every part lands in those bands:
   part does not repeat the previous Ending; its `continuity_in` says what carries over (positions,
   props in hand, light) so the edit matches.
 - Flow-safe writing (Google Flow refuses prompts that look like recreating a real person: "may
-  violate our policy on videos of famous people"). A personal name + a detailed face + a portrait
-  photo was refused; a role label + a short look + one photo went through. So in every part prompt:
-  - Characters by ROLE LABEL, never by name: `flow_labels` (top of prompts.json) gives each character
-    one fixed label for the whole series, from the bible role ("the worker", "the businessman", "the
-    young woman", "the little girl"); unique per character, the same in every episode. Names may
-    appear only inside quoted dialogue.
+  violate our policy on videos of famous people"). The trigger was an idol-like FACE (a reference image
+  built from beauty adjectives, and outfit images still made from it), not the names: on 2026-10-15
+  every ep06 part passed with the character names written out. So in every part prompt:
+  - Characters by NAME (the bible name, the same in every episode), in Cast, in the shots and in the
+    dialogue tags; the Cast line adds the relation where it helps ("Na, Phong's younger sister").
+    Older prompts.json files with `flow_labels` (role labels) are shown and packaged with the names
+    swapped in (`package.named_prompt`); new files do not write `flow_labels`.
   - Short look only: age range, build, hair, outfit, one signature item, PLUS the character's 1-2
     distinctive face marks from the registry (freckles, a mole, glasses, a scar, a crooked tooth). No
     full facial anatomy list (eyes, brows, nose, lips, jaw, skin), no height in cm. Never leave a face
@@ -385,7 +386,7 @@ Plan the split per clip so every part lands in those bands:
     if a slot is left. More than 3 characters on screen: the 3 with most screen time get images, the
     rest are text only; the location is then text only too. Each image must show ONE character (no
     group sheets), and the Cast line describes every character whose image is attached, in the same
-    order, by role label.
+    order, by name.
   - No lettering at all (signs, phone screens, title cards go to post): the guard line reads
     "... on-screen text except: none" and the location text drops sign wording.
   - Start the Cast line with "Original fictional characters, not real people."
@@ -403,8 +404,8 @@ Plan the split per clip so every part lands in those bands:
     item: drop it from the part. No body or face words (skinny, small, slim, tanned, lips, pouting mouth), no bare feet,
     shorts, sleeveless tops, sleepwear; the adults in the same part fully dressed too (T-shirt, long
     trousers).
-  - Use a relation label for the child in `flow_labels` ("the younger sister", "the son"), and name the
-    relation of the adults in the Cast line ("her older brother").
+  - Name the child and her relation in the Cast line ("Na, Phong's younger sister"), and the relation of
+    the adults ("Phong, her older brother").
   - No physical contact between an adult and the child (no hug, ruffling hair, carrying, holding, lap,
     leaning on): keep "an arm's length apart"; show care through objects and looks (hands her a bowl).
   - No bed, bedroom, sleeping, bathing, changing clothes, "late night", "alone with": move the moment to
@@ -461,7 +462,6 @@ Plan the split per clip so every part lands in those bands:
   "total_duration_sec": 90,
   "assets": "data/series/<slug>/20261001-143000/final/assets.json",
   "style_suffix": "vertical 9:16 frame, photoreal, ...",
-  "flow_labels": {"char_01": "the schoolgirl", "char_02": "the tall boy"},
   "characters": {"char_01": "teen girl, 16, dark wavy shoulder-length hair, navy blazer, white shirt, silver ring pendant"},
   "locations": {"loc_02": "foggy dead pine forest at night, ..."},
   "shots": [

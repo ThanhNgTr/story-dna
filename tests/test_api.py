@@ -22,10 +22,26 @@ def test_project_payload_has_fields_the_ui_reads(client):
     r = c.get("/api/projects/demo/S1")
     assert r.status_code == 200
     p = r.json()
-    for key in ("final_stale", "final_complete", "settings", "cost_usd", "story_check", "editor", "episodes"):
+    for key in ("final_stale", "final_complete", "settings", "cost_usd", "story_check", "editor", "continuity", "episodes"):
         assert key in p, key
     assert p["settings"] == {"auto_editor_outline": True, "auto_editor_episodes": False}
     assert {"has_prompts", "prompts_stale", "in_final"} <= set(p["episodes"][0])
+
+
+def test_continuity_view_and_guards(client):
+    c, d = client
+    p = c.get("/api/projects/demo/S1").json()["continuity"]
+    assert p["ok"] is False and any(e.startswith("[C1]") for e in p["errors"]) and p["logic"] is None
+    write(d / "continuity" / "logic_v1.json", {"stage": "episodes", "summary": "s", "verdict": "pass", "findings": [
+        {"id": "L1", "kind": "coincidence", "severity": "medium", "where": {"file": "episodes/ep03_v1.json", "episode": 3},
+         "evidence": "e", "problem": "p", "fix": "f"}]})
+    write(d / "continuity" / "applied_v1.json", {"review": "logic_v1.json", "applied": ["L1"]})
+    p = c.get("/api/projects/demo/S1").json()["continuity"]
+    assert p["logic"]["findings"] == {"high": 0, "medium": 1, "low": 0} and p["logic"]["applied"] == 1
+    v = c.get("/api/projects/demo/S1/continuity").json()
+    assert v["logic"]["applied"] == ["L1"] and v["logic"]["findings"][0]["kind"] == "coincidence"
+    assert c.post("/api/projects/demo/S1/continuity", json={"mode": "nope"}).status_code == 400
+    assert c.post("/api/projects/demo/S1/continuity", json={"mode": "apply"}).status_code == 400
 
 
 def test_settings_roundtrip(client):

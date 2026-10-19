@@ -96,10 +96,19 @@ reading, apply it as `story` scope (never a rule change on a guess), and log the
 
 ### Step 4 - Re-generate only what is affected
 - Bible change -> update bible vK+1; flag episodes whose content depends on it.
-- Outline change -> outline vK+1; list episodes whose beats moved; if episodes already exist,
-  re-write only those (ask first if more than 5; headless: re-write them all and list them in the reply).
-- Episode change -> epNN vK+1 for the targeted episodes; keep neighbors consistent (check the
-  episode before and after for continuity).
+- Outline change -> outline vK+1 (keep `events` / `because` / `opens_from` true to the new beats);
+  list episodes whose beats moved; if episodes already exist, re-write only those (ask first if more
+  than 5; headless: re-write them all and list them in the reply).
+- Episode change -> epNN vK+1 for the targeted episodes. Before writing, read the latest
+  `continuity/state_vN.md` (what each character knows / holds / where they are at that point) and
+  list what depends on the targets: `python3 .claude/skills/story-continuity/_continuity.py impact <session> --episodes <NN,...>`
+  (a changed bible fact: `--facts F2`). Every listed episode is re-checked against the change and
+  re-written when it breaks (a fact learned later, a plant moved, a seam, a `because`), not only the
+  episodes before and after.
+- Continuity (`.claude/skills/story-continuity/references/continuity.md`): after any episode was
+  re-written, write the next state ledger version for those episodes and run
+  `python3 .claude/skills/story-continuity/_continuity.py check <session>` (`--stage outline` before
+  episodes exist) -> 0 errors; story breaks are fixed in the episodes, not in the ledger.
 - Every re-written episode follows `.claude/skills/series-assets/references/episode-contract.md`
   when the session has `assets/`: `python3 .claude/skills/series-assets/_assets.py lint <session> <NN...>`
   -> 0 errors. If an episode added `new_assets` or the bible changed a look, run `/series-assets`
@@ -145,8 +154,9 @@ Next: more feedback, `/refine-skill <slug> --approve outline` (stage outline), o
   episodes marked `PRODUCED (canon)` in the outline (series continued with `/continue-series`) and
   episodes already written are never rewritten. New episodes must match the latest `canon_vN.json`
   when one exists (characters as seen on screen, revealed facts, open threads).
-- `--approve` (all episodes exist): run `_story_check.py <session>` first; errors -> fix them
-  before finalizing. Then copy latest bible, outline, every episode (md + json) and
+- `--approve` (all episodes exist): run `_story_check.py <session>` and
+  `python3 .claude/skills/story-continuity/_continuity.py check <session>` first; errors -> fix them
+  before finalizing (`/story-continuity`). Then copy latest bible, outline, every episode (md + json) and
   series.md into `final/`, plus the latest `assets/assets_vN.json/.md` as `final/assets.json/.md`
   (run `/series-assets` first if it is missing or older than the latest episode); set `stable_version: vN` in SKILL.md frontmatter and `"stable": true` in
   the metadata JSON; log `{"status": "approved"}`. Next step (optional):

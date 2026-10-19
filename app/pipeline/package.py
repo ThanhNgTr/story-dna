@@ -150,6 +150,15 @@ def _bible_names(session: Path) -> dict[str, str]:
             if isinstance(c, dict) and c.get("character_id")}
 
 
+def named_prompt(text: str, labels: dict[str, str], names: dict[str, str]) -> str:
+    """Flow parts written with role labels ("the young worker") -> the character names. Tested 2026-10-15: the
+    "famous people" refusals came from the idol-like face, not from names; names keep who-is-who clear."""
+    for cid, label in sorted(labels.items(), key=lambda kv: -len(kv[1] or "")):
+        if label and names.get(cid):
+            text = re.sub(rf"(?<![\w-]){re.escape(label)}(?![\w-])", names[cid], text, flags=re.I)
+    return text
+
+
 def _ref_name(path: Path, names: dict[str, str]) -> str:
     """characters/char_01/char_01_sheet_v1.png -> char_01_vu_sheet_v1.png (readable, unique per source)."""
     stem = path.stem
@@ -168,6 +177,7 @@ def prompts_view(session: Path, n: int) -> dict | None:
     data = json.loads(pf.read_text(encoding="utf-8"))
     approved = asset_images.approved_refs(session)
     names = _bible_names(session)
+    labels = data.get("flow_labels") or {}
     assets = (session / "assets").resolve()
     shots = []
     for sh in data.get("shots") or []:
@@ -180,7 +190,9 @@ def prompts_view(session: Path, n: int) -> dict | None:
                                                  "action", "dialogue", "camera", "sfx", "loc_id", "video_prompt",
                                                  "continuity_in", "opening_state", "closing_state", "performance")},
                       "on_screen_text": sh.get("on_screen_text") or [],
-                      "veo_parts": [{**vp, "refs": [c for r in vp.get("refs") or [] if (c := current_ref(session, r))]}
+                      "veo_parts": [{**vp, "refs": [c for r in vp.get("refs") or [] if (c := current_ref(session, r))],
+                                     "video_prompt": named_prompt(vp.get("video_prompt") or "", labels, names),
+                                     "continuity_in": named_prompt(vp.get("continuity_in") or "", labels, names)}
                                     for vp in sh.get("veo_parts") or []],
                       "cuts": sh.get("cuts") or [],
                       "characters": [{"id": c, "name": names.get(c, c)} for c in sh.get("characters") or []],
@@ -292,22 +304,10 @@ def pace_warnings(tag: str, lines: list[dict]) -> list[str]:
     return out
 
 
-def _fold(text: str) -> str:
-    """Lower case without Vietnamese marks: 'Ông Hữu' and 'Mr. Huu' both contain 'huu'."""
-    text = unicodedata.normalize("NFKD", text.replace("đ", "d").replace("Đ", "D"))
-    return "".join(ch for ch in text if not unicodedata.combining(ch)).lower()
-
-
 def flow_warnings(tag: str, part: dict, names: dict[str, str], minors: set[str] = frozenset()) -> list[str]:
-    """Google Flow refused a personal name + a detailed face (the trigger was an idol-like face, not the number of
-    images): warn on names outside quoted dialogue, on more images than Flow takes, and on a character on screen
-    in the part with no image while a slot is free."""
+    """Images Flow takes: warn on more images than Flow takes, and on a character on screen in the part with no
+    image while a slot is free. (Names are fine: the "famous people" refusals came from an idol-like face.)"""
     out = []
-    spoken_removed = _fold(re.sub(r'"[^"]*"|“[^”]*”', " ", part.get("video_prompt") or ""))
-    found = sorted({n for n in names.values() for w in [_fold(n).split()[-1]] if len(w) >= 2
-                    and re.search(rf"(?<![a-z]){re.escape(w)}(?![a-z])", spoken_removed)})
-    if found:
-        out.append(f"{tag}: names outside dialogue ({', '.join(found)}): use the role labels (flow_labels)")
     refs = part.get("refs") or []
     if len(refs) > FLOW_MAX_REFS:
         out.append(f"{tag}: {len(refs)} images, Flow takes {FLOW_MAX_REFS} (characters first, then the location)")
@@ -729,14 +729,15 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
                 "needed_sec": round(b - a, 2), "trim_to_sec": round(keep, 2),
                 "video_start": round(clock, 2), "video_end": round(clock + keep, 2),
                 "aspect_ratio": aspect, "mode": _flow_mode(images),
-                "images": images, "characters": [labels.get(c) or c for c in vp.get("characters") or []],
-                "dialogue": [{"who": labels.get(d.get("character")) or d.get("character"), "name": names.get(d.get("character")),
+                "images": images, "characters": [names.get(c) or c for c in vp.get("characters") or []],
+                "dialogue": [{"who": names.get(d.get("character")) or d.get("character"), "name": names.get(d.get("character")),
                               "voiceover": bool(d.get("voiceover")),
                               "mode": line_mode(d, set(vp.get("characters") or [])), "line": d["line"],
                               "start_sec": round((x - a) * scale, 2), "end_sec": round((y - a) * scale, 2)}
                              for x, y, d in lines],
-                "continuity_in": vp.get("continuity_in") or "",
-                "save_as": f"clips/{unit}_{no:02d}_{k}.mp4", "prompt": vp.get("video_prompt") or ""})
+                "continuity_in": named_prompt(vp.get("continuity_in") or "", labels, names),
+                "save_as": f"clips/{unit}_{no:02d}_{k}.mp4",
+                "prompt": named_prompt(vp.get("video_prompt") or "", labels, names)})
             clock += keep
 
     tmp = Path(tempfile.mkstemp(suffix=".zip", prefix=f"{root}_")[1])
@@ -769,7 +770,7 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
             ew.writerow([j, Path(r["save_as"]).name, _ts(r["video_start"]), _ts(r["video_end"]), r["trim_to_sec"],
                          r["scene"] or "", " | ".join(f"{d['who']}: {d['line']}" for d in r["dialogue"])])
         text("flow_queue.json", json.dumps({"episode": n, "title": ep_title, "series": title, "aspect_ratio": aspect,
-                                            "model": "Veo 3.1", "flow_labels": labels, "parts": rows},
+                                            "model": "Veo 3.1", "names": names, "parts": rows},
                                            ensure_ascii=False, indent=2))
         text("flow_queue.csv", "\ufeff" + q.getvalue())
         text("edit_list.csv", "\ufeff" + e.getvalue())

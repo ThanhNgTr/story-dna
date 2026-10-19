@@ -144,6 +144,11 @@ class EditorIn(BaseModel):
     rereview: bool = False
 
 
+class ContinuityIn(BaseModel):
+    mode: str = "fix"
+    ids: list[str] = []
+
+
 class ArchiveIn(BaseModel):
     episodes: list[int] | None = None  # None = every drafted episode
     rewrite: bool = False              # then write the missing episodes again (same as approving the outline)
@@ -207,6 +212,17 @@ def _editor_summary(view: dict | None) -> dict | None:
             "scores": {k: v.get("score") for k, v in (view.get("scores") or {}).items()},
             "findings": {s: sev.count(s) for s in ("high", "medium", "low")},
             "applied": len(view.get("applied") or [])}
+
+
+def _continuity_summary(view: dict | None) -> dict | None:
+    if not view:
+        return None
+    logic = view.get("logic")
+    sev = [f.get("severity") for f in (logic or {}).get("findings") or []]
+    return {**{k: view.get(k) for k in ("ok", "stage", "checked_at", "errors", "warnings", "state")},
+            "logic": {"file": logic["file"], "verdict": logic.get("verdict"), "stale": logic.get("stale"),
+                      "findings": {s: sev.count(s) for s in ("high", "medium", "low")},
+                      "applied": len(logic.get("applied") or [])} if logic else None}
 
 
 def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tuple[str, str]],
@@ -420,6 +436,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             "iterations": st["iterations"],
             "story_check": series.story_check_view(slug, sid) if not job else None,
             "editor": _editor_summary(series.editor_view(slug, sid)),
+            "continuity": _continuity_summary(series.continuity_view(slug, sid)) if not job else None,
             "job": one(job) if job else None,
         }
 
@@ -700,6 +717,38 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
             raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi sửa.")
         job = jobs.start("story", f"Sửa cốt truyện theo yêu cầu bắt buộc ({slug})",
                          {"slug": slug, "session_id": sid}, job_funcs["story"])
+        return one(job)
+
+    @r.get("/projects/{slug}/{sid}/continuity")
+    def continuity(slug: str, sid: str):
+        session_or_404(slug, sid)
+        view = series.continuity_view(slug, sid)
+        if view is None:
+            raise HTTPException(404, "Chưa có outline.")
+        logic = view.get("logic")
+        if logic:
+            md = series.session_dir(slug, sid) / "continuity" / logic["file"].replace(".json", ".md")
+            view["logic"] = {**logic, "markdown": md.read_text(encoding="utf-8") if md.exists() else None}
+        return view
+
+    @r.post("/projects/{slug}/{sid}/continuity")
+    async def continuity_run(slug: str, sid: str, body: ContinuityIn):
+        st = session_or_404(slug, sid)
+        if running_for(sid):
+            raise HTTPException(409, "Series này đang có việc chạy. Đợi xong rồi kiểm tra.")
+        if st["outline"] is None:
+            raise HTTPException(400, "Chưa có outline để kiểm tra.")
+        if body.mode not in ("fix", "review", "apply"):
+            raise HTTPException(400, "Chế độ không hợp lệ.")
+        if body.mode == "apply":
+            if not series.logic_view(st["dir"]):
+                raise HTTPException(400, "Chưa có bản rà logic.")
+            if not body.ids:
+                raise HTTPException(400, "Chọn ít nhất một lỗi logic cần sửa.")
+        title = {"fix": "Sửa liên mạch giữa các tập", "review": "Rà logic toàn mùa",
+                 "apply": f"Áp dụng {len(body.ids)} sửa logic"}[body.mode]
+        job = jobs.start("continuity", f"{title} ({slug})",
+                         {"slug": slug, "session_id": sid, "mode": body.mode, "ids": body.ids}, job_funcs["continuity"])
         return one(job)
 
     @r.post("/projects/{slug}/{sid}/assets/build")

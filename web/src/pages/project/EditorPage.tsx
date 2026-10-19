@@ -24,7 +24,7 @@ export const DIM_LABEL: Record<EditorDim, string> = {
   originality: 'Độc đáo, tránh sáo mòn',
 }
 const DIMS = Object.keys(DIM_LABEL) as EditorDim[]
-const SEV: Record<EditorFinding['severity'], { label: string; cls: string }> = {
+export const SEV: Record<EditorFinding['severity'], { label: string; cls: string }> = {
   high: { label: 'Nặng', cls: 'bg-destructive/10 text-destructive' },
   medium: { label: 'Vừa', cls: 'bg-warning/10 text-warning' },
   low: { label: 'Nhẹ', cls: 'bg-muted text-muted-foreground' },
@@ -53,7 +53,7 @@ function RunReview({ label, variant = 'default' }: { label: string; variant?: 'd
   )
 }
 
-function Where({ f }: { f: EditorFinding }) {
+export function Where({ f }: { f: Pick<EditorFinding, 'where'> }) {
   const p = useProject()
   const base = `/p/${p.slug}/${p.session_id}`
   const w = f.where

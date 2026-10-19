@@ -39,6 +39,15 @@ Codex CLI on the user's ChatGPT login (built-in image_gen, no OpenAI API key)
   Apply is planned by `_editor.py plan` (`editor/apply_plan.json`: source/target per file, episode packages),
   bible/outline + `editor/apply_notes.json` (per-episode decisions) first, then one subagent per package in
   parallel; md via `_editor.py render`.
+- **Continuity** (`.claude/skills/story-continuity/`): logic ACROSS episodes. Outline rows carry `events` (E<ep>.<k>),
+  `because` (earlier event ids) and `opens_from`; after Stage 3 Claude builds `continuity/state_vN.json` from the written
+  episodes (facts, who knows what since when, uses, status, props, relations, clock, clues, setups, seams; every row quotes
+  the episode verbatim). `_continuity.py check <session>` (`[C0]`..`[C8]`) -> 0 errors: nobody uses a fact before learning
+  it, dead/gone/lost stay off screen, days never run back, each episode picks up its cliffhanger, planned clues and plants
+  are on screen. Parallel writers get the cause chain; a seam pass (`_continuity.py seams`) fixes package boundaries;
+  `_continuity.py impact --episodes N` lists dependent episodes for refine. `--review` = logic review (plot holes,
+  coincidences, motives) -> `continuity/logic_vN.json`; `--apply` reuses `_editor.py plan --review`. Web: runs after
+  story check (outline / episodes / feedback / editor apply / continue), card "Liên mạch giữa các tập" on the overview.
 - **Dialogue clarity** (`.claude/skills/dialogue-polish/`): `references/vi-dialogue.md` overrides style
   word caps / "ambiguous line" rules (hide facts, not grammar; xưng hô per bible `address_matrix`;
   `glossary` = invented terms only; lines are speech, not description: no definitions, VO never retells the shot). `_dialogue_lint.py lint <session>` flags unclear lines; `/dialogue-polish` rewrites only
@@ -120,9 +129,9 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
    block, and `veo_parts` on EVERY clip (Google Flow / Veo 3.1 version, split on cuts; `prompt_format: 3`: each part's
    `duration_sec` is a Flow length 4/6/8/10s = ~1.3x its script time (`flow_duration`: 4s -> 6s, 6s -> 8s), cuts and lines
    retimed over the whole length, the edit keeps it all (video ~1.3x the script); `prompt_format: 4` also: minors
-   (registry `age` < 18) get no photo ref, no body / bare-skin / bed / touching words (`minor_problems`, Flow refused a 10-year-old)): role labels
-   (`flow_labels`) not names, short looks, <=3 images per part (every on-screen character first, then the location), no lettering (Flow refused
-   names + an idol-like face as "famous people"; the number of images was not the trigger); `package check` enforces it, older files only warn. Web "Tải gói video"
+   (registry `age` < 18) get no photo ref, no body / bare-skin / bed / touching words (`minor_problems`, Flow refused a 10-year-old)): character names
+   (tested 2026-10-15: names pass; old `flow_labels` files get names swapped in, `package.named_prompt`), short looks + 1-2 face marks, <=3 images per part (every on-screen character first, then the location), no lettering (Flow refused
+   an idol-like face as "famous people", incl. outfit images still built from that face; not the names, not the number of images); `package check` enforces it, older files only warn. Web "Tải gói video"
    (`app/pipeline/package.py`) zips per episode: shot prompts + approved refs + `subtitles.srt` + `edit_list.csv`
    (Higgsfield = 10-15s clips; "Tải gói Flow" `?target=flow` = one Google Flow generation per `veo_parts` entry:
    `parts/clip_NN_K.txt`, only that part's images (each ref swapped for the NEWEST approved image of its item:
@@ -131,7 +140,7 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
 
 ## PROJECT RESET (new reference video)
 
-Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `series-assets`, `story-contract`, `story-editor`, `dialogue-polish`, `action-polish`, `script-to-shotlist`, the 4 brief
+Keep: `analyze-videos`, `skill-creator-from-dna`, `refine-skill`, `continue-series`, `series-assets`, `story-contract`, `story-continuity`, `story-editor`, `dialogue-polish`, `action-polish`, `script-to-shotlist`, the 4 brief
 skills, agents `video-analyst` + `story-merger` + `film-analyst`. Remove: generated `.claude/skills/write-series-*`,
 `data/analyses/*`, `data/series/*`, `data/skills-generated/*`.
 

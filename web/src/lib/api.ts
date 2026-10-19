@@ -129,6 +129,7 @@ export interface Project {
   iterations: Iteration[]
   story_check: StoryCheck | null
   editor: EditorSummary | null
+  continuity: ContinuitySummary | null
   job: Job | null
 }
 
@@ -206,6 +207,32 @@ export interface DialogueView {
 }
 
 export interface StoryCheck { ok: boolean; stage: 'outline' | 'episodes'; checked_at: string; errors: string[]; warnings: string[] }
+
+export type LogicKind = 'contradiction' | 'knowledge' | 'motive' | 'coincidence' | 'easier_path' | 'timeline'
+  | 'cause_missing' | 'dropped_thread' | 'world_rule'
+
+export interface LogicFinding {
+  id: string
+  kind: LogicKind
+  severity: 'high' | 'medium' | 'low'
+  where: { file: string; episode?: number | null; scene?: string | null; field?: string | null }
+  evidence: string
+  problem: string
+  fix: string
+  affects?: string[]
+}
+
+/** story-continuity: cause chain + state ledger check (`[C0]`..`[C8]` errors) and the latest logic review. */
+export interface ContinuitySummary extends StoryCheck {
+  state: string | null
+  logic: { file: string; verdict: 'pass' | 'revise'; stale: boolean; findings: { high: number; medium: number; low: number }; applied: number } | null
+}
+
+export interface ContinuityView extends StoryCheck {
+  state: string | null
+  logic: { file: string; created_at?: string; stage: 'outline' | 'episodes'; summary: string; verdict: 'pass' | 'revise';
+    findings: LogicFinding[]; applied: string[]; stale: boolean; markdown: string | null } | null
+}
 
 export interface DocResponse { kind: string; file: string; version: number; markdown: string; data: unknown }
 
@@ -554,6 +581,9 @@ export const api = {
   packageUrl: (slug: string, sid: string, n: number, target: 'higgsfield' | 'flow' = 'higgsfield') =>
     `/api${p(slug, sid)}/episodes/${n}/package${target === 'flow' ? '?target=flow' : ''}`,
   fixStory: (slug: string, sid: string) => request<Job>(`${p(slug, sid)}/story/fix`, { method: 'POST' }),
+  continuity: (slug: string, sid: string) => request<ContinuityView>(`${p(slug, sid)}/continuity`),
+  runContinuity: (slug: string, sid: string, body: { mode: 'fix' | 'review' | 'apply'; ids?: string[] }) =>
+    request<Job>(`${p(slug, sid)}/continuity`, { method: 'POST', body: JSON.stringify(body) }),
   archiveEpisodes: (slug: string, sid: string, body: { episodes?: number[]; rewrite?: boolean }) =>
     request<{ archived: number[]; dir: string; files: number; job?: Job }>(`${p(slug, sid)}/episodes/archive`, { method: 'POST', body: JSON.stringify(body) }),
   buildAssets: (slug: string, sid: string, feedback = '') =>
@@ -590,6 +620,7 @@ export const qk = {
   comments: (slug: string, sid: string) => ['comments', slug, sid] as const,
   assets: (slug: string, sid: string) => ['assets', slug, sid] as const,
   editor: (slug: string, sid: string) => ['editor', slug, sid] as const,
+  continuity: (slug: string, sid: string) => ['continuity', slug, sid] as const,
   dialogue: (slug: string, sid: string) => ['dialogue', slug, sid] as const,
   analysis: (id: string) => ['analysis', id] as const,
   skill: (slug: string) => ['skill', slug] as const,

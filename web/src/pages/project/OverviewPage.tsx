@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { api, type Project } from '@/lib/api'
 import { askNotificationPermission } from '@/lib/events'
 import { cn } from '@/lib/utils'
+import { ContinuityCard } from './ContinuityCard'
 import { useProject } from './ProjectLayout'
 
 const STEPS = ['Outline', 'Duyệt outline', 'Viết & góp ý từng tập', 'Chốt season']
@@ -237,6 +238,7 @@ export function OverviewPage() {
       </div>
 
       <StoryCheckCard p={p} />
+      <ContinuityCard p={p} />
 
       {p.editor && (
         <Link to={`${base}/editor`} className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-5 text-sm transition hover:border-primary/40">

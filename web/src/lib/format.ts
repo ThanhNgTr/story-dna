@@ -56,6 +56,9 @@ export const STEP_LABEL: Record<string, string> = {
   action: 'Bổ sung diễn xuất (tay, mặt, đồ cầm, vị trí)',
   editor_apply: 'Áp dụng sửa của biên tập',
   story_check: 'Kiểm tra cốt truyện (mở đầu → kết, nhân vật, bối cảnh, cao trào, bí ẩn)',
+  continuity: 'Kiểm tra liên mạch (nhân quả, ai biết gì, nối tập, manh mối)',
+  continuity_review: 'Rà logic toàn mùa (lỗ hổng, trùng hợp, động cơ)',
+  continuity_apply: 'Áp dụng sửa logic',
 }
 
 export function jobProgress(job: Job): number | null {

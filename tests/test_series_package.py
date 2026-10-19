@@ -357,8 +357,7 @@ def test_flow_warnings_names_and_faces():
     part = {"video_prompt": 'Cast: Mr. Huu: man, 50s. The worker says: "Phong ơi, ra đây."',
             "refs": ["assets/characters/char_01/a.png", "assets/characters/char_03/b.png", "assets/locations/x.png"]}
     w = package.flow_warnings("p1", part, names)
-    assert any("Ông Hữu" in x and "Phong" not in x for x in w)  # name in dialogue is fine, "Huu" is not
-    assert not any("images" in x for x in w)  # 2 characters + location fit Flow's 3 images
+    assert w == []  # names are fine (tested 2026-10-15); 2 characters + location fit Flow's 3 images
     ok = {"video_prompt": 'The businessman points up. The worker: "Phong đây."', "characters": ["char_01", "char_03"],
           "refs": ["assets/characters/char_01/a.png", "assets/characters/char_03/b.png"]}
     assert package.flow_warnings("p1", ok, names) == []
@@ -428,7 +427,7 @@ def test_flow_package_one_file_per_veo_part(app_session):
              "video_prompt": "SEEDANCE ONE", "veo_parts": [
                  {"part": 1, "start_sec": 0, "end_sec": 6.5, "characters": [], "refs": [], "video_prompt": "VEO ONE"},
                  {"part": 2, "start_sec": 6.5, "end_sec": 12, "characters": ["char_01"],
-                  "refs": [str(img.relative_to(d))], "video_prompt": "VEO TWO"}]}]})
+                  "refs": [str(img.relative_to(d))], "video_prompt": "VEO TWO: The young worker looks up."}]}]})
     path, name = package.build_flow_package(d, 1, "Demo")
     try:
         z = zipfile.ZipFile(path)
@@ -437,7 +436,9 @@ def test_flow_package_one_file_per_veo_part(app_session):
         p1, p2 = z.read(f"{root}/parts/clip_01_1.txt").decode(), z.read(f"{root}/parts/clip_01_2.txt").decode()
         assert "VEO ONE" in p1 and "Text to Video" in p1 and "SEEDANCE" not in p1
         assert "VEO TWO" in p2 and "Ingredients to Video" in p2 and "refs/char_01_vu_sheet_v1.png" in p2
-        assert 'the young worker: "Anh đi đâu đấy?"' in p2 and "Anh đi đâu" not in p1
+        name = "Vũ"  # the episode's own cast name wins over the bible's
+        assert f'{name}: "Anh đi đâu đấy?"' in p2 and "Anh đi đâu" not in p1
+        assert f"VEO TWO: {name} looks up." in p2 and "young worker" not in p2  # old role labels -> names
         q = json.loads(z.read(f"{root}/flow_queue.json"))
         assert [r["save_as"] for r in q["parts"]] == ["clips/clip_01_1.mp4", "clips/clip_01_2.mp4"]
         assert q["parts"][1]["trim_to_sec"] == 5.5

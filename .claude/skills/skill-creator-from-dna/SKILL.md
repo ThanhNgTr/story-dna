@@ -128,14 +128,16 @@ Session dir: data/series/<slug>/<session-id>/ (session-id = UTC YYYYMMDD-HHMMSS)
 - Minors on screen (before planning): read .claude/skills/story-contract/references/minors-on-screen.md. Child characters get daylight / early-evening scenes in open or shared places; no sleep, bed or touching with an adult, no phone / screen in the child's shot, at most one adult in the child's shot; the child's bible tell and signature props are hand / school things, never a mouth habit or a device; every outline row with a minor on screen names when and where.
 - Looks: after the bible, run /series-assets --session <session-dir> (bible-only) -> assets/assets_v1.md/.json (fixed faces, default + planned outfits, canonical locations with variants, key props). Show it with the outline.
 - Dialogue setup: bible also has address_matrix (xưng hô per pair) + glossary (ONLY invented/unusual terms and how a character or sign makes them clear; never everyday words) per .claude/skills/dialogue-polish/references/vi-dialogue.md.
+- Cause chain: every outline row has events (1-4, ids E<ep>.<k>: what happens), because (episodes 2..N: earlier event ids that make it happen; chance is not a cause) and opens_from (how it picks up the previous cliffhanger), per .claude/skills/story-continuity/references/continuity.md; python3 .claude/skills/story-continuity/_continuity.py check <session-dir> --stage outline -> 0 errors.
 - Story contract: bible + outline carry the fields of .claude/skills/story-contract/references/story-contract.md (main_plot, ending, setting_timeline, climaxes, ledger tier + answer; outline act, main_plot_step, locations, setting_change, climax); python3 .claude/skills/story-contract/_story_check.py <session-dir> --stage outline -> 0 errors.
 - STOP and show the outline unless --auto. User approves with /refine-skill <slug> --approve outline or gives feedback.
 
 ### Stage 3 — Episodes (episodes/epNN_v1.md/.json)
 - Each episode follows the Episode Template and the rule sections below.
 - Write against the asset registry (latest assets/assets_vN.json) following .claude/skills/series-assets/references/episode-contract.md: every scene has loc_id, variant_id, cast (outfit per on-screen character), referenced, props; anything new goes in new_assets. Subagents get the registry and contract paths too.
-- N > 6: write in parallel with general-purpose subagents, 3-4 episodes each; give each the bible, outline, this SKILL.md path and its episode numbers.
-- Continuity pass after all episodes: names, visual signatures (verbatim), ledger timing, callbacks, timecodes adding up.
+- N > 6: write in parallel with general-purpose subagents, 3-4 consecutive episodes each; give each the bible, outline (its events / because / opens_from are the contract between writers), this SKILL.md path, .claude/skills/story-continuity/references/continuity.md and its episode numbers. Episodes written while others exist read the latest continuity/state_vN.md first.
+- Seam pass after all writers replied: python3 .claude/skills/story-continuity/_continuity.py seams <session-dir>; at every package boundary (and any pair that does not join) rewrite the first scene of the later episode so its first 3s continue the exact cliffhanger moment.
+- Continuity pass after all episodes: names, visual signatures (verbatim), ledger timing, callbacks, timecodes adding up. Then build the state ledger (/story-continuity "Check + repair" step 3: continuity/state_vN.json) and python3 .claude/skills/story-continuity/_continuity.py check <session-dir> -> 0 errors (story breaks fixed in the episodes, not in the ledger).
 - Then python3 .claude/skills/series-assets/_assets.py lint <session-dir> -> 0 errors, and /series-assets --session <session-dir> (scene map, new_assets get real IDs, drift report).
 - Minors on screen: re-read .claude/skills/story-contract/references/minors-on-screen.md before writing an episode with a child; _action_lint.py minor_risk = 0 (strict).
 - Acting: every beat carries acting (per visible character, listener included: does = body + hands, face, holds = what is in hand) and every 2+ character scene a blocking line, per .claude/skills/action-polish/references/screen-action.md (lines said while doing something; the cast's body tells at their turns; objects stay in hand until a beat puts them down). python3 .claude/skills/action-polish/_action_lint.py lint <session-dir>: missing / prop_vanish / no_blocking = 0.
@@ -202,7 +204,7 @@ The reference's VO share is a measured average, not a target: after an opening p
 <episode md + json: see skill-creator-from-dna "Episode output format"; bible/outline json shapes>
 
 ## Self-check
-<8-12 checkboxes: structure %, ledger, hooks, durations, signatures verbatim, VO share, pacing; always include: _story_check.py 0 errors; every scene has loc_id + variant_id and every on-screen character an outfit from the asset registry, _assets.py lint 0 errors>
+<8-12 checkboxes: structure %, ledger, hooks, durations, signatures verbatim, VO share, pacing; always include: _story_check.py 0 errors; _continuity.py check 0 errors (cause chain, state ledger covers every episode); every scene has loc_id + variant_id and every on-screen character an outfit from the asset registry, _assets.py lint 0 errors>
 
 ## Data limits
 <sources, what was inferred (music, speakers), sample size>
@@ -259,7 +261,7 @@ Logline: ... | Story beats: <template beats> | Cliffhanger: <type>
   "new_assets": [], "cliffhanger": "...", "ledger": {"opened": [], "clues": [], "answered": []}
 }
 ```
-Last episode adds `"ending": {"type": "happy|bad", "central_question_answer": "..."}`.
+Last episode adds `"ending": {"type": "happy|bad", "central_question_answer": "..."}`. A scene told as a flashback adds `"flashback": true`.
 
 ## Steps
 

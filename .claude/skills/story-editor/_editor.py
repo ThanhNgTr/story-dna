@@ -4,8 +4,11 @@
   next     <session>              -> prints the next free review version N
   validate <review_vN.json>       -> shape + score/verdict consistency, exit 1 on errors
   latest   <session>              -> prints the latest editor/review_vN.json path (empty if none)
-  plan     <session> [F1,F3|all]  -> writes editor/apply_plan.json for --apply: chosen findings, source and
-                                     target file per bible/outline/episode, episode packages for subagents
+  plan     <session> [F1,F3|all] [--review <file>]
+                                  -> writes editor/apply_plan.json for --apply: chosen findings, source and
+                                     target file per bible/outline/episode, episode packages for subagents;
+                                     --review: another findings file (continuity/logic_vN.json), plan and
+                                     notes then go next to it
   render   <epNN_vK.json>...      -> writes the .md screenplay next to each episode JSON (app's renderer)
 """
 
@@ -174,11 +177,13 @@ def _fid(i: str) -> int:
     return int(m.group()) if m else 0
 
 
-def plan(session: Path, ids: str = "") -> int:
-    review = latest(session)
-    if not review:
-        print("ERROR no editor/review_vN.json")
+def plan(session: Path, ids: str = "", review: Path | None = None) -> int:
+    session = session.resolve()
+    review = review.resolve() if review else latest(session)
+    if not review or not review.exists():
+        print(f"ERROR no {review or 'editor/review_vN.json'}")
         return 1
+    out_dir = review.parent
     r = json.loads(review.read_text(encoding="utf-8"))
     findings = r.get("findings") or []
     if ids.strip().lower() == "all":
@@ -225,11 +230,11 @@ def plan(session: Path, ids: str = "") -> int:
         "episodes": {str(n): {"source": rel(ep_files[n][0]), "target": rel(ep_files[n][1]), "findings": eps[n]}
                      for n in sorted(eps)},
         "packages": _packages(eps),
-        "notes_file": "editor/apply_notes.json",
+        "notes_file": rel(out_dir / "apply_notes.json"),
         "skipped": skipped,
     }
-    (session / "editor").mkdir(exist_ok=True)
-    path = session / "editor" / "apply_plan.json"
+    out_dir.mkdir(exist_ok=True)
+    path = out_dir / "apply_plan.json"
     path.write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"plan {rel(path)}: {len(chosen)} findings, docs {sorted(docs) or '-'}, "
           f"{len(eps)} episodes in {len(out['packages'])} packages, {len(skipped)} skipped")
@@ -250,7 +255,9 @@ def render(paths: list[Path]) -> int:
 
 def main(argv: list[str]) -> int:
     if len(argv) >= 2 and argv[0] == "plan":
-        return plan(Path(argv[1]), argv[2] if len(argv) > 2 else "")
+        review = Path(argv[argv.index("--review") + 1]) if "--review" in argv else None
+        rest = [a for i, a in enumerate(argv[2:], 2) if a != "--review" and argv[i - 1] != "--review"]
+        return plan(Path(argv[1]), rest[0] if rest else "", review)
     if len(argv) >= 2 and argv[0] == "render":
         return render([Path(a) for a in argv[1:]])
     if len(argv) != 2:

@@ -357,7 +357,7 @@ def _report_current(report: Path, d: Path, checker: Path, stage: str | None = No
     if not report.exists():
         return None
     newest = max((f.stat().st_mtime for pat in ("bible_v*.json", "outline_v*.json", "input.json", "episodes/ep*_v*.json",
-                                                  "final/*.json") for f in d.glob(pat)), default=0)
+                                                  "final/*.json", "continuity/state_v*.json") for f in d.glob(pat)), default=0)
     if checker.exists():
         newest = max(newest, checker.stat().st_mtime)
     if newest > report.stat().st_mtime:
@@ -409,6 +409,119 @@ async def enforce_story_contract(job: Job, d: Path, stage: str) -> dict:
     job.data.setdefault("result", {})["story_check"] = {"ok": rep.get("ok"), "errors": rep.get("errors", [])[:30]}
     job.save()
     return rep
+
+
+CONTINUITY = config.SKILLS / "story-continuity" / "_continuity.py"
+
+
+def _continuity_check(d: Path, stage: str) -> dict:
+    """Deterministic continuity check (cause chain + state ledger); writes and returns <session>/continuity_check.json."""
+    import subprocess
+    subprocess.run(["python3", str(CONTINUITY), "check", str(d), "--stage", stage], cwd=str(config.ROOT),
+                   capture_output=True, text=True, timeout=120)
+    try:
+        return json.loads((d / "continuity_check.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return {"ok": False, "errors": ["_continuity.py produced no report"], "warnings": []}
+
+
+def _continuity_files(d: Path, stem: str) -> list[Path]:
+    return sorted((d / "continuity").glob(f"{stem}_v*.json"), key=_version)
+
+
+def logic_view(d: Path) -> dict | None:
+    """Latest logic review (continuity/logic_vN.json) + which findings were applied, for the UI."""
+    reviews = _continuity_files(d, "logic")
+    if not reviews:
+        return None
+    try:
+        r = json.loads(reviews[-1].read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    applied: set[str] = set()
+    for a in _continuity_files(d, "applied"):
+        try:
+            x = json.loads(a.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if x.get("review") in (reviews[-1].name, f"continuity/{reviews[-1].name}"):
+            applied |= set(x.get("applied") or [])
+    newest = max((f.stat().st_mtime for f in [*d.glob("bible_v*.json"), *d.glob("outline_v*.json"),
+                                               *(d / "episodes").glob("ep*_v*.json")]), default=0)
+    return {**r, "file": reviews[-1].name, "applied": sorted(applied), "stale": newest > reviews[-1].stat().st_mtime}
+
+
+def continuity_view(slug: str, session_id: str) -> dict | None:
+    """Continuity check for the UI (fast, no Claude) + the latest logic review. None before an outline."""
+    st = session_state(slug, session_id)
+    if st["outline"] is None:
+        return None
+    d = st["dir"]
+    stage = "episodes" if st["episodes"] else "outline"
+    rep = _report_current(d / "continuity_check.json", d, CONTINUITY, stage) or _continuity_check(d, stage)
+    return {**{k: rep.get(k) for k in ("ok", "stage", "checked_at", "errors", "warnings", "state")},
+            "logic": logic_view(d)}
+
+
+async def enforce_continuity(job: Job, d: Path, stage: str) -> dict:
+    """Check the cause chain / state ledger; on errors let Claude repair once (/story-continuity), then re-check.
+
+    Never fails the job: what is left stays in continuity_check.json and the UI shows it.
+    """
+    job.step("continuity", "running")
+    rep = _continuity_check(d, stage)
+    if not rep.get("ok"):
+        job.log(f"[continuity] {len(rep['errors'])} errors, repairing: " + "; ".join(rep["errors"][:5]))
+        try:
+            await _claude(job, f"/story-continuity --session {d} --stage {stage}\n\nRun non-interactively: do "
+                               "not ask questions; keep the user's idea and the style skill's rules." + UI_NOTE,
+                          "continuity", 5400)
+        except RuntimeError as e:
+            job.log(f"[continuity] repair failed: {e}")
+        rep = _continuity_check(d, stage)
+    job.step("continuity", "done" if rep.get("ok") else "failed",
+             errors=len(rep.get("errors", [])), warnings=len(rep.get("warnings", [])))
+    job.data.setdefault("result", {})["continuity"] = {"ok": rep.get("ok"), "errors": rep.get("errors", [])[:30]}
+    job.save()
+    return rep
+
+
+async def run_continuity(job: Job) -> dict:
+    """Web job: mode=fix (check + repair), review (logic review) or apply (apply logic findings `ids`, then re-check)."""
+    p = job.data["params"]
+    slug, sid = p["slug"], p["session_id"]
+    st = session_state(slug, sid)
+    _check(st["outline"] is not None, "no outline yet")
+    d = st["dir"]
+    stage = "episodes" if st["episodes"] else "outline"
+    mode = p.get("mode") or "fix"
+    if mode == "review":
+        before = len(_continuity_files(d, "logic"))
+        job.step("continuity_review", "running")
+        await _claude(job, f"/story-continuity --session {d} --review\n\nRun non-interactively: do not ask "
+                           "questions." + UI_NOTE, "continuity_review", 3600)
+        files = _continuity_files(d, "logic")
+        _check(len(files) > before, "continuity/logic_vN.json was not written")
+        r = json.loads(files[-1].read_text(encoding="utf-8"))
+        job.step("continuity_review", "done", verdict=r.get("verdict"), findings=len(r.get("findings") or []))
+    elif mode == "apply":
+        review = _continuity_files(d, "logic")
+        _check(bool(review), "no logic review yet")
+        before = len(_continuity_files(d, "applied"))
+        ids = ",".join(p.get("ids") or [])
+        job.step("continuity_apply", "running")
+        await _claude(job, f"/story-continuity --session {d} --apply {ids}\n\nRun non-interactively: do not ask "
+                           "questions; apply exactly these findings of continuity/" + review[-1].name + "." + UI_NOTE,
+                      "continuity_apply", 7200)
+        _check(len(_continuity_files(d, "applied")) > before, "continuity/applied_vN.json was not written")
+        job.step("continuity_apply", "done")
+        stage = "episodes" if session_state(slug, sid)["episodes"] else "outline"
+        await enforce_story_contract(job, d, stage)
+        await enforce_continuity(job, d, stage)
+    else:
+        await enforce_continuity(job, d, stage)
+        await enforce_story_contract(job, d, stage)
+    return {"slug": slug, "session_id": sid}
 
 
 EDITOR = config.SKILLS / "story-editor" / "_editor.py"
@@ -482,6 +595,7 @@ async def run_editor(job: Job) -> dict:
         job.step("editor_apply", "done")
         st = session_state(slug, sid)
         await enforce_story_contract(job, d, "episodes" if st["episodes"] else "outline")
+        await enforce_continuity(job, d, "episodes" if st["episodes"] else "outline")
         if p.get("rereview"):
             await editor_review(job, d)
     else:
@@ -657,6 +771,7 @@ async def write_outline(job: Job) -> dict:
     _check(st["outline"] is not None, "outline was not written")
     job.step("outline", "done")
     await enforce_story_contract(job, d, "outline")
+    await enforce_continuity(job, d, "outline")
     if session_settings(d)["auto_editor_outline"]:
         await editor_review(job, d)
     else:
@@ -725,6 +840,7 @@ async def refine(job: Job) -> dict:
     if step != "final":
         st = session_state(slug, sid)
         await enforce_story_contract(job, st["dir"], "episodes" if st["episodes"] else "outline")
+        await enforce_continuity(job, st["dir"], "episodes" if st["episodes"] else "outline")
         if step == "episodes" and session_settings(st["dir"])["auto_editor_episodes"]:
             await editor_review(job, st["dir"])
     return {"slug": slug, "session_id": sid}
@@ -821,6 +937,7 @@ async def continue_series(job: Job) -> dict:
     _check(after["outline"] > before["outline"], "continuation outline was not written")
     job.step("continue", "done")
     await enforce_story_contract(job, d, "outline")
+    await enforce_continuity(job, d, "outline")
     return {"slug": slug, "session_id": sid}
 
 
