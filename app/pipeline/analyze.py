@@ -1,9 +1,11 @@
 """Analysis pipeline driven by the backend (same steps as the /analyze-videos skill).
 
-1 shots + units + frames (_analyze.py)  2 transcript (_transcribe.py)
+1 shots + units + frames (_analyze.py)  2 transcript (_transcribe.py, ~10-min chunks)
 3 video-analyst per unit (parallel)       4 story-merger (parts if > 8 units, then final)
 5 film-analyst: text-only audit + why it works (film_analysis.md/.json)
 
+Steps 2 and 3 overlap: a unit's analyst starts as soon as the chunk covering it is transcribed
+(UnitGate), so the CPU transcribes while Claude analyzes.
 Every step skips work whose output already exists, so a failed or interrupted job can resume.
 Also runnable from the CLI:  .venv/bin/python -m app.pipeline.analyze --run data/analyses/<run-id>
 """
@@ -14,6 +16,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from typing import Callable
 
 from .. import config
 from ..claude_runner import run_claude
@@ -22,15 +25,20 @@ from ..jobs import Job
 MERGE_GROUP = 8
 
 
-async def run_script(job: Job, args: list[str]) -> list[str]:
+async def run_script(job: Job, args: list[str], on_line: Callable[[str], bool] | None = None) -> list[str]:
+    """Run a helper script, logging its output. on_line(line) -> True means the line was a machine
+    message it handled (not logged)."""
     proc = await asyncio.create_subprocess_exec(
-        *args, cwd=str(config.ROOT), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+        *args, cwd=str(config.ROOT), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
+        limit=2 ** 20)
     lines = []
     assert proc.stdout
     try:
         async for raw in proc.stdout:
             line = raw.decode(errors="replace").rstrip()
             lines.append(line)
+            if on_line and on_line(line):
+                continue
             # Skip noisy library warnings / progress bars
             if line and not any(x in line for x in ("Warning", "warn(", "%|", "torchcodec", "libav")):
                 job.log(line[:200])
@@ -69,22 +77,72 @@ async def step_extract(job: Job) -> Path:
     return run_dir
 
 
-async def step_transcribe(job: Job, run_dir: Path):
+def unit_has_audio_info(unit: dict) -> bool:
+    return bool(unit.get("transcript_path")) or (unit.get("audio") or {}).get("has_audio") is False
+
+
+class UnitGate:
+    """Which units may start their analyst: transcript written (or no audio), or transcription not run.
+    After a transcription crash the gate closes: units not started yet are skipped (resume redoes them)."""
+
+    def __init__(self, units: list[dict]):
+        self.events = {u["unit_id"]: asyncio.Event() for u in units}
+        self.closed = False
+        for u in units:
+            if unit_has_audio_info(u):
+                self.events[u["unit_id"]].set()
+
+    def mark(self, unit_id: str):
+        if unit_id in self.events:
+            self.events[unit_id].set()
+
+    def open_all(self):
+        for ev in self.events.values():
+            ev.set()
+
+    def close(self):
+        self.closed = True
+        self.open_all()
+
+    async def wait(self, unit_id: str) -> bool:
+        await self.events[unit_id].wait()
+        return not self.closed
+
+
+async def step_transcribe(job: Job, run_dir: Path, gate: UnitGate | None = None):
+    gate = gate or UnitGate([])
     m = json.loads((run_dir / "manifest.json").read_text())
-    if all(u.get("transcript_path") or (u.get("audio") or {}).get("has_audio") is False for u in m["units"]):
+    if all(unit_has_audio_info(u) for u in m["units"]):
         job.step("transcribe", "skipped")
+        gate.open_all()
         return
     if not config.VENV_PY.exists():
         job.step("transcribe", "skipped", note="no .venv (WhisperX); dialogue will be inferred")
+        gate.open_all()
         return
+    p = job.data["params"]
     job.step("transcribe", "running")
-    args = [str(config.VENV_PY), str(config.SCRIPTS / "_transcribe.py"), "--manifest", str(run_dir / "manifest.json")]
-    if job.data["params"].get("language"):
-        args += ["--language", job.data["params"]["language"]]
-    await run_script(job, args)
+    args = [str(config.VENV_PY), str(config.SCRIPTS / "_transcribe.py"), "--manifest", str(run_dir / "manifest.json"),
+            "--diarize", p.get("diarize") or "auto"]
+    if p.get("language"):
+        args += ["--language", p["language"]]
+
+    def on_line(line: str) -> bool:
+        if line.startswith("UNIT_READY "):
+            gate.mark(line.split(None, 1)[1].strip())
+            return True
+        if line.startswith("PROGRESS "):
+            done, _, total = line.split(None, 1)[1].partition("/")
+            if done.isdigit() and total.isdigit():
+                job.step("transcribe", "running", done=int(done), total=int(total))
+            return True
+        return False
+
+    await run_script(job, args, on_line)
     m = json.loads((run_dir / "manifest.json").read_text())
     audio = (m["sources"][0].get("audio") or {}) if m["sources"] else {}
-    job.step("transcribe", "done", language=audio.get("language"), segments=audio.get("segments"))
+    job.step("transcribe", "done", language=audio.get("language"), segments=audio.get("segments"),
+             diarized=audio.get("diarized"))
 
 
 def analyst_prompt(unit: dict, run_dir: Path) -> str:
@@ -98,19 +156,34 @@ def analyst_prompt(unit: dict, run_dir: Path) -> str:
               "write all other fields in English.")
 
 
-async def step_units(job: Job, run_dir: Path):
+def current_unit(run_dir: Path, unit_id: str) -> dict:
+    """The unit as the manifest has it now (transcript_path + language land while the job runs)."""
+    m = json.loads((run_dir / "manifest.json").read_text())
+    return next(u for u in m["units"] if u["unit_id"] == unit_id)
+
+
+async def step_units(job: Job, run_dir: Path, gate: UnitGate | None = None):
     m = json.loads((run_dir / "manifest.json").read_text())
     units = m["units"]
+    if gate is None:
+        gate = UnitGate(units)
+        gate.open_all()
     (run_dir / "dna").mkdir(exist_ok=True)
     todo = [u for u in units if not valid_json(run_dir / "dna" / f"{u['unit_id']}.dna.json")]
     done = len(units) - len(todo)
-    job.step("units", "running", done=done, total=len(units), failed=[])
+    job.step("units", "running", done=done, total=len(units), failed=[], note=None)
     sem = asyncio.Semaphore(config.CLAUDE_PARALLEL)
+
+    skipped = []
 
     async def one(unit: dict):
         nonlocal done
         out = run_dir / "dna" / f"{unit['unit_id']}.dna.json"
+        if not await gate.wait(unit["unit_id"]):
+            skipped.append(unit["unit_id"])
+            return
         async with sem:
+            unit = current_unit(run_dir, unit["unit_id"])
             for attempt in (1, 2):
                 job.log(f"[{unit['unit_id']}] video-analyst start (attempt {attempt})")
                 res = await run_claude(analyst_prompt(unit, run_dir), agent="video-analyst",
@@ -126,6 +199,9 @@ async def step_units(job: Job, run_dir: Path):
         job.save()
 
     await asyncio.gather(*(one(u) for u in todo))
+    if skipped:  # transcription crashed: these never started; step_transcribe raises the error
+        job.step("units", "failed", done=done, total=len(units), note="chép lời bị lỗi, chạy tiếp để làm nốt")
+        return
     failed = job.data["steps"]["units"].get("failed", [])
     if failed:
         job.step("units", "failed", done=done, total=len(units))
@@ -200,12 +276,29 @@ async def step_summary(job: Job, run_dir: Path):
     job.step("summary", "done" if ok else "failed")
 
 
+async def transcribe_and_units(job: Job, run_dir: Path):
+    """Steps 2 + 3 together: analysts start on each unit as soon as its transcript is written."""
+    gate = UnitGate(json.loads((run_dir / "manifest.json").read_text())["units"])
+
+    async def transcribe():
+        try:
+            await step_transcribe(job, run_dir, gate)
+        except BaseException:
+            gate.close()  # never leave analysts waiting on a crashed transcription
+            raise
+        gate.open_all()
+
+    results = await asyncio.gather(transcribe(), step_units(job, run_dir, gate), return_exceptions=True)
+    for r in results:
+        if isinstance(r, BaseException):
+            raise r
+
+
 async def run_analysis(job: Job) -> dict:
     run_dir = await step_extract(job)
     job.data["result"]["run_dir"] = str(run_dir)
     job.save()
-    await step_transcribe(job, run_dir)
-    await step_units(job, run_dir)
+    await transcribe_and_units(job, run_dir)
     await step_merge(job, run_dir)
     await step_review(job, run_dir)
     await step_summary(job, run_dir)
@@ -220,12 +313,14 @@ if __name__ == "__main__":
     ap.add_argument("--video", help="video path (new run)")
     ap.add_argument("--run", help="existing run dir to resume")
     ap.add_argument("--language")
+    ap.add_argument("--diarize", choices=["auto", "on", "off"], default="auto")
     args = ap.parse_args()
 
     async def main():
         jm = JobManager()
         job = jm.start("analysis", f"CLI {args.run or args.video}",
-                       {"video_path": args.video, "run_dir": args.run, "language": args.language}, run_analysis)
+                       {"video_path": args.video, "run_dir": args.run, "language": args.language,
+                        "diarize": args.diarize}, run_analysis)
         print(f"job {job.id}, log: {job.log_path}", file=sys.stderr)
         await jm.tasks[job.id]
         print(json.dumps(jm.get(job.id).data, indent=2))

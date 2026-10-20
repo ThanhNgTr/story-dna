@@ -296,7 +296,7 @@ finished jobs and shows "time left" for running ones.
 
 | Step | Time | Notes |
 |---|---|---|
-| Learn a video | ~1.5 h for 50 min of video | transcript ~0.65x video length; ~3-4 min per 2-min unit, 4 units at once; merge 6-18 min. Full frame analysis ≈ $0.45 per video minute of Claude usage |
+| Learn a video | ~1 h for 50 min of video, ~2 h for 2.5 h | transcript ~0.4x video length in 10-min chunks (speaker labels add ~2.5x on CPU: auto only up to 60 min); Claude analyses each chunk's units while the next chunk is transcribed, ~3-4 min per 2-min unit, 8 units at once; merge 6-18 min. Full frame analysis ≈ $0.45 per video minute of Claude usage |
 | Create a style | 10-20 min | |
 | Bible + outline | 5-10 min | |
 | Episodes | ~2 min per episode | |
@@ -319,11 +319,12 @@ Put overrides in `.env` (copy `.env.example`; gitignored, loaded by `./run_app.s
 | Variable | Default | Meaning |
 |---|---|---|
 | `HF_TOKEN` | - | Hugging Face token for speaker labels |
+| `STORY_DNA_DIARIZE_MAX_MIN` | 60 | Speaker labels "auto": only for audio up to this many minutes (slow on CPU) |
 | `CLAUDE_BIN` | auto | Path to the `claude` binary |
 | `CODEX_BIN` | auto | Path to the `codex` binary |
 | `PORT` | 8765 | Web app port |
 | `STORY_DNA_HOST` | `127.0.0.1` | Bind address; `0.0.0.0` enables LAN access to the shared workspace |
-| `STORY_DNA_PARALLEL` | 4 | Claude processes at once during analysis |
+| `STORY_DNA_PARALLEL` | 8 | Claude processes at once during analysis (lower it if the Claude plan hits its usage limit) |
 | `STORY_DNA_CODEX_PARALLEL` | 1 | Images generated at once |
 | `STORY_DNA_VIDEO_TARGETS` | `flow` | Video prompts to write: `flow` (Google Flow only) or `flow,higgsfield` (also 10-15s clip prompts + Higgsfield zip; slower) |
 | `STORY_DNA_CODEX_TIMEOUT` | 600 | Seconds before one image attempt is abandoned |
