@@ -74,8 +74,9 @@ Codex CLI on the user's ChatGPT login (built-in image_gen, no OpenAI API key)
 1. **Frame budget**: keyframes per detected shot, `--max-frames` per unit (default 40). Fast-cut units have more shots than frames; pacing is still measured on all shots.
 2. **Vision context**: never read frames in the main context. One `video-analyst` per unit; >12 units -> waves of 8-12.
 3. **Merge size**: >8 units -> `story-merger mode=part` per ≤8 units, then `mode=final`.
-4. **Transcription is slow on CPU**: ~0.65x realtime (30 min video ≈ 20 min). Run it in the background.
+4. **Transcription is slow on CPU**: ~0.4x realtime, in ~10-min resumable chunks; the web job starts each chunk's analysts while the next is transcribed.
 5. **Speaker labels** need `HF_TOKEN` + pyannote terms; without them agents assign speakers from frames (`speaker_unsure`).
+   CPU diarization ≈ 2.5x the audio length: `--diarize auto` only up to 60 min (`STORY_DNA_DIARIZE_MAX_MIN`); labels are per chunk.
 6. **SKILL.md YAML must be valid**: parse the frontmatter after every write; bad YAML -> skill fails silently.
 7. **Skill name conflicts**: check `.claude/skills/` before generating.
 8. **Headless Claude cannot write inside `.claude/`** (protected even with allow rules). The web app stages skill edits in `data/skills-staging/write-series-<slug>/`, then validates + installs them into `.claude/skills/`.

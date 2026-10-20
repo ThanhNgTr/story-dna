@@ -99,11 +99,17 @@ def estimate_analysis(durations: list[float], chunk_sec: int = 120) -> dict:
     # Same split rule as _analyze.py: videos >= 240 s are cut into ~chunk_sec units, shorter ones stay whole
     units = sum(max(1, math.ceil(d / chunk_sec)) if d >= 240 else 1 for d in durations)
     duration_sec = sum(durations)
-    transcribe = duration_sec * 0.65
+    # CPU ASR + word alignment ~0.4x realtime; speaker labels (auto: up to DIARIZE_MAX_MIN) add ~0.3x
+    rate = 0.4 + (0.3 if duration_sec <= config.DIARIZE_MAX_MIN * 60 else 0)
+    transcribe = duration_sec * rate
     analysts = math.ceil(units / config.CLAUDE_PARALLEL) * 4.5 * 60
     merge = (18 if units > 8 else 6) * 60
+    # Analysts start after the first ~10-min chunk is transcribed and run alongside the rest; the last
+    # chunk's units still need one round after transcription ends
+    first_chunk = min(duration_sec, 600) * rate
+    overlap = max(transcribe + 4.5 * 60, first_chunk + analysts)
     return {"units": units, "transcribe": fmt_duration(transcribe), "analysts": fmt_duration(analysts),
-            "merge": fmt_duration(merge), "total": fmt_duration(60 + transcribe + analysts + merge)}
+            "merge": fmt_duration(merge), "total": fmt_duration(60 + overlap + merge)}
 
 
 def videos_in(path: Path) -> list[Path]:

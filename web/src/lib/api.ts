@@ -436,6 +436,7 @@ export type AssetKind = 'character' | 'outfit' | 'location' | 'prop'
 
 export interface BrowseEntry { name: string; path: string; dir: boolean; size_mb?: number }
 export interface BrowseResult { cwd: string; parent: string | null; entries: BrowseEntry[]; n_videos: number; input_dir: string }
+export type Diarize = 'auto' | 'on' | 'off'
 export interface Estimate { units: number; transcribe: string; analysts: string; merge: string; total: string }
 export interface ProbeResult {
   path: string
@@ -593,7 +594,7 @@ export const api = {
       { method: 'PUT', body: JSON.stringify({ base_file, data, note }) }),
   browse: (path = '') => request<BrowseResult>(`/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`),
   probe: (path: string) => request<ProbeResult>(`/probe?path=${encodeURIComponent(path)}`),
-  startAnalysis: (body: { video_path: string; language: string; chunk_sec: number; max_frames: number; force?: boolean }) =>
+  startAnalysis: (body: { video_path: string; language: string; chunk_sec: number; max_frames: number; diarize: Diarize; force?: boolean }) =>
     request<Job>('/analyses', { method: 'POST', body: JSON.stringify(body) }),
   analysis: (id: string) => request<AnalysisDetail>(`/analyses/${id}`),
   analysisDoc: (id: string, kind: string) => request<{ kind: string; markdown: string }>(`/analyses/${id}/doc/${kind}`),

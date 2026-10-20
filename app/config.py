@@ -23,8 +23,11 @@ VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".avi", ".webm"}
 BROWSE_ROOTS = [Path(p).expanduser().resolve()
                 for p in os.environ.get("STORY_DNA_BROWSE_ROOTS", "~").split(os.pathsep)]
 
-# Max Claude processes running at once (each video-analyst reads ~40 images)
-CLAUDE_PARALLEL = int(os.environ.get("STORY_DNA_PARALLEL", "4"))
+# Max Claude processes running at once (each video-analyst reads ~40 images). Each is mostly waiting on the
+# network (~300 MB RAM); the real limit is the Claude plan's usage window. Lower it if jobs hit rate limits.
+CLAUDE_PARALLEL = int(os.environ.get("STORY_DNA_PARALLEL", "8"))
+# Speaker labels (pyannote on CPU) cost about as long as the ASR itself: auto = only for audio up to this length
+DIARIZE_MAX_MIN = float(os.environ.get("STORY_DNA_DIARIZE_MAX_MIN", "60"))
 # Video tools the prompts are written for: "flow" (Google Flow / Veo parts) and/or "higgsfield" (10-15s clip prompts
 # for Seedance / Kling). Flow only for now; STORY_DNA_VIDEO_TARGETS=flow,higgsfield writes both (slower).
 VIDEO_TARGETS = tuple(t.strip() for t in os.environ.get("STORY_DNA_VIDEO_TARGETS", "flow").split(",") if t.strip()) or ("flow",)

@@ -185,6 +185,7 @@ class AnalyzeIn(BaseModel):
     language: str = ""
     chunk_sec: int = 120
     max_frames: int = 40
+    diarize: str = "auto"       # auto | on | off: speaker labels (slow on CPU; auto = videos up to 60 min)
     force: bool = False
 
 
@@ -837,6 +838,8 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
 
     @r.post("/analyses")
     async def analyze_start(body: AnalyzeIn):
+        if body.diarize not in ("auto", "on", "off"):
+            raise HTTPException(400, "diarize phải là auto, on hoặc off.")
         vp = Path(body.video_path).expanduser()
         if not in_roots(vp.resolve()):
             raise HTTPException(400, "Đường dẫn nằm ngoài các thư mục được phép.")
@@ -852,7 +855,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
         label = f"{vp.name}/ ({len(vids)} video)" if vp.is_dir() else vp.name
         job = jobs.start("analysis", f"Học video: {label}",
                          {"video_path": str(vp), "language": body.language or None, "chunk_sec": body.chunk_sec,
-                          "max_frames": body.max_frames}, analyze.run_analysis)
+                          "max_frames": body.max_frames, "diarize": body.diarize}, analyze.run_analysis)
         return one(job)
 
     def run_or_404(run_id: str) -> Path:

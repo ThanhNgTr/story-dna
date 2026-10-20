@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ApiError, LANGUAGES, api, uploadVideo, type ProbeResult } from '@/lib/api'
+import { ApiError, LANGUAGES, api, uploadVideo, type Diarize, type ProbeResult } from '@/lib/api'
 import { askNotificationPermission } from '@/lib/events'
 import { cn } from '@/lib/utils'
 
@@ -128,7 +128,7 @@ export function ProbePanel({ probe }: { probe: ProbeResult }) {
       )}
       {probe.estimate && (
         <p className="text-muted-foreground">
-          Ước tính <b className="text-foreground">{probe.estimate.total}</b>: chép lời ~{probe.estimate.transcribe}, {probe.estimate.units} đoạn × Claude ~{probe.estimate.analysts}, gộp ~{probe.estimate.merge}. Có thể đóng tab, việc vẫn chạy nền.
+          Ước tính <b className="text-foreground">{probe.estimate.total}</b>: chép lời ~{probe.estimate.transcribe} chạy song song với {probe.estimate.units} đoạn × Claude ~{probe.estimate.analysts}, gộp ~{probe.estimate.merge}. Có thể đóng tab, việc vẫn chạy nền.
         </p>
       )}
       {probe.existing.length > 0 && (
@@ -147,10 +147,11 @@ export function NewVideoPage() {
   const [language, setLanguage] = useState('vi')
   const [chunk, setChunk] = useState(120)
   const [frames, setFrames] = useState(40)
+  const [diarize, setDiarize] = useState<Diarize>('auto')
   const [conflict, setConflict] = useState<Existing | null>(null)
   const probe = useQuery({ queryKey: ['probe', picked], queryFn: () => api.probe(picked), enabled: !!picked })
   const start = useMutation({
-    mutationFn: (force: boolean) => api.startAnalysis({ video_path: picked, language, chunk_sec: chunk, max_frames: frames, force }),
+    mutationFn: (force: boolean) => api.startAnalysis({ video_path: picked, language, chunk_sec: chunk, max_frames: frames, diarize, force }),
     onSuccess: (job) => {
       askNotificationPermission()
       toast.success('Bắt đầu học video. Bạn có thể rời trang, xong sẽ có thông báo.')
@@ -196,6 +197,13 @@ export function NewVideoPage() {
           <div className="mt-3 grid max-w-md grid-cols-2 gap-3">
             <label>Độ dài mỗi đoạn (giây)<Input type="number" min={60} max={300} value={chunk} onChange={(e) => setChunk(Number(e.target.value))} className="mt-1" /></label>
             <label>Số khung hình tối đa / đoạn<Input type="number" min={10} max={80} value={frames} onChange={(e) => setFrames(Number(e.target.value))} className="mt-1" /></label>
+            <label className="col-span-2">Nhận diện người nói
+              <select value={diarize} onChange={(e) => setDiarize(e.target.value as Diarize)} className="mt-1 h-9 w-full rounded-md border bg-background px-2 text-sm">
+                <option value="auto">Tự động: chỉ với video tới 60 phút</option>
+                <option value="on">Luôn bật (video dài chậm thêm ~1-2 giờ)</option>
+                <option value="off">Tắt: Claude đoán người nói qua hình</option>
+              </select>
+            </label>
           </div>
         </details>
       </div>
