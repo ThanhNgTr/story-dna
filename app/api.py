@@ -185,6 +185,7 @@ class AnalyzeIn(BaseModel):
     language: str = ""
     chunk_sec: int = 120
     max_frames: int = 40
+    diarize: str = "auto"       # auto | on | off: speaker labels (slow on CPU; auto = videos up to 60 min)
     force: bool = False
 
 
@@ -409,6 +410,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                 "has_prompts": package.prompts_file(d, n) is not None,
                 "prompts_stale": package.prompts_stale(d, n),
                 "prompts_outdated": package.prompts_outdated(d, n),
+                "prompts_outdated_why": package.outdated_reasons(d, n),
             })
         summary = {"session_id": sid, "episodes": len(st["episodes"]), "final": st["final_complete"],
                    "final_stale": st["final_stale"],
@@ -571,6 +573,16 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                          {"slug": slug, "session_id": sid, "kinds": kinds, "ids": body.ids, "force": body.force},
                          job_funcs["images"])
         return one(job)
+
+    @r.get("/projects/{slug}/{sid}/assets/download")
+    def assets_download(slug: str, sid: str, background: BackgroundTasks):
+        st = session_or_404(slug, sid)
+        try:
+            path, name = package.build_refs_package(st["dir"], st["input"].get("title") or slug)
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e))
+        background.add_task(path.unlink, missing_ok=True)
+        return FileResponse(path, media_type="application/zip", filename=name)
 
     @r.post("/projects/{slug}/{sid}/assets/review")
     def assets_review(slug: str, sid: str, body: ReviewIn):
@@ -837,6 +849,8 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
 
     @r.post("/analyses")
     async def analyze_start(body: AnalyzeIn):
+        if body.diarize not in ("auto", "on", "off"):
+            raise HTTPException(400, "diarize phải là auto, on hoặc off.")
         vp = Path(body.video_path).expanduser()
         if not in_roots(vp.resolve()):
             raise HTTPException(400, "Đường dẫn nằm ngoài các thư mục được phép.")
@@ -852,7 +866,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
         label = f"{vp.name}/ ({len(vids)} video)" if vp.is_dir() else vp.name
         job = jobs.start("analysis", f"Học video: {label}",
                          {"video_path": str(vp), "language": body.language or None, "chunk_sec": body.chunk_sec,
-                          "max_frames": body.max_frames}, analyze.run_analysis)
+                          "max_frames": body.max_frames, "diarize": body.diarize}, analyze.run_analysis)
         return one(job)
 
     def run_or_404(run_id: str) -> Path:

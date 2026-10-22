@@ -52,7 +52,9 @@ export interface PromptShot {
   continuity_in?: string
   opening_state?: string; closing_state?: string; performance?: string
   on_screen_text: string[]
-  veo_parts: { part: number; start_sec: number; end_sec: number; duration_sec?: number; cuts?: number[]; refs?: string[]; video_prompt: string }[]
+  veo_parts: { part: number; start_sec: number; end_sec: number; duration_sec?: number; cuts?: number[]; refs?: string[]; video_prompt: string
+    /** Seedance 2.0 version of the same part: same span, length, images and lines. */
+    seedance_prompt?: string }[]
   cuts: { cut: number; start_sec: number; end_sec: number; camera?: string; action?: string }[]
 }
 export interface PromptsData {
@@ -92,6 +94,8 @@ export interface EpisodeInfo {
   has_prompts: boolean
   prompts_stale: boolean
   prompts_outdated: boolean
+  /** Why the prompts are worth remaking: old format, dialogue not in the production language, no Seedance prompt. */
+  prompts_outdated_why?: string[]
 }
 
 export interface Iteration {
@@ -436,6 +440,7 @@ export type AssetKind = 'character' | 'outfit' | 'location' | 'prop'
 
 export interface BrowseEntry { name: string; path: string; dir: boolean; size_mb?: number }
 export interface BrowseResult { cwd: string; parent: string | null; entries: BrowseEntry[]; n_videos: number; input_dir: string }
+export type Diarize = 'auto' | 'on' | 'off'
 export interface Estimate { units: number; transcribe: string; analysts: string; merge: string; total: string }
 export interface ProbeResult {
   path: string
@@ -578,6 +583,7 @@ export const api = {
   refreshFinal: (slug: string, sid: string) =>
     request<{ copied: string[]; items: (number | string)[] }>(`${p(slug, sid)}/final/refresh`, { method: 'POST' }),
   prompts: (slug: string, sid: string, n: number) => request<PromptsData>(`${p(slug, sid)}/episodes/${n}/prompts`),
+  refsZipUrl: (slug: string, sid: string) => `/api${p(slug, sid)}/assets/download`,
   packageUrl: (slug: string, sid: string, n: number, target: 'higgsfield' | 'flow' = 'higgsfield') =>
     `/api${p(slug, sid)}/episodes/${n}/package${target === 'flow' ? '?target=flow' : ''}`,
   fixStory: (slug: string, sid: string) => request<Job>(`${p(slug, sid)}/story/fix`, { method: 'POST' }),
@@ -593,7 +599,7 @@ export const api = {
       { method: 'PUT', body: JSON.stringify({ base_file, data, note }) }),
   browse: (path = '') => request<BrowseResult>(`/browse${path ? `?path=${encodeURIComponent(path)}` : ''}`),
   probe: (path: string) => request<ProbeResult>(`/probe?path=${encodeURIComponent(path)}`),
-  startAnalysis: (body: { video_path: string; language: string; chunk_sec: number; max_frames: number; force?: boolean }) =>
+  startAnalysis: (body: { video_path: string; language: string; chunk_sec: number; max_frames: number; diarize: Diarize; force?: boolean }) =>
     request<Job>('/analyses', { method: 'POST', body: JSON.stringify(body) }),
   analysis: (id: string) => request<AnalysisDetail>(`/analyses/${id}`),
   analysisDoc: (id: string, kind: string) => request<{ kind: string; markdown: string }>(`/analyses/${id}/doc/${kind}`),

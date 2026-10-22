@@ -117,7 +117,7 @@ function NextAction({ p }: { p: Project }) {
       <div className="flex flex-wrap gap-2">
         {noPrompts > 0 && (
           <ConfirmAction trigger={<Button>Tạo prompt video ({noPrompts} tập)</Button>} title="Tạo prompt video?"
-            description={<>Claude tạo shotlist + prompt cho {noPrompts} tập chưa có prompt, có prompt cũ hoặc theo định dạng cũ (khoảng {Math.ceil(noPrompts / 4) * 5}–{Math.ceil(noPrompts / 4) * 10} phút). Nên duyệt ảnh nhân vật / bối cảnh trước để prompt gắn ảnh tham chiếu.</>}
+            description={<>Claude tạo shotlist + prompt cho {noPrompts} tập chưa có prompt, có prompt cũ hoặc theo định dạng cũ (khoảng {Math.ceil(noPrompts / 4) * 5}–{Math.ceil(noPrompts / 4) * 10} phút). Thoại trong prompt theo ngôn ngữ sản xuất (mặc định tiếng Anh Mỹ; kịch bản giữ nguyên), mỗi phần Flow kèm bản Seedance. Nên duyệt ảnh nhân vật / bối cảnh trước để prompt gắn ảnh tham chiếu.</>}
             confirmLabel="Tạo" pending={shots.isPending} onConfirm={() => shots.mutateAsync()} />
         )}
         <Button render={<a href={`/series/${p.slug}/${p.session_id}/export`} />} variant="outline">Tải file biên kịch .md</Button>

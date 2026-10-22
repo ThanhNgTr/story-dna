@@ -28,7 +28,7 @@ description: |
 
 ```
 video ─▶ [1] _analyze.py  shots on whole video ─▶ units of ~120s (cut boundaries) ─▶ keyframes per unit
-      ─▶ [2] _transcribe.py  WhisperX once per source ─▶ split per unit
+      ─▶ [2] _transcribe.py  WhisperX per ~10-min chunk ─▶ split per unit (analysts may start per chunk)
       ─▶ [3] video-analyst × N units (parallel) ─▶ dna/<unit_id>.dna.json
       ─▶ [4] story-merger  (parts of ≤8 units if N > 8, then final) ─▶ dna.json + dna.md + story.md
       ─▶ [4b] film-analyst (text only) ─▶ film_analysis.md + film_analysis.json
@@ -63,13 +63,19 @@ Speed: ~17s for 3 min of 1080p (detection decodes at 320px). Known limits: fades
 .venv/bin/python .claude/skills/analyze-videos/_transcribe.py --manifest data/analyses/<run-id>/manifest.json
 ```
 
-- WhisperX `large-v3-turbo` on CPU, word timestamps, ~0.65x realtime (30 min video ≈ 20 min)
-- Language is auto-detected from the first 30s only. If the user says the dialogue language (e.g.
+- WhisperX `large-v3-turbo` on CPU, word timestamps, ~0.4x realtime (30 min video ≈ 12 min) without speaker labels
+- Works in ~10-min chunks cut on unit boundaries (`--chunk-sec`), each saved to `transcripts/_chunks/`: an
+  interrupted run resumes at the first missing chunk; each chunk's units are written as soon as it is done
+  (stdout `UNIT_READY <unit_id>`, `PROGRESS k/n`), so their video-analysts can start right away
+- Language is auto-detected from the first 30s of the first chunk, then kept for the others. If the user says the dialogue language (e.g.
   Vietnamese) or the video opens with music, pass `--language vi` (etc.). After the run, check
   `audio.language` in the manifest; wrong -> re-run with `--language`. Vietnamese word alignment
   uses `nguyenvulebinh/wav2vec2-base-vi-vlsp2020` (downloaded on first use)
 - Writes `transcripts/<stem>.json` + `transcripts/<unit_id>.json` (segments with `shot_id`, silences, `audio` summary); adds `transcript_path` + `audio` to sources and units
-- Speaker labels only with `HF_TOKEN` set + pyannote diarization terms accepted on Hugging Face; otherwise agents assign speakers from frames
+- Speaker labels only with `HF_TOKEN` set + pyannote diarization terms accepted on Hugging Face; otherwise agents assign speakers from frames.
+  `--diarize auto` (default) labels only audio up to 60 min (`--diarize-max-min`): on CPU it costs ~2.5x the audio
+  length (2-min chunk: ASR 27s, align 28s, diarize 311s). `--diarize on|off` forces it. Labels are per chunk
+  (`C03_SPEAKER_01`); the same person may carry another label in the next chunk
 - No audio stream -> skipped; ASR error -> silences kept, agents infer dialogue
 - No `.venv` -> skip this step (dialogue becomes `inferred`). One-time setup:
   ```bash

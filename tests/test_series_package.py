@@ -109,6 +109,31 @@ def test_video_package(app_session):
         path.unlink()
 
 
+def test_refs_zip_has_approved_and_draft_only(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    with pytest.raises(FileNotFoundError):
+        package.build_refs_package(d, "Demo")
+    a = write(d / "assets" / "characters" / "char_01" / "char_01_sheet_v1.png", "PNG" * 10)
+    b = write(d / "assets" / "characters" / "char_01" / "char_01_sheet_v2.png", "PNG" * 10)
+    c = write(d / "assets" / "props" / "prop_01_v1.png", "PNG" * 10)
+    write(d / "assets" / "images.json", {"items": {
+        "char_01": {"kind": "character", "images": [{"file": str(a.relative_to(d / "assets")), "status": "rejected"},
+                                                    {"file": str(b.relative_to(d / "assets")), "status": "approved"}]},
+        "prop_01": {"kind": "prop", "images": [{"file": str(c.relative_to(d / "assets")), "status": "draft"}]}}})
+    path, name = package.build_refs_package(d, "Demo")
+    try:
+        names = zipfile.ZipFile(path).namelist()
+        assert name == "anh_tham_chieu_demo.zip"
+        assert "anh_tham_chieu_demo/da_duyet/nhan_vat/char_01_nhan_vat_1_sheet_v2.png" in names
+        assert "anh_tham_chieu_demo/cho_duyet/dao_cu/prop_01_v1.png" in names
+        assert not any("sheet_v1" in n for n in names)
+        csv_text = zipfile.ZipFile(path).read("anh_tham_chieu_demo/danh_sach.csv").decode("utf-8-sig")
+        assert "đã duyệt" in csv_text and "chờ duyệt" in csv_text
+    finally:
+        path.unlink()
+
+
 def test_prompts_go_stale_after_refinalize(app_session):
     series, d = app_session
     from app.pipeline import package
@@ -658,3 +683,83 @@ def test_outfit_built_on_a_rejected_face_falls_back_to_the_new_sheet(app_session
     index["items"]["char_02_o3"]["images"][0]["refs"] = [sheet2]
     assets.save_index(d, index)
     assert package.current_ref(d, "assets/" + outfit) == outfit
+
+
+def test_seedance_twin_of_every_flow_part(app_session):
+    series, d = app_session
+    from app.pipeline import package, seedance
+    finalize(d)
+    ep = episode(1)
+    ep["scenes"] = [{"id": "SC1", "start_sec": 0, "end_sec": 12, "loc_id": "loc_01", "beats": []}]
+    write(d / "final" / "ep01.json", ep)
+    say = {"character": "char_01", "line": "Where are you going?", "line_vi": "Anh đi đâu đấy?", "delivery_en": "cold",
+           "voiceover": False, "mode": "speaks", "start_sec": 1.0, "end_sec": 3.0}
+    think = {"character": "char_01", "line": "He knows.", "delivery_en": "soft", "voiceover": True,
+             "mode": "voiceover", "start_sec": 7.0, "end_sec": 9.0}
+    clip = _fmt2_clip(1, 0, 12, cuts=[{"cut": 1, "start_sec": 0, "end_sec": 6, "camera": "static close-up on Vu",
+                                       "action": "Vu looks up", "dialogue": [say]},
+                                      {"cut": 2, "start_sec": 6, "end_sec": 12, "camera": "static wide shot",
+                                       "action": "Vu stands still", "dialogue": [think]}],
+                      parts=[{"part": 1, "start_sec": 0, "end_sec": 6, "duration_sec": 8, "cuts": [1],
+                              "characters": ["char_01"], "opening_state": "Vu seated.", "closing_state": "Vu looking up.",
+                              "video_prompt": "8-second clip. Opening: a Ending: b No subtitles. Sound: a door creaks.\nvertical 9:16 frame, photoreal",
+                              "seedance": {"scene": "INT. GATEHOUSE - NIGHT", "acting": ["Vu, tired, then alert"],
+                                           "exclusions": "Linh is not visible yet."}},
+                             {"part": 2, "start_sec": 6, "end_sec": 12, "duration_sec": 8, "cuts": [2],
+                              "characters": ["char_01"], "opening_state": "Vu standing.", "closing_state": "Vu still.",
+                              "video_prompt": "8-second clip. Opening: a Ending: b No subtitles"}])
+    clip["dialogue"] = [say, think]
+    clip["video_prompt"] = ""
+    write(d / "final" / "shots" / "ep01" / "prompts.json",
+          {"unit": "clip", "prompt_format": 4, "targets": ["flow"], "total_duration_sec": 12, "shots": [clip],
+           "characters": {"char_01": "Vu, a young worker"}, "voices": {"char_01": "Vu: young man, low voice"}})
+    assert seedance.build_episode(d, 1) == 2
+    data = json.loads((d / "final" / "shots" / "ep01" / "prompts.json").read_text(encoding="utf-8"))
+    p1, p2 = (vp["seedance_prompt"] for vp in data["shots"][0]["veo_parts"])
+    assert "seedance" in data["targets"]
+    assert p1.startswith("Create an 8-second narrative audio-video clip.")
+    assert "CLIP EP01-C01-P1. Scene: INT. GATEHOUSE - NIGHT." in p1
+    assert 'VŨ (cold): "Where are you going?"' in p1 and "Where are you going?" not in p2
+    assert "0-8s: Vu, tired, then alert." in p1 and "Linh is not visible yet." in p1
+    assert "Synchronous audio: A door creaks." in p1 and "Voice: young man, low voice." in p1
+    assert "nobody's lips move" in p2 and "the only narration is the quoted voice-over" in p2
+    assert "any title or end card is added in post" in p2 and p2.endswith("No text on screen.")
+    errs, warns = package.check_clips(d, 1)
+    assert errs == [] and not any("Seedance" in w for w in warns)
+    del data["shots"][0]["veo_parts"][1]["seedance_prompt"]
+    write(d / "final" / "shots" / "ep01" / "prompts.json", data)
+    assert any("1 Flow part(s) without a Seedance prompt" in w for w in package.check_clips(d, 1)[1])
+    data["shots"][0]["veo_parts"][1]["seedance_prompt"] = p2
+    data["shots"][0]["veo_parts"][0]["seedance_prompt"] = p1.replace('"Where are you going?"', '"Where to?"')
+    write(d / "final" / "shots" / "ep01" / "prompts.json", data)
+    assert any("misses the line" in e for e in package.check_clips(d, 1)[0])
+    path, _ = package.build_flow_package(d, 1, "Demo")
+    try:
+        z = zipfile.ZipFile(path)
+        root = z.namelist()[0].split("/")[0]
+        assert "He knows." in z.read(f"{root}/seedance/clip_01_2.txt").decode()
+        assert "PROMPT SEEDANCE 2.0" in z.read(f"{root}/parts/clip_01_2.txt").decode()
+        assert json.loads(z.read(f"{root}/flow_queue.json"))["parts"][1]["seedance_prompt"] == p2
+    finally:
+        path.unlink()
+
+
+def test_dialogue_language_defaults_to_english_and_flags_old_prompts(app_session):
+    series, d = app_session
+    from app.pipeline import package
+    finalize(d)
+    assert package.dialogue_language(d) == "en-US"  # bible without production_language
+    b = json.loads((d / "final" / "bible.json").read_text(encoding="utf-8"))
+    write(d / "final" / "bible.json", {**b, "production_language": "vi"})
+    assert package.dialogue_language(d) == "vi"
+    write(d / "final" / "bible.json", b)
+    vi = {"character": "char_01", "line": "Anh đi đâu đấy?", "start_sec": 1, "end_sec": 3}
+    clip = _fmt2_clip(1, 0, 6, parts=[{"part": 1, "start_sec": 0, "end_sec": 6, "duration_sec": 8, "video_prompt": "x"}])
+    clip["dialogue"] = [vi]
+    write(d / "final" / "shots" / "ep01" / "prompts.json", {"unit": "clip", "prompt_format": 4, "shots": [clip]})
+    why = package.outdated_reasons(d, 1)
+    assert package.prompts_outdated(d, 1) and any("tiếng Anh" in w for w in why) and any("Seedance" in w for w in why)
+    clip["dialogue"] = [{**vi, "line": "Where are you going?", "line_vi": vi["line"]}]
+    clip["veo_parts"][0]["seedance_prompt"] = "Create an 8-second ..."
+    write(d / "final" / "shots" / "ep01" / "prompts.json", {"unit": "clip", "prompt_format": 4, "shots": [clip]})
+    assert package.outdated_reasons(d, 1) == []

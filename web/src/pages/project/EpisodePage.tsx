@@ -140,13 +140,15 @@ function VideoPackageButton({ n, busy }: { n: number; busy: boolean }) {
         <ConfirmAction
           trigger={<Button variant={ep.prompts_outdated ? 'outline' : 'ghost'} size="sm" className="gap-1.5"
             disabled={busy || !ep.in_final || make.isPending}
-            title={ep.prompts_outdated ? 'Prompt theo định dạng cũ: phần Flow chưa giãn thời lượng 6/8/10s, chưa có quy tắc trẻ em (hoặc thiếu khung đầu/cuối, lệnh cấm)' : 'Viết lại prompt video của tập này'}>
+            title={ep.prompts_outdated ? `Prompt cần làm lại: ${(ep.prompts_outdated_why ?? []).join('; ') || 'định dạng cũ'}` : 'Viết lại prompt video của tập này'}>
             <Clapperboard className="size-3.5" /> {ep.prompts_outdated ? 'Nâng cấp prompt video' : 'Tạo lại prompt'}
           </Button>}
           title={`Tạo lại prompt video tập ${n}?`} confirmLabel="Tạo lại" pending={make.isPending}
           onConfirm={() => make.mutateAsync()}
           description={<>Claude chia lại tập thành các clip và viết prompt mới (khoảng 3–8 phút), thay cho prompt hiện tại của tập này.
-            {ep.prompts_outdated && ' Bản mới có khung đầu/cuối mỗi clip, diễn xuất, lệnh cấm phụ đề / thêm thoại, tối đa 5 cảnh cắt mỗi clip và bản tách cho Veo 3.1 / Flow giãn ~1.3 lần theo thời lượng Flow nhận (6/8/10s) cho đủ thời gian diễn, và quy tắc an toàn cho cảnh có trẻ em.'}</>} />
+            {' '}Thoại trong prompt theo ngôn ngữ sản xuất (mặc định tiếng Anh Mỹ; kịch bản giữ nguyên), mỗi phần Flow có kèm bản Seedance.
+            {ep.prompts_outdated_why?.length ? ` Lý do cần làm lại: ${ep.prompts_outdated_why.join('; ')}.` : ''}
+            </>} />
       </>
     )
   }

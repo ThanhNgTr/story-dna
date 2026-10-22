@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, MapPin, RefreshCcw, Shirt, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, Check, Download, MapPin, RefreshCcw, Shirt, Sparkles, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, useLocation, useParams } from 'react-router'
 import { ConfirmAction } from '@/components/ConfirmAction'
@@ -10,7 +10,7 @@ import { useLooks, type Looks } from '@/components/looks/useLooks'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Textarea } from '@/components/ui/textarea'
-import type { AssetImage, Registry } from '@/lib/api'
+import { api, type AssetImage, type Registry } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useProject } from '../ProjectLayout'
 
@@ -233,12 +233,18 @@ function Issues({ reg, projectBase }: { reg: Registry; projectBase: string }) {
   )
 }
 
-function Toolbar({ looks, busy, file, pending, counts }: { looks: Looks; busy: boolean; file: string; pending: Record<string, number>; counts: Record<string, number> }) {
+function Toolbar({ looks, busy, file, pending, counts, zipUrl }: { looks: Looks; busy: boolean; file: string; pending: Record<string, number>; counts: Record<string, number>; zipUrl: string }) {
   const [fb, setFb] = useState('')
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-sm text-muted-foreground">{file} · {counts.approved ?? 0} ảnh đã duyệt · {counts.draft ?? 0} chờ duyệt</span>
       <div className="ml-auto flex flex-wrap gap-2">
+        {(counts.approved ?? 0) + (counts.draft ?? 0) > 0 && (
+          <Button size="sm" variant="outline" className="gap-1.5" render={<a href={zipUrl} download />}
+            title="Tải zip mọi ảnh tham chiếu: đã duyệt + chờ duyệt (bỏ ảnh đã loại / đã thay), chia theo nhân vật, trang phục, bối cảnh, đạo cụ, kèm danh_sach.csv">
+            <Download className="size-3.5" /> Tải toàn bộ ảnh
+          </Button>
+        )}
         <ConfirmAction trigger={<Button size="sm" variant="outline" className="gap-1.5" disabled={busy}><Sparkles className="size-3.5" /> Nhờ Claude sửa</Button>}
           title="Nhờ Claude sửa ngoại hình"
           description={<>
@@ -291,7 +297,7 @@ export function LooksPage() {
       <div className="rounded-xl border bg-card p-4">
         <h1 className="text-xl font-semibold">Ngoại hình</h1>
         <p className="mt-0.5 text-sm text-muted-foreground">Một nguồn duy nhất cho khuôn mặt, trang phục, bối cảnh, đạo cụ. Ảnh đã duyệt được dùng làm tham chiếu khi tạo shot và video.</p>
-        <div className="mt-4"><Toolbar looks={looks} busy={busy} file={vm.file} pending={vm.pending} counts={vm.counts} /></div>
+        <div className="mt-4"><Toolbar looks={looks} busy={busy} file={vm.file} pending={vm.pending} counts={vm.counts} zipUrl={api.refsZipUrl(p.slug, p.session_id)} /></div>
         {!looks.data!.codex && <p className="mt-3 text-xs text-warning">Chưa tìm thấy Codex CLI nên chưa tạo ảnh được (cài extension ChatGPT/Codex trong VS Code hoặc đặt CODEX_BIN).</p>}
       </div>
       <nav className="flex flex-wrap gap-1 border-b">
