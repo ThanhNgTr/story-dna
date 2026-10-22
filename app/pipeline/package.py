@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import assets as asset_images
+from . import seedance
 
 
 def prompts_file(session: Path, n: int) -> Path | None:
@@ -58,16 +59,54 @@ def prompts_stale(session: Path, n: int) -> bool:
     return bool(srcs and max(f.stat().st_mtime for f in srcs) > p.stat().st_mtime + 1)
 
 
-def prompts_outdated(session: Path, n: int) -> bool:
-    """Clip prompts in an older prompt_format (no opening/closing state, guard block, Veo parts): still usable,
-    but worth remaking with the current skill."""
+DEFAULT_DIALOGUE_LANGUAGE = "en-US"  # spoken lines in video prompts, unless the bible's production_language says otherwise
+VI_LETTERS = re.compile("[ăâđêôơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹ]", re.I)
+
+
+def dialogue_language(session: Path) -> str:
+    """Language of the spoken lines in the video prompts: bible `production_language`, else American English.
+    The screenplay keeps its own language (the reading version)."""
+    bibles = sorted(session.glob("bible_v*.json"), key=lambda p: int(re.search(r"_v(\d+)", p.name).group(1)))
+    src = session / "final" / "bible.json" if (session / "final" / "bible.json").exists() else (bibles[-1] if bibles else None)
+    try:
+        lang = (json.loads(src.read_text(encoding="utf-8")).get("production_language") or "") if src else ""
+    except (OSError, json.JSONDecodeError, AttributeError):
+        lang = ""
+    return lang.strip() or DEFAULT_DIALOGUE_LANGUAGE
+
+
+def wrong_language_lines(data: dict, lang: str) -> list[str]:
+    """Spoken lines of an English production still written in Vietnamese (prompts made before the language rule)."""
+    if not lang.lower().startswith("en"):
+        return []
+    return [d.get("line") or "" for c in data.get("shots") or [] for d in c.get("dialogue") or []
+            if VI_LETTERS.search(d.get("line") or "")]
+
+
+def outdated_reasons(session: Path, n: int) -> list[str]:
+    """Why clip prompts are worth remaking with the current skill (still usable): older prompt_format, dialogue not in
+    the production language, Flow parts without their Seedance prompt."""
     p = prompts_file(session, n)
     if not p or not is_clip_format(p):
-        return False
+        return []
     try:
-        return int(json.loads(p.read_text(encoding="utf-8")).get("prompt_format") or 1) < PROMPT_FORMAT
+        data = json.loads(p.read_text(encoding="utf-8"))
+        fmt = int(data.get("prompt_format") or 1)
     except (OSError, json.JSONDecodeError, ValueError, TypeError):
-        return False
+        return []
+    out = []
+    if fmt < PROMPT_FORMAT:
+        out.append("định dạng cũ (Flow chưa giãn 6/8/10s, chưa có quy tắc trẻ em)")
+    lang = dialogue_language(session)
+    if wrong_language_lines(data, lang):
+        out.append(f"thoại chưa phải tiếng Anh ({lang})")
+    if any(not vp.get("seedance_prompt") for c in data.get("shots") or [] for vp in c.get("veo_parts") or []):
+        out.append("chưa có prompt Seedance")
+    return out
+
+
+def prompts_outdated(session: Path, n: int) -> bool:
+    return bool(outdated_reasons(session, n))
 
 
 def _clip_lines(s: dict) -> list[tuple[float, float, dict]]:
@@ -466,6 +505,7 @@ def check_clips(session: Path, n: int) -> tuple[list[str], list[str]]:
     elif clips and not fmt3:
         warns.append("older prompt format (Flow parts not stretched to 6/8/10s, no minors rule): remake the prompts")
     prev_end = 0.0
+    no_seedance = 0  # Flow parts without their Seedance twin (older files): one warning for the episode
     for c in clips:
         no, a, b = c.get("shot_number"), float(c.get("start_sec", 0)), float(c.get("end_sec", 0))
         tag = f"clip {no} [{a}-{b}]"
@@ -509,6 +549,10 @@ def check_clips(session: Path, n: int) -> tuple[list[str], list[str]]:
                           for x in inside]
                 warns += dialogue_tag_warnings(ptag, vp.get("video_prompt", ""), inside, seen)
                 warns += shot_dialogue_warnings(ptag, vp.get("video_prompt", ""))
+                if vp.get("seedance_prompt"):
+                    errors += seedance.problems(ptag, vp, inside)[0]
+                else:
+                    no_seedance += 1
         prev_end = b
         inside = [sc for sc in scenes
                   if min(b, float(sc.get("end_sec", 0))) - max(a, float(sc.get("start_sec", 0))) > EPS]
@@ -527,6 +571,12 @@ def check_clips(session: Path, n: int) -> tuple[list[str], list[str]]:
     total = float(data.get("total_duration_sec") or (scenes[-1].get("end_sec") if scenes else prev_end) or 0)
     if clips and abs(prev_end - total) > 0.5:
         errors.append(f"clips end at {prev_end}, episode is {total}s")
+    lang = dialogue_language(session)
+    if wrong := wrong_language_lines(data, lang):
+        warns.append(f"{len(wrong)} spoken line(s) not in {lang} (e.g. \"{wrong[0][:40]}\"): remake the prompts")
+    if no_seedance and "seedance" in (data.get("targets") or []):
+        warns.append(f"{no_seedance} Flow part(s) without a Seedance prompt: python3 -m app.pipeline.seedance build "
+                     f"{session} {n}")
     return errors, warns
 
 
@@ -643,7 +693,7 @@ def build_episode_package(session: Path, n: int, title: str = "") -> tuple[Path,
              f"  - edit_list.csv: thứ tự {unit}, thời điểm, thoại (mở bằng Excel / Google Sheets).\n"
              f"  - Ghép clips/{unit}_01.mp4, {unit}_02.mp4, ... theo thứ tự tên file.\n"
              "  - subtitles.srt: phụ đề thoại, khớp thời gian khi các clip đúng thời lượng.\n\n"
-             "Prompt bằng tiếng Anh (cho model video); thoại giữ nguyên ngôn ngữ kịch bản.\n"
+             "Prompt bằng tiếng Anh (cho model video); thoại đúng như trong prompt (ngôn ngữ sản xuất của series).\n"
              "Seedance 2 / Kling: dùng PROMPT chính (một clip tối đa 15s) với mọi ảnh tham chiếu của clip.\n"
              "Veo 3.1 / Google Flow (tối đa 8s): dùng các 'PROMPT VEO phần 1, 2...' và CHỈ upload ảnh ghi ở phần đó\n"
              f"  (tối đa {FLOW_MAX_REFS} ảnh: các nhân vật trên hình trước, rồi bối cảnh; gọi nhân vật bằng vai, không tên riêng,\n"
@@ -737,7 +787,8 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
                              for x, y, d in lines],
                 "continuity_in": named_prompt(vp.get("continuity_in") or "", labels, names),
                 "save_as": f"clips/{unit}_{no:02d}_{k}.mp4",
-                "prompt": named_prompt(vp.get("video_prompt") or "", labels, names)})
+                "prompt": named_prompt(vp.get("video_prompt") or "", labels, names),
+                "seedance_prompt": vp.get("seedance_prompt") or ""})
             clock += keep
 
     tmp = Path(tempfile.mkstemp(suffix=".zip", prefix=f"{root}_")[1])
@@ -747,7 +798,8 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
 
         q, e = io.StringIO(), io.StringIO()
         qw, ew = csv.writer(q), csv.writer(e)
-        qw.writerow(["id", "save_as", "mode", "aspect_ratio", "duration_sec", "needed_sec", "trim_to_sec", "images", "prompt"])
+        qw.writerow(["id", "save_as", "mode", "aspect_ratio", "duration_sec", "needed_sec", "trim_to_sec", "images", "prompt",
+                     "seedance_prompt"])
         ew.writerow(["order", "clip_file", "start", "end", "keep_sec", "scene", "dialogue"])
         for j, r in enumerate(rows, 1):
             said = "\n".join(f"  [{d['start_sec']:.1f}s] {d['who']}"
@@ -764,9 +816,17 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
                  f"Lưu video thành: {r['save_as']}{tail}\n"
                  + (f"Nối tiếp phần trước: {r['continuity_in']}\n" if r["continuity_in"] else "")
                  + f"Thoại trong phần này:\n{said or '  (không thoại)'}\n"
-                 f"\nPROMPT (copy nguyên văn vào Flow):\n{r['prompt']}\n")
+                 f"\nPROMPT (copy nguyên văn vào Flow):\n{r['prompt']}\n"
+                 + (f"\nPROMPT SEEDANCE 2.0 (cùng phần, cùng ảnh, thời lượng {dur}s; bản riêng: seedance/{r['id']}.txt):\n"
+                    f"{r['seedance_prompt']}\n" if r["seedance_prompt"] else ""))
+            if r["seedance_prompt"]:
+                text(f"seedance/{r['id']}.txt",
+                     f"{r['id'].upper()}   Seedance 2.0   {dur}s   {aspect}\n"
+                     f"Ảnh (cùng ảnh với Flow, đúng thứ tự): {', '.join(r['images']) or 'không có'}\n"
+                     f"Lưu video thành: {r['save_as']} (cùng tên với bản Flow: chọn một trong hai bản khi dựng)\n\n"
+                     f"PROMPT:\n{r['seedance_prompt']}\n")
             qw.writerow([r["id"], r["save_as"], r["mode"], aspect, r["duration_sec"], r["needed_sec"], r["trim_to_sec"],
-                         " ".join(r["images"]), r["prompt"]])
+                         " ".join(r["images"]), r["prompt"], r["seedance_prompt"]])
             ew.writerow([j, Path(r["save_as"]).name, _ts(r["video_start"]), _ts(r["video_end"]), r["trim_to_sec"],
                          r["scene"] or "", " | ".join(f"{d['who']}: {d['line']}" for d in r["dialogue"])])
         text("flow_queue.json", json.dumps({"episode": n, "title": ep_title, "series": title, "aspect_ratio": aspect,
@@ -798,7 +858,11 @@ def build_flow_package(session: Path, n: int, title: str = "") -> tuple[Path, st
              "  3. Copy PROMPT dán nguyên văn. Không thêm tên nhân vật: prompt gọi nhân vật bằng vai\n"
              "     (Flow chặn tên riêng + mặt chi tiết như 'người nổi tiếng').\n"
              "  4. Tải video về, lưu đúng tên ghi trong file (clips/clip_01_1.mp4 ...).\n\n"
-             "Chạy hàng loạt: flow_queue.json / flow_queue.csv có đủ các phần theo thứ tự\n"
+             + ("Seedance 2.0: mỗi phần có thêm bản prompt Seedance (seedance/XX.txt, cuối mỗi file parts/XX.txt):\n"
+                "  cùng đoạn kịch bản, cùng thời lượng, cùng ảnh và cùng thoại, nên ghép chung một edit_list và\n"
+                "  subtitles.srt. Seedance: thời lượng đúng số ghi trong file, khung " + aspect + ", thêm đúng các ảnh ghi trong file.\n\n"
+                if any(r["seedance_prompt"] for r in rows) else "")
+             + "Chạy hàng loạt: flow_queue.json / flow_queue.csv có đủ các phần theo thứ tự\n"
              "(id, save_as, mode, images, prompt, trim_to_sec).\n\n"
              "Dựng video:\n"
              "  - Ghép clips/ theo thứ tự trong edit_list.csv, mỗi phần giữ keep_sec giây đầu\n"
@@ -830,6 +894,12 @@ async def run_shotlist_job(job) -> dict:
     job.step("shotlist", "running", total=len(eps), done=0)
     slots = asyncio.Semaphore(config.CLAUDE_PARALLEL)
 
+    lang = dialogue_language(d)
+    lang_note = (f"Spoken dialogue language: {lang} (skill Step 5 'Language'): every spoken line, voice-over, subtitle, "
+                 + ("name card and post_text in natural American English for a US audience, " if lang.lower().startswith("en")
+                    else f"name card and post_text in {lang}, ")
+                 + "each line translating its script line exactly (line_vi = the script line); the screenplay stays "
+                   "as it is. ")
     targets = ",".join(config.VIDEO_TARGETS)
     clip_note = ("one prompt per 10-15s clip (Higgsfield) plus " if "higgsfield" in config.VIDEO_TARGETS
                  else "10-15s clips WITHOUT a clip video_prompt (Flow only), ")
@@ -844,13 +914,19 @@ async def run_shotlist_job(job) -> dict:
                                    f'"targets": {json.dumps(list(config.VIDEO_TARGETS))}: {clip_note}'
                                    "veo_parts on every clip (Flow lengths stretched ~1.3x to 6/8/10s, minors rule), "
                                    "at most 5 timed cuts per clip, a start/end time on every dialogue line, "
-                                   "opening/closing state, performance, the Rules guard block (skill Step 5); "
+                                   + lang_note +
+                                   "opening/closing state, performance, the Rules guard block (skill Step 5), veo_parts[].seedance "
+                                   "{scene, acting per cut, exclusions} (skill 'Seedance twin', the app builds seedance_prompt); "
                                    "replace any older prompts.json. Then python3 -m app.pipeline.package check "
                                    f"{d} {n} -> 0 errors." + UI_NOTE,
                               f"ep{n:02d}", 3600)
             except RuntimeError as e:
                 job.log(f"[ep{n:02d}] {e}")
             if prompts_file(d, n):
+                try:
+                    seedance.build_episode(d, n)  # Seedance twin of every Flow part, from the same data
+                except (OSError, ValueError, KeyError, TypeError) as e:
+                    job.log(f"[ep{n:02d}] Seedance: {e}")
                 errs, warns = check_clips(d, n)
                 for m in errs + warns:
                     job.log(f"[ep{n:02d}] {'ERROR' if m in errs else 'WARN'} {m}")
@@ -862,6 +938,67 @@ async def run_shotlist_job(job) -> dict:
     if not done:
         raise RuntimeError(f"không tạo được prompt cho tập {failed}")
     return {"slug": p["slug"], "session_id": p["session_id"], "episodes": sorted(done), "failed": sorted(failed)}
+
+
+def _asset_labels(session: Path) -> dict[str, str]:
+    """{item key: readable label} from the latest registry: char_01 -> Vu, char_01_o1 -> Vu do di lam,
+    loc_01_day -> Cong truong day, prop_01 -> Hop com. Bible names when there is no registry yet."""
+    labels = dict(_bible_names(session))
+    try:
+        _, reg = asset_images.latest_registry(session)
+    except (RuntimeError, OSError, json.JSONDecodeError):
+        return labels
+    for c in reg.get("characters", []):
+        name = c.get("name") or labels.get(c.get("char_id"), "")
+        labels[c.get("char_id")] = name
+        for o in c.get("wardrobe", []):
+            labels[o.get("outfit_id")] = f"{name} {o.get('name', '')}".strip()
+    for loc in reg.get("locations", []):
+        for v in loc.get("variants", []):
+            labels[v.get("variant_id")] = f"{loc.get('name', '')} {v.get('time_of_day', '')}".strip()
+    for pr in reg.get("props", []):
+        labels[pr.get("prop_id")] = pr.get("name", "")
+    return labels
+
+
+REF_FOLDERS = {"character": "nhan_vat", "outfit": "trang_phuc", "location": "boi_canh", "prop": "dao_cu"}
+
+
+def build_refs_package(session: Path, title: str = "") -> tuple[Path, str]:
+    """Every reference image still in use (approved + waiting for review; rejected / replaced left out) in one
+    zip: da_duyet/<kind>/ and cho_duyet/<kind>/, readable file names, danh_sach.csv. Returns (zip path, name)."""
+    index = asset_images.load_index(session)
+    labels = _asset_labels(session)
+    root = "anh_tham_chieu" + (f"_{_ascii(title)}" if _ascii(title) else "")
+    rows, used = [], set()
+    for key, item in sorted(index.get("items", {}).items()):
+        folder = REF_FOLDERS.get(item.get("kind"), "khac")
+        for img in item.get("images", []):
+            src = session / "assets" / img.get("file", "")
+            if img.get("status") not in ("approved", "draft") or not src.is_file():
+                continue
+            label = _ascii(labels.get(key, ""))
+            stem = src.stem.replace(key, f"{key}_{label}", 1) if label and key in src.stem else src.stem
+            status_dir = "da_duyet" if img["status"] == "approved" else "cho_duyet"
+            arc = f"{status_dir}/{folder}/{stem}{src.suffix}"
+            k = 2
+            while arc in used:
+                arc, k = f"{status_dir}/{folder}/{stem}_{k}{src.suffix}", k + 1
+            used.add(arc)
+            rows.append((src, arc, key, labels.get(key, ""), img["status"], img.get("created_at", "")))
+    if not rows:
+        raise FileNotFoundError("Chưa có ảnh tham chiếu nào (đã duyệt hoặc chờ duyệt).")
+    tmp = Path(tempfile.mkstemp(suffix=".zip", prefix=f"{root}_")[1])
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["file", "ma", "ten", "trang_thai", "tao_luc", "goc"])
+        for src, arc, key, label, status, created in rows:
+            z.write(src, f"{root}/{arc}", compress_type=zipfile.ZIP_STORED)  # png/jpg are compressed already
+            w.writerow([arc, key, label, "đã duyệt" if status == "approved" else "chờ duyệt", created,
+                        str(src.relative_to(session / "assets"))])
+        z.writestr(f"{root}/danh_sach.csv", "\ufeff" + buf.getvalue())
+    return tmp, f"{root}.zip"
 
 
 if __name__ == "__main__":

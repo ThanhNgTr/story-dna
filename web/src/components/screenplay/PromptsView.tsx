@@ -6,15 +6,12 @@ import { thumb } from '@/components/looks/ImageTile'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { api, type PromptShot } from '@/lib/api'
+import { copyKey, copyText } from '@/lib/clipboard'
 import { fmtDate } from '@/lib/format'
 
 async function copy(text: string, what: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast.success(`Đã sao chép ${what}.`)
-  } catch {
-    toast.error('Trình duyệt không cho sao chép. Bôi đen rồi Ctrl+C.')
-  }
+  if (await copyText(text)) toast.success(`Đã sao chép ${what}.`)
+  else toast.error(`Trình duyệt không cho sao chép. Bôi đen rồi ${copyKey}.`)
 }
 
 const sec = (s: number | null | undefined) => (s == null ? '?' : `${Number(s).toFixed(1)}s`)
@@ -35,6 +32,18 @@ function FlowParts({ s, unit }: { s: PromptShot; unit: string }) {
           </div>
           <p className="text-xs text-muted-foreground">Ảnh cho phần này: {vp.refs?.length ? vp.refs.map((r) => r.split('/').pop()).join(', ') : 'không (tạo từ chữ)'}</p>
           <pre className="max-h-48 overflow-y-auto rounded bg-muted/60 p-2 font-mono text-xs leading-relaxed whitespace-pre-wrap">{vp.video_prompt}</pre>
+          {vp.seedance_prompt && (
+            <details className="rounded border px-2 py-1.5 text-xs">
+              <summary className="flex cursor-pointer items-center gap-2 text-muted-foreground">
+                <span>Bản Seedance 2.0 · cùng phần, {vp.duration_sec ?? '?'}s, cùng ảnh</span>
+                <Button size="xs" variant="outline" className="ml-auto gap-1"
+                  onClick={(e) => { e.preventDefault(); copy(vp.seedance_prompt || '', `prompt Seedance ${unit} ${s.shot_number} phần ${vp.part}`) }}>
+                  <Copy className="size-3" /> Sao chép
+                </Button>
+              </summary>
+              <pre className="mt-1.5 max-h-48 overflow-y-auto rounded bg-muted/60 p-2 font-mono leading-relaxed whitespace-pre-wrap">{vp.seedance_prompt}</pre>
+            </details>
+          )}
         </div>
       ))}
     </div>
@@ -149,6 +158,8 @@ export function PromptsView({ slug, sid, n }: { slug: string; sid: string; n: nu
   const all = flowOnly
     ? v.shots.flatMap((s) => s.veo_parts.map((vp) => `#${s.shot_number}.${vp.part} (${vp.duration_sec ?? '?'}s)\n${vp.video_prompt}`)).join('\n\n')
     : v.shots.map((s) => `#${s.shot_number} (${sec(s.start_sec)}-${sec(s.end_sec)})\n${s.video_prompt}`).join('\n\n')
+  const seedance = v.shots.flatMap((s) => s.veo_parts.filter((vp) => vp.seedance_prompt)
+    .map((vp) => `#${s.shot_number}.${vp.part} (${vp.duration_sec ?? '?'}s)\n${vp.seedance_prompt}`)).join('\n\n')
   const noRefs = v.shots.filter((s) => !s.refs.length).length
   return (
     <div className="space-y-3">
@@ -160,6 +171,11 @@ export function PromptsView({ slug, sid, n }: { slug: string; sid: string; n: nu
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => copy(all, `${v.shots.length} prompt`)}>
             <Copy className="size-3.5" /> Sao chép tất cả
           </Button>
+          {seedance && (
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => copy(seedance, 'tất cả prompt Seedance')}>
+              <Copy className="size-3.5" /> Sao chép Seedance
+            </Button>
+          )}
           <Button size="sm" variant="outline" className="gap-1.5" render={<a href={api.packageUrl(slug, sid, n, 'flow')} download />}>
             <Download className="size-3.5" /> Tải gói Flow
           </Button>

@@ -136,7 +136,8 @@ user idea (fragments) ─▶ [3] write-series-<slug> ─▶ adaptation + bible +
    (`app/pipeline/package.py`) zips per episode: shot prompts + approved refs + `subtitles.srt` + `edit_list.csv`
    (Higgsfield = 10-15s clips; "Tải gói Flow" `?target=flow` = one Google Flow generation per `veo_parts` entry:
    `parts/clip_NN_K.txt`, only that part's images (each ref swapped for the NEWEST approved image of its item:
-   `package.current_ref`; never a minor's photo), `flow_queue.json/.csv` for batch tools, `trim_to_sec` because Flow makes 8s). Then `/direct-video`,
+   `package.current_ref`; never a minor's photo), `flow_queue.json/.csv` for batch tools, `trim_to_sec` because Flow makes 8s). Every Flow part also has `seedance_prompt` (Seedance 2.0, same span / length / images / lines; `app/pipeline/seedance.py build`,
+   Claude writes only `veo_parts[].seedance` {scene, acting per cut, exclusions}); the Flow zip carries `seedance/clip_NN_K.txt`. Then `/direct-video`,
    `/cinematographer-brief`, `/sound-design-brief`, `/production-design-brief`
 
 ## PROJECT RESET (new reference video)

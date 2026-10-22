@@ -410,6 +410,7 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                 "has_prompts": package.prompts_file(d, n) is not None,
                 "prompts_stale": package.prompts_stale(d, n),
                 "prompts_outdated": package.prompts_outdated(d, n),
+                "prompts_outdated_why": package.outdated_reasons(d, n),
             })
         summary = {"session_id": sid, "episodes": len(st["episodes"]), "final": st["final_complete"],
                    "final_stale": st["final_stale"],
@@ -572,6 +573,16 @@ def build_router(jobs: JobManager, job_funcs: dict, stage: Callable[[dict], tupl
                          {"slug": slug, "session_id": sid, "kinds": kinds, "ids": body.ids, "force": body.force},
                          job_funcs["images"])
         return one(job)
+
+    @r.get("/projects/{slug}/{sid}/assets/download")
+    def assets_download(slug: str, sid: str, background: BackgroundTasks):
+        st = session_or_404(slug, sid)
+        try:
+            path, name = package.build_refs_package(st["dir"], st["input"].get("title") or slug)
+        except FileNotFoundError as e:
+            raise HTTPException(404, str(e))
+        background.add_task(path.unlink, missing_ok=True)
+        return FileResponse(path, media_type="application/zip", filename=name)
 
     @r.post("/projects/{slug}/{sid}/assets/review")
     def assets_review(slug: str, sid: str, body: ReviewIn):

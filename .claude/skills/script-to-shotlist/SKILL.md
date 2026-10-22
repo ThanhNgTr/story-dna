@@ -449,6 +449,23 @@ Plan the split per clip so every part lands in those bands:
   - Quoted dialogue stays word for word. `package check` makes these errors: a photo of a minor in
     `refs`, risky words, a device word, or two or more adults in a part with a minor on screen.
 
+### Seedance twin (every Flow part)
+Every `veo_parts` entry also gets `seedance_prompt`: the Seedance 2.0 version of the SAME part (same script
+span, same `duration_sec`, same `refs`, same quoted lines), so the Flow and Seedance takes drop into one
+edit (edit_list.csv, subtitles.srt). The app builds the text (`app/pipeline/seedance.py`, the producer's
+template: three-beat header, `CLIP EPnn-Ccc-Pk. Scene:`, Cast + voices, style + TV-14 guards, Exact opening
+state, Ordered action and exact dialogue (`NAME (delivery): "line"`, `voice-over ...; nobody's lips move`,
+`off-screen ...`), Acting progression, Camera and blocking + Light and color, Synchronous audio, Exact closing
+state, Continuity exclusions, "No text on screen."). You write only `veo_parts[].seedance`:
+- `scene`: English slug line, e.g. `INT. COLE MEDIA, HUDSON YARDS - CEO OFFICE - DAY` (flashback: say so).
+- `acting`: one English sentence per cut of the part, in cut order (the builder adds the times): the emotional
+  turn, face, hands, what the listener does, from the beat `acting`. Never new actions or lines.
+- `exclusions`: what must NOT happen in this part: who is not visible yet / off frame, who never appears
+  (people only talked about), props that stay put, a cut-off line that is never finished, no touching.
+- Optional `camera`, `audio` (defaults: the cuts' cameras, the Flow part's Sound).
+Then run `python3 -m app.pipeline.seedance build <session-dir> <episode>` (also run by the web job) and
+`package check` (errors: missing sections, wrong length, a line not quoted word for word).
+
 ### `prompts.json`
 ```json
 {
@@ -535,7 +552,13 @@ own `start_sec`/`end_sec` (absolute): subtitles and lip-sync use them.
   may run over the next cut (L-cut) without a warning; a lip-synced line may run over a cut only while
   the speaker stays on screen. Nothing runs past the clip's end. `pace_warning` ONLY for: a stretch over
   the hard limit, or a lip-synced line whose speaker is off screen while it is spoken.
-- Language: prompts in English (video models), dialogue kept in the script's language.
+- Language: prompts in English (video models). Dialogue: in the bible's `production_language`, DEFAULT
+  `en-US` when the bible has none (`package.dialogue_language`), whatever the script's language. `en-US`: every spoken line, VO, subtitle, `post_text`, name card and title card is natural American
+  English for a US audience (no Vietnamese anywhere in prompts.json/.md), tagged "in American English";
+  each line translates the script line's meaning exactly (no added or dropped facts), keeps the bible's
+  fixed English terms (`language_note`, `signature_lines`: Boss, Grandfather, "This is a notice, not a
+  negotiation."), money spelled out; `line_vi` = the script line it translates; voices add "General
+  American accent"; rate <= 2.5-3 English words/s at Flow time. The screenplay keeps its own language (the reading version).
 
 ## Integration with Video Tools
 

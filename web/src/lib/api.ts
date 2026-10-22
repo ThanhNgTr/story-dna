@@ -52,7 +52,9 @@ export interface PromptShot {
   continuity_in?: string
   opening_state?: string; closing_state?: string; performance?: string
   on_screen_text: string[]
-  veo_parts: { part: number; start_sec: number; end_sec: number; duration_sec?: number; cuts?: number[]; refs?: string[]; video_prompt: string }[]
+  veo_parts: { part: number; start_sec: number; end_sec: number; duration_sec?: number; cuts?: number[]; refs?: string[]; video_prompt: string
+    /** Seedance 2.0 version of the same part: same span, length, images and lines. */
+    seedance_prompt?: string }[]
   cuts: { cut: number; start_sec: number; end_sec: number; camera?: string; action?: string }[]
 }
 export interface PromptsData {
@@ -92,6 +94,8 @@ export interface EpisodeInfo {
   has_prompts: boolean
   prompts_stale: boolean
   prompts_outdated: boolean
+  /** Why the prompts are worth remaking: old format, dialogue not in the production language, no Seedance prompt. */
+  prompts_outdated_why?: string[]
 }
 
 export interface Iteration {
@@ -579,6 +583,7 @@ export const api = {
   refreshFinal: (slug: string, sid: string) =>
     request<{ copied: string[]; items: (number | string)[] }>(`${p(slug, sid)}/final/refresh`, { method: 'POST' }),
   prompts: (slug: string, sid: string, n: number) => request<PromptsData>(`${p(slug, sid)}/episodes/${n}/prompts`),
+  refsZipUrl: (slug: string, sid: string) => `/api${p(slug, sid)}/assets/download`,
   packageUrl: (slug: string, sid: string, n: number, target: 'higgsfield' | 'flow' = 'higgsfield') =>
     `/api${p(slug, sid)}/episodes/${n}/package${target === 'flow' ? '?target=flow' : ''}`,
   fixStory: (slug: string, sid: string) => request<Job>(`${p(slug, sid)}/story/fix`, { method: 'POST' }),
